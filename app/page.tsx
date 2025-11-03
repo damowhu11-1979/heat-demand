@@ -2,6 +2,21 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+
+/* ---------------- storage helpers (why: guard SSR & corrupted JSON) ---------------- */
+const STORAGE_KEY = 'heatload:property';
+const safeGet = <T,>(k: string, fallback: T): T => {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const v = window.localStorage.getItem(k);
+    return v ? (JSON.parse(v) as T) : fallback;
+  } catch { return fallback; }
+};
+const safeSet = (k: string, v: unknown) => {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(k, JSON.stringify(v)); } catch {}
+};
 
 /* ---------------- core helpers ---------------- */
 type LatLon = { lat: number; lon: number; src: 'postcodes.io' | 'nominatim' | 'latlon' };
@@ -42,7 +57,7 @@ async function geocodeAny(postcode: string, address: string, latlonText?: string
   const pc = toPC(postcode || '');
   if (pc) {
     try { return await geocodePostcode(pc); }
-    catch { return await geocodeAddress(pc); }
+    catch { return await geocodeAddress(pc); } // fallback if throttled/invalid
   }
   if (!address || address.trim().length < 4) throw new Error('enter postcode or address');
   return await geocodeAddress(address);
@@ -101,10 +116,11 @@ function designTempFromDJF(mins: number[], altitudeMeters: number): number | nul
   const djfVals = djfIdx.map((i) => mins[i]).filter((v) => isFinite(v));
   if (!djfVals.length) return null;
   const base = Math.min(...djfVals);
-  const safety = base - 2;
-  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0);
+  const safety = base - 2;                               // conservative margin
+  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0); // altitude correction
   return Math.round(lapse);
 }
+/* fallback to ensure design temp is never blank */
 function designTempRegionalFallback(lat: number, altitudeMeters: number): number {
   let base: number;
   if (lat < 51.5) base = -2;
@@ -125,7 +141,7 @@ async function autoClimateCalc(postcode: string, address: string, altitudeMeters
     if (!isFinite(hdd as number)) hdd = hddFromMeans(normals.mean);
     designTemp = designTempFromDJF(normals.min, altitudeMeters);
   } catch {}
-  if (!isFinite(hdd as number)) hdd = 2033;
+  if (!isFinite(hdd as number)) hdd = 2033; // UK typical fallback
   if (!isFinite(designTemp as number)) designTemp = designTempRegionalFallback(geo.lat, altitudeMeters);
   return { hdd: hdd!, designTemp: designTemp!, lat: geo.lat, lon: geo.lon };
 }
@@ -135,7 +151,7 @@ function extractRRN(text: string): string | null {
   return m ? m[1] : null;
 }
 
-/* -------------------------- small components -------------------------- */
+/* ---------------- UI atoms ---------------- */
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
@@ -145,47 +161,36 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
-function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...props}
-      style={{
-        borderRadius: 10,
-        padding: '10px 14px',
-        border: '1px solid #ddd',
-        background: props.disabled ? '#eee' : '#111',
-        color: props.disabled ? '#888' : '#fff',
-        cursor: props.disabled ? 'not-allowed' : 'pointer',
-        ...props.style,
-      }}
-    />
-  );
-}
 
 /* ---------------------------------- UI ---------------------------------- */
 export default function Page(): React.JSX.Element {
+  const router = useRouter();
+
+  // hydrate from storage once
+  const hydrated = useRef(false);
+  const initial = safeGet(STORAGE_KEY, null as any);
   // Property info
-  const [reference, setReference] = useState('');
-  const [postcode, setPostcode] = useState('');
-  const [country, setCountry] = useState('England');
-  const [address, setAddress] = useState('');
-  const [epcNo, setEpcNo] = useState('');
-  const [uprn, setUprn] = useState('');
+  const [reference, setReference] = useState(initial?.reference ?? '');
+  const [postcode, setPostcode] = useState(initial?.postcode ?? '');
+  const [country, setCountry] = useState(initial?.country ?? 'England');
+  const [address, setAddress] = useState(initial?.address ?? '');
+  const [epcNo, setEpcNo] = useState(initial?.epcNo ?? '');
+  const [uprn, setUprn] = useState(initial?.uprn ?? '');
 
   // Location/climate
-  const [altitude, setAltitude] = useState<number | ''>(0);
-  const [tex, setTex] = useState<number | ''>(-3);
-  const [hdd, setHdd] = useState<number | ''>(2033);
+  const [altitude, setAltitude] = useState<number | ''>(initial?.altitude ?? 0);
+  const [tex, setTex] = useState<number | ''>(initial?.tex ?? -3);
+  const [hdd, setHdd] = useState<number | ''>(initial?.hdd ?? 2033);
   const meanAnnual = 10.2;
 
   // Details
-  const [dwelling, setDwelling] = useState('');
-  const [attach, setAttach] = useState('');
-  const [ageBand, setAgeBand] = useState('');
-  const [occupants, setOccupants] = useState(2);
-  const [mode, setMode] = useState('Net Internal');
-  const [airtight, setAirtight] = useState('Standard Method');
-  const [thermalTest, setThermalTest] = useState('No Test Performed');
+  const [dwelling, setDwelling] = useState(initial?.dwelling ?? '');
+  const [attach, setAttach] = useState(initial?.attach ?? '');
+  const [ageBand, setAgeBand] = useState(initial?.ageBand ?? '');
+  const [occupants, setOccupants] = useState<number>(initial?.occupants ?? 2);
+  const [mode, setMode] = useState(initial?.mode ?? 'Net Internal');
+  const [airtight, setAirtight] = useState(initial?.airtight ?? 'Standard Method');
+  const [thermalTest, setThermalTest] = useState(initial?.thermalTest ?? 'No Test Performed');
 
   // Status
   const [climStatus, setClimStatus] = useState('');
@@ -193,8 +198,9 @@ export default function Page(): React.JSX.Element {
   const [epcPaste, setEpcPaste] = useState('');
 
   const debounce = useRef<number | null>(null);
+  const autoSaveDebounce = useRef<number | null>(null);
 
-  // Auto-run climate on postcode/address/altitude changes (debounced)
+  // auto-climate on change
   useEffect(() => {
     if (!postcode && !address) return;
     if (debounce.current) window.clearTimeout(debounce.current);
@@ -209,13 +215,23 @@ export default function Page(): React.JSX.Element {
         setClimStatus(`Auto climate failed: ${e?.message || e}`);
       }
     }, 700);
-
-    return () => {
-      if (debounce.current) window.clearTimeout(debounce.current);
-    };
+    return () => { if (debounce.current) window.clearTimeout(debounce.current); };
   }, [postcode, address, altitude]);
 
-  // Altitude button
+  // auto-save to storage on any field change
+  const snapshot = useMemo(() => ({
+    reference, postcode, country, address, epcNo, uprn,
+    altitude, tex, meanAnnual, hdd, dwelling, attach, ageBand, occupants,
+    mode, airtight, thermalTest,
+  }), [reference, postcode, country, address, epcNo, uprn, altitude, tex, hdd, dwelling, attach, ageBand, occupants, mode, airtight, thermalTest]);
+
+  useEffect(() => {
+    if (autoSaveDebounce.current) window.clearTimeout(autoSaveDebounce.current);
+    autoSaveDebounce.current = window.setTimeout(() => safeSet(STORAGE_KEY, snapshot), 400);
+    return () => { if (autoSaveDebounce.current) window.clearTimeout(autoSaveDebounce.current); };
+  }, [snapshot]);
+
+  // altitude lookup
   const [latlonOverride, setLatlonOverride] = useState('');
   const onFindAltitude = async () => {
     try {
@@ -235,47 +251,16 @@ export default function Page(): React.JSX.Element {
     if (rrn) setEpcNo(rrn);
   };
 
-  // Reset & Save
+  // actions
+  const onSave = () => { safeSet(STORAGE_KEY, snapshot); alert('Saved to browser (localStorage).'); };
+  const onSaveContinue = () => { safeSet(STORAGE_KEY, snapshot); router.push('/ventilation'); };
   const resetAll = () => {
-    setReference('');
-    setPostcode('');
-    setCountry('England');
-    setAddress('');
-    setEpcNo('');
-    setUprn('');
-    setAltitude(0);
-    setTex(-3);
-    setHdd(2033);
-    setDwelling('');
-    setAttach('');
-    setAgeBand('');
-    setOccupants(2);
-    setMode('Net Internal');
-    setAirtight('Standard Method');
-    setThermalTest('No Test Performed');
-    setClimStatus('');
-    setAltStatus('');
-    setLatlonOverride('');
-    setEpcPaste('');
-  };
-
-  const savePayload = useMemo(
-    () => ({
-      reference, postcode, country, address, epcNo, uprn,
-      altitude, tex, meanAnnual, hdd,
-      dwelling, attach, ageBand, occupants,
-      mode, airtight, thermalTest,
-    }),
-    [reference, postcode, country, address, epcNo, uprn, altitude, tex, hdd, dwelling, attach, ageBand, occupants, mode, airtight, thermalTest]
-  );
-
-  const onSave = () => {
-    console.log('SAVE', savePayload);
-    alert('Saved locally (console). Wire to your backend when ready.');
-  };
-  const onSaveContinue = () => {
-    console.log('SAVE & CONTINUE', savePayload);
-    alert('Saved. Next pages (Ventilation → Heated Rooms) can be wired next.');
+    setReference(''); setPostcode(''); setCountry('England'); setAddress('');
+    setEpcNo(''); setUprn(''); setAltitude(0); setTex(-3); setHdd(2033);
+    setDwelling(''); setAttach(''); setAgeBand(''); setOccupants(2);
+    setMode('Net Internal'); setAirtight('Standard Method'); setThermalTest('No Test Performed');
+    setClimStatus(''); setAltStatus(''); setLatlonOverride(''); setEpcPaste('');
+    safeSet(STORAGE_KEY, {}); // clear persisted
   };
 
   return (
@@ -286,12 +271,10 @@ export default function Page(): React.JSX.Element {
       </div>
 
       <section style={card}>
-        {/* Import hint */}
-        <div style={{ ...row, marginBottom: 14, padding: 12, borderRadius: 10, background: '#f7f7f7' }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, padding: 12, borderRadius: 10, background: '#f7f7f7' }}>
           <strong>Import from PropertyChecker.co.uk</strong> <span>(optional)</span>
         </div>
 
-        {/* Top grid */}
         <div style={grid3}>
           <div>
             <Label>Reference *</Label>
@@ -322,7 +305,6 @@ export default function Page(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Location Data */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
         <div style={grid4}>
           <div>
@@ -337,7 +319,7 @@ export default function Page(): React.JSX.Element {
                 </div>
               </details>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-                <Button onClick={onFindAltitude}>Get altitude</Button>
+                <button onClick={onFindAltitude} style={secondaryBtn}>Get altitude</button>
                 <Input placeholder="(optional) 51.5,-0.12" value={latlonOverride} onChange={(e) => setLatlonOverride(e.target.value)} style={{ maxWidth: 180 }} />
                 <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
               </div>
@@ -360,7 +342,6 @@ export default function Page(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Property details */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Property Details</h3>
         <div style={grid4}>
           <div>
@@ -394,7 +375,6 @@ export default function Page(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Dimension spec */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Dimension Specification</h3>
         <div style={grid3}>
           <div>
@@ -417,15 +397,13 @@ export default function Page(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Auto climate status */}
         <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>{climStatus}</div>
 
-        {/* EPC parse */}
         <div style={{ marginTop: 18 }}>
           <h3 style={{ margin: '4px 0 8px' }}>EPC finder (from address)</h3>
-          <div style={{ ...row, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
             <a href="https://www.gov.uk/find-energy-certificate" target="_blank" rel="noreferrer">
-              <Button>Open GOV.UK EPC search →</Button>
+              <button style={secondaryBtn}>Open GOV.UK EPC search →</button>
             </a>
             <span style={{ color: '#666', fontSize: 12 }}>
               Find address → copy certificate page → paste → Parse.
@@ -438,13 +416,12 @@ export default function Page(): React.JSX.Element {
             onChange={(e) => setEpcPaste(e.target.value)}
             style={{ width: '100%', ...inputStyle, height: 140, resize: 'vertical' }}
           />
-          <div style={{ ...row, marginTop: 8 }}>
-            <Button onClick={onParseEpc}>Parse pasted text</Button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+            <button onClick={onParseEpc} style={secondaryBtn}>Parse pasted text</button>
             <span style={{ fontFamily: 'ui-monospace', fontSize: 12 }}>Detected EPC: {epcNo || '—'}</span>
           </div>
         </div>
 
-        {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
           <button onClick={resetAll} style={secondaryBtn}>Reset</button>
           <button onClick={onSave} style={secondaryBtn}>Save</button>
@@ -456,47 +433,58 @@ export default function Page(): React.JSX.Element {
 }
 
 /* ------------------------------ styles ------------------------------ */
-const card: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #e6e6e6',
-  borderRadius: 14,
-  padding: 16,
-};
-
-const grid3: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(3, 1fr)',
-  gap: 12,
-};
-const grid4: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(4, 1fr)',
-  gap: 12,
-};
-const row: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' };
-
+const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
+const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 };
+const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 };
 const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #ddd',
-  outline: 'none',
-  boxSizing: 'border-box',
+  width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box',
 };
-
 const primaryBtn: React.CSSProperties = {
-  background: '#111',
-  color: '#fff',
-  border: '1px solid #111',
-  padding: '12px 18px',
-  borderRadius: 12,
-  cursor: 'pointer',
+  background: '#111', color: '#fff', border: '1px solid #111', padding: '12px 18px', borderRadius: 12, cursor: 'pointer',
 };
 const secondaryBtn: React.CSSProperties = {
-  background: '#fff',
-  color: '#111',
-  border: '1px solid #ddd',
-  padding: '12px 18px',
-  borderRadius: 12,
-  cursor: 'pointer',
+  background: '#fff', color: '#111', border: '1px solid #ddd', padding: '12px 18px', borderRadius: 12, cursor: 'pointer',
 };
+
+
+
+// app/ventilation/page.tsx
+'use client';
+import React from 'react';
+import { useRouter } from 'next/navigation';
+
+const STORAGE_KEY_V = 'heatload:property';
+
+export default function Ventilation(): React.JSX.Element {
+  const router = useRouter();
+  const data = typeof window !== 'undefined'
+    ? JSON.parse(localStorage.getItem(STORAGE_KEY_V) || '{}')
+    : {};
+
+  return (
+    <main style={{ maxWidth: 900, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
+      <h1 style={{ fontSize: 26, marginBottom: 12 }}>Ventilation</h1>
+      <p style={{ color: '#666' }}>Stub page. We’ll build MCS ventilation inputs here.</p>
+
+      <div style={{ background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16, marginTop: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Context (read-only from Property)</h3>
+        <pre style={{ background: '#f8f8f8', padding: 12, borderRadius: 10, overflow: 'auto' }}>
+{JSON.stringify({
+  reference: data.reference,
+  postcode: data.postcode,
+  altitude: data.altitude,
+  designExternalTemp: data.tex,
+  hdd: data.hdd,
+}, null, 2)}
+        </pre>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 18 }}>
+          <button onClick={() => router.push('/')} style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid #ddd', background: '#fff' }}>← Back to Property</button>
+          <button onClick={() => alert('Next: Heated Rooms (to be implemented)')} style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid #111', background: '#111', color: '#fff' }}>
+            Continue to Heated Rooms →
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}
