@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-/* ---------------- storage helpers (why: guard SSR & corrupted JSON) ---------------- */
+/* ---------------- storage helpers ---------------- */
 const STORAGE_KEY = 'heatload:property';
 const safeGet = <T,>(k: string, fallback: T): T => {
   if (typeof window === 'undefined') return fallback;
@@ -120,7 +120,6 @@ function designTempFromDJF(mins: number[], altitudeMeters: number): number | nul
   const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0); // altitude correction
   return Math.round(lapse);
 }
-/* fallback to ensure design temp is never blank */
 function designTempRegionalFallback(lat: number, altitudeMeters: number): number {
   let base: number;
   if (lat < 51.5) base = -2;
@@ -162,13 +161,12 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
 
-/* ---------------------------------- UI ---------------------------------- */
 export default function Page(): React.JSX.Element {
   const router = useRouter();
 
-  // hydrate from storage once
-  const hydrated = useRef(false);
+  // hydrate from storage
   const initial = safeGet(STORAGE_KEY, null as any);
+
   // Property info
   const [reference, setReference] = useState(initial?.reference ?? '');
   const [postcode, setPostcode] = useState(initial?.postcode ?? '');
@@ -218,7 +216,7 @@ export default function Page(): React.JSX.Element {
     return () => { if (debounce.current) window.clearTimeout(debounce.current); };
   }, [postcode, address, altitude]);
 
-  // auto-save to storage on any field change
+  // auto-save
   const snapshot = useMemo(() => ({
     reference, postcode, country, address, epcNo, uprn,
     altitude, tex, meanAnnual, hdd, dwelling, attach, ageBand, occupants,
@@ -424,8 +422,8 @@ export default function Page(): React.JSX.Element {
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
           <button onClick={resetAll} style={secondaryBtn}>Reset</button>
-          <button onClick={onSave} style={secondaryBtn}>Save</button>
-          <button onClick={onSaveContinue} style={primaryBtn}>Save & Continue →</button>
+          <button onClick={() => { safeSet(STORAGE_KEY, snapshot); alert('Saved to browser (localStorage).'); }} style={secondaryBtn}>Save</button>
+          <button onClick={() => { safeSet(STORAGE_KEY, snapshot); router.push('/ventilation'); }} style={primaryBtn}>Save & Continue →</button>
         </div>
       </section>
     </main>
@@ -445,46 +443,3 @@ const primaryBtn: React.CSSProperties = {
 const secondaryBtn: React.CSSProperties = {
   background: '#fff', color: '#111', border: '1px solid #ddd', padding: '12px 18px', borderRadius: 12, cursor: 'pointer',
 };
-
-
-
-// app/ventilation/page.tsx
-'use client';
-import React from 'react';
-import { useRouter } from 'next/navigation';
-
-const STORAGE_KEY_V = 'heatload:property';
-
-export default function Ventilation(): React.JSX.Element {
-  const router = useRouter();
-  const data = typeof window !== 'undefined'
-    ? JSON.parse(localStorage.getItem(STORAGE_KEY_V) || '{}')
-    : {};
-
-  return (
-    <main style={{ maxWidth: 900, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
-      <h1 style={{ fontSize: 26, marginBottom: 12 }}>Ventilation</h1>
-      <p style={{ color: '#666' }}>Stub page. We’ll build MCS ventilation inputs here.</p>
-
-      <div style={{ background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16, marginTop: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Context (read-only from Property)</h3>
-        <pre style={{ background: '#f8f8f8', padding: 12, borderRadius: 10, overflow: 'auto' }}>
-{JSON.stringify({
-  reference: data.reference,
-  postcode: data.postcode,
-  altitude: data.altitude,
-  designExternalTemp: data.tex,
-  hdd: data.hdd,
-}, null, 2)}
-        </pre>
-
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 18 }}>
-          <button onClick={() => router.push('/')} style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid #ddd', background: '#fff' }}>← Back to Property</button>
-          <button onClick={() => alert('Next: Heated Rooms (to be implemented)')} style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid #111', background: '#111', color: '#fff' }}>
-            Continue to Heated Rooms →
-          </button>
-        </div>
-      </div>
-    </main>
-  );
-}
