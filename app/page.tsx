@@ -1,9 +1,9 @@
 // app/page.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-/* ---------------- helpers (single-file, client only) ---------------- */
+/* ---------------- core helpers ---------------- */
 type LatLon = { lat: number; lon: number; src: 'postcodes.io' | 'nominatim' | 'latlon' };
 const DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
@@ -101,12 +101,10 @@ function designTempFromDJF(mins: number[], altitudeMeters: number): number | nul
   const djfVals = djfIdx.map((i) => mins[i]).filter((v) => isFinite(v));
   if (!djfVals.length) return null;
   const base = Math.min(...djfVals);
-  const safety = base - 2; // conservative
-  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0); // °C/m
+  const safety = base - 2;                               // why: conservative buffer
+  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0); // std lapse rate °C/m
   return Math.round(lapse);
 }
-
-/* ----- regional fallback for design temp (ensures never null) ----- */
 function designTempRegionalFallback(lat: number, altitudeMeters: number): number {
   let base: number;
   if (lat < 51.5) base = -2;
@@ -121,19 +119,14 @@ async function autoClimateCalc(postcode: string, address: string, altitudeMeters
   const geo = await geocodeAny(postcode, address);
   let hdd: number | undefined;
   try { hdd = await fetchHDD(geo.lat, geo.lon); } catch {}
-
   let designTemp: number | null = null;
   try {
     const normals = await fetchMonthlyNormals(geo.lat, geo.lon);
     if (!isFinite(hdd as number)) hdd = hddFromMeans(normals.mean);
     designTemp = designTempFromDJF(normals.min, altitudeMeters);
-  } catch {
-    // ignore; fallback below
-  }
-
-  if (!isFinite(hdd as number)) hdd = 2033; // UK typical fallback
+  } catch {}
+  if (!isFinite(hdd as number)) hdd = 2033;                       // UK fallback
   if (!isFinite(designTemp as number)) designTemp = designTempRegionalFallback(geo.lat, altitudeMeters);
-
   return { hdd: hdd!, designTemp: designTemp!, lat: geo.lat, lon: geo.lon };
 }
 
@@ -142,173 +135,366 @@ function extractRRN(text: string): string | null {
   return m ? m[1] : null;
 }
 
-/* ------------------------------- UI ------------------------------- */
-function AutoAltitude({
-  postcode, address, onAltitude,
-}: { postcode: string; address: string; onAltitude: (m: number) => void }) {
-  const [latlonOverride, setLatlonOverride] = useState('');
-  const [status, setStatus] = useState('');
-  const run = async () => {
-    try {
-      setStatus('Looking up…');
-      const geo = await geocodeAny(postcode, address, latlonOverride);
-      const elev = await elevation(geo.lat, geo.lon);
-      onAltitude(Math.round(elev.metres));
-      setStatus(`${Math.round(elev.metres)} m • geo:${geo.src} • elev:${elev.provider} @ ${geo.lat.toFixed(5)},${geo.lon.toFixed(5)}`);
-    } catch (e: any) {
-      setStatus(`Failed: ${e?.message || String(e)}`);
-    }
-  };
+/* -------------------------- small components -------------------------- */
+function Label({ children }: { children: React.ReactNode }) {
+  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
+}
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
+}
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
+}
+function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-      <button onClick={run}>Auto: Find altitude</button>
-      <input
-        placeholder="(optional) lat,long e.g. 51.5,-0.12"
-        value={latlonOverride}
-        onChange={(e) => setLatlonOverride(e.target.value)}
-        style={{ minWidth: 260 }}
-      />
-      <span style={{ color: '#555', fontSize: 12 }}>{status}</span>
-    </div>
+    <button
+      {...props}
+      style={{
+        borderRadius: 10,
+        padding: '10px 14px',
+        border: '1px solid #ddd',
+        background: props.disabled ? '#eee' : '#111',
+        color: props.disabled ? '#888' : '#fff',
+        cursor: props.disabled ? 'not-allowed' : 'pointer',
+      }}
+    />
   );
 }
 
+/* ---------------------------------- UI ---------------------------------- */
 export default function Page() {
+  // Property info
   const [reference, setReference] = useState('');
   const [postcode, setPostcode] = useState('');
+  const [country, setCountry] = useState('England');
   const [address, setAddress] = useState('');
   const [epcNo, setEpcNo] = useState('');
-  const [altitude, setAltitude] = useState<number | ''>(0);
-  const [tex, setTex] = useState<number | ''>('');
-  const [hdd, setHdd] = useState<number | ''>('');
-  const [climStatus, setClimStatus] = useState('');
-  const [epcPaste, setEpcPaste] = useState('');
-  const [epcDbg, setEpcDbg] = useState('—');
+  const [uprn, setUprn] = useState('');
 
-  const onClimate = async () => {
+  // Location/climate
+  const [altitude, setAltitude] = useState<number | ''>(0);
+  const [tex, setTex] = useState<number | ''>(-3);
+  const [hdd, setHdd] = useState<number | ''>(2033);
+  const meanAnnual = 10.2;
+
+  // Details
+  const [dwelling, setDwelling] = useState('');
+  const [attach, setAttach] = useState('');
+  const [ageBand, setAgeBand] = useState('');
+  const [occupants, setOccupants] = useState(2);
+  const [mode, setMode] = useState('Net Internal');
+  const [airtight, setAirtight] = useState('Standard Method');
+  const [thermalTest, setThermalTest] = useState('No Test Performed');
+
+  // Status
+  const [climStatus, setClimStatus] = useState('');
+  const [altStatus, setAltStatus] = useState('');
+  const [epcPaste, setEpcPaste] = useState('');
+
+  const debounce = useRef<number | null>(null);
+
+  // (a) Auto-run climate on postcode/address/altitude changes (debounced)
+  useEffect(() => {
+    if (!postcode && !address) return;
+    if (debounce.current) window.clearTimeout(debounce.current);
+    debounce.current = window.setTimeout(async () => {
+      try {
+        setClimStatus('Auto climate: looking up…');
+        const res = await autoClimateCalc(postcode, address, Number(altitude) || 0);
+        setHdd(res.hdd);
+        setTex(res.designTemp);
+        setClimStatus(`Auto climate ✓  HDD ${res.hdd}, DesignT ${res.designTemp}°C`);
+      } catch (e: any) {
+        setClimStatus(`Auto climate failed: ${e?.message || e}`);
+      }
+    }, 700);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postcode, address, altitude]);
+
+  // Altitude button
+  const [latlonOverride, setLatlonOverride] = useState('');
+  const onFindAltitude = async () => {
     try {
-      setClimStatus('Looking up…');
-      const res = await autoClimateCalc(postcode, address, Number(altitude) || 0);
-      setHdd(res.hdd);
-      setTex(res.designTemp);
-      setClimStatus(`OK • HDD=${res.hdd}, DesignT=${res.designTemp}°C @ ${res.lat.toFixed(4)},${res.lon.toFixed(4)}`);
+      setAltStatus('Looking up…');
+      const geo = await geocodeAny(postcode, address, latlonOverride);
+      const elev = await elevation(geo.lat, geo.lon);
+      setAltitude(Math.round(elev.metres));
+      setAltStatus(`Found ${Math.round(elev.metres)} m • geo:${geo.src} • elev:${elev.provider}`);
     } catch (e: any) {
-      setClimStatus(`Failed: ${e?.message || String(e)}`);
+      setAltStatus(`Failed: ${e?.message || String(e)}`);
     }
   };
+
+  // EPC parse
   const onParseEpc = () => {
     const rrn = extractRRN(epcPaste);
-    setEpcDbg(rrn || 'not found');
     if (rrn) setEpcNo(rrn);
   };
 
+  // (b) Reset & Save
+  const resetAll = () => {
+    setReference('');
+    setPostcode('');
+    setCountry('England');
+    setAddress('');
+    setEpcNo('');
+    setUprn('');
+    setAltitude(0);
+    setTex(-3);
+    setHdd(2033);
+    setDwelling('');
+    setAttach('');
+    setAgeBand('');
+    setOccupants(2);
+    setMode('Net Internal');
+    setAirtight('Standard Method');
+    setThermalTest('No Test Performed');
+    setClimStatus('');
+    setAltStatus('');
+    setLatlonOverride('');
+    setEpcPaste('');
+  };
+
+  const savePayload = useMemo(
+    () => ({
+      reference, postcode, country, address, epcNo, uprn,
+      altitude, tex, meanAnnual, hdd,
+      dwelling, attach, ageBand, occupants,
+      mode, airtight, thermalTest,
+    }),
+    [reference, postcode, country, address, epcNo, uprn, altitude, tex, hdd, dwelling, attach, ageBand, occupants, mode, airtight, thermalTest]
+  );
+
+  const onSave = () => {
+    // why: demo placeholder; back-end can be added later
+    console.log('SAVE', savePayload);
+    alert('Saved locally (console). Wire to your backend when ready.');
+  };
+  const onSaveContinue = () => {
+    console.log('SAVE & CONTINUE', savePayload);
+    alert('Saved. Next pages (Ventilation → Heated Rooms) can be wired next.');
+  };
+
   return (
-    <main style={{ maxWidth: 1100, margin: '0 auto', padding: 20, fontFamily: 'system-ui' }}>
-      <h1 style={{ margin: 0, fontSize: 22 }}>Heat Demand Calculator (MCS-style)</h1>
-      <p style={{ color: '#555', marginTop: 4, fontSize: 12 }}>
+    <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
+      <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Heat Load Calculator (MCS-style)</h1>
+      <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>
         Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results
-      </p>
+      </div>
 
       <section style={card}>
-        <h2>Property Information</h2>
+        {/* Import hint */}
+        <div style={{ ...row, marginBottom: 14, padding: 12, borderRadius: 10, background: '#f7f7f7' }}>
+          <strong>Import from PropertyChecker.co.uk</strong> <span>(optional)</span>
+        </div>
 
+        {/* Top grid */}
         <div style={grid3}>
           <div>
-            <label>Reference *</label>
-            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Project ref" />
+            <Label>Reference *</Label>
+            <Input placeholder="e.g., Project ABC - v1" value={reference} onChange={(e) => setReference(e.target.value)} />
           </div>
           <div>
-            <label>Postcode *</label>
-            <input value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="SS8 9HB" />
+            <Label>Postcode *</Label>
+            <Input placeholder="e.g., SS8 9HB" value={postcode} onChange={(e) => setPostcode(e.target.value)} />
           </div>
           <div>
-            <label>EPC Number *</label>
-            <input value={epcNo} onChange={(e) => setEpcNo(e.target.value)} placeholder="1234-5678-9012-3456-7890" />
-          </div>
-        </div>
-
-        <div style={{ ...grid3, marginTop: 8 }}>
-          <div>
-            <label>Address</label>
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="10 Example Rd, Town" />
-          </div>
-          <div>
-            <label>Country</label>
-            <select defaultValue="England">
+            <Label>Country</Label>
+            <Select value={country} onChange={(e) => setCountry(e.target.value)}>
               <option>England</option><option>Wales</option><option>Scotland</option><option>Northern Ireland</option>
-            </select>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Address (editable)</Label>
+            <Input placeholder="e.g., 10 Example Road, Town" value={address} onChange={(e) => setAddress(e.target.value)} />
           </div>
           <div>
-            <label>UPRN (optional)</label>
-            <input />
+            <Label>EPC Number *</Label>
+            <Input placeholder="e.g., 1234-5678-9012-3456-7890" value={epcNo} onChange={(e) => setEpcNo(e.target.value)} />
+          </div>
+          <div>
+            <Label>UPRN (optional)</Label>
+            <Input placeholder="Unique Property Reference Number" value={uprn} onChange={(e) => setUprn(e.target.value)} />
           </div>
         </div>
 
-        <h3 style={{ marginTop: 16 }}>Location & Climate</h3>
+        {/* Location Data */}
+        <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
         <div style={grid4}>
           <div>
-            <label>Altitude (m)</label>
-            <input
-              type="number"
-              value={altitude}
-              onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))}
-            />
-            <AutoAltitude postcode={postcode} address={address} onAltitude={(m) => setAltitude(Math.round(m))} />
+            <Label>Altitude (m)</Label>
+            <Input type="number" value={altitude} onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))} />
+            <div style={{ marginTop: 8 }}>
+              <details>
+                <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude from getthedata.com</summary>
+                <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
+                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can also enter
+                  <em> lat,long </em> override:
+                </div>
+              </details>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                <Button onClick={onFindAltitude}>Get altitude</Button>
+                <Input placeholder="(optional) 51.5,-0.12" value={latlonOverride} onChange={(e) => setLatlonOverride(e.target.value)} style={{ maxWidth: 180 }} />
+                <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
+              </div>
+            </div>
           </div>
+
           <div>
-            <label>Design External Air Temp (°C)</label>
-            <input type="number" value={tex} onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Label>Design External Air Temp (°C)</Label>
+            <Input type="number" value={tex} onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))} />
           </div>
+
           <div>
-            <label>Mean Annual External Air Temp (°C)</label>
-            <input type="number" value={10.2} readOnly />
+            <Label>Mean Annual External Air Temp (°C)</Label>
+            <Input type="number" value={meanAnnual} readOnly />
           </div>
+
           <div>
-            <label>Heating Degree Days (base 15.5°C)</label>
-            <input type="number" value={hdd} onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
+            <Input type="number" value={hdd} onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))} />
           </div>
         </div>
 
-        <div style={lightCard}>
-          <h3>Auto climate from Postcode/Address</h3>
-          <div style={row}>
-            <button onClick={onClimate}>Auto: Fill Design Temp & HDD</button>
-            <span style={{ color: '#666', fontSize: 12 }}>{climStatus}</span>
+        {/* Property details */}
+        <h3 style={{ marginTop: 18, marginBottom: 8 }}>Property Details</h3>
+        <div style={grid4}>
+          <div>
+            <Label>Dwelling Type</Label>
+            <Select value={dwelling} onChange={(e) => setDwelling(e.target.value)}>
+              <option value="">Select</option>
+              <option>Detached</option><option>Semi-detached</option><option>Terraced</option>
+              <option>Flat</option><option>Bungalow</option>
+            </Select>
           </div>
-          <div style={{ color: '#666', fontSize: 12 }}>
-            HDD via Open-Meteo normals. Design temp from DJF monthly minima with altitude correction (−0.0065 °C/m).
-            Falls back to regional value so it’s never blank. All fields are editable.
+          <div>
+            <Label>Attachment (what is this?)</Label>
+            <Select value={attach} onChange={(e) => setAttach(e.target.value)}>
+              <option value="">Select attachment</option>
+              <option>Mid</option><option>End</option><option>Corner</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Age Band</Label>
+            <Select value={ageBand} onChange={(e) => setAgeBand(e.target.value)}>
+              <option value="">Select age band</option>
+              <option>pre-1900</option><option>1900-1929</option><option>1930-1949</option>
+              <option>1950-1966</option><option>1967-1975</option><option>1976-1982</option>
+              <option>1983-1990</option><option>1991-1995</option><option>1996-2002</option>
+              <option>2003-2006</option><option>2007-2011</option><option>2012-present</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Occupants</Label>
+            <Input type="number" value={occupants} onChange={(e) => setOccupants(Number(e.target.value || 0))} />
           </div>
         </div>
 
-        <div style={lightCard}>
-          <h3>EPC finder (from address)</h3>
-          <div style={row}>
+        {/* Dimension spec */}
+        <h3 style={{ marginTop: 18, marginBottom: 8 }}>Dimension Specification</h3>
+        <div style={grid3}>
+          <div>
+            <Label>Mode</Label>
+            <Select value={mode} onChange={(e) => setMode(e.target.value)}>
+              <option>Net Internal</option><option>Gross Internal</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Airtightness Method</Label>
+            <Select value={airtight} onChange={(e) => setAirtight(e.target.value)}>
+              <option>Standard Method</option><option>Measured n50</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Thermal Performance Test</Label>
+            <Select value={thermalTest} onChange={(e) => setThermalTest(e.target.value)}>
+              <option>No Test Performed</option><option>Thermal Imaging</option><option>Co-heating</option>
+            </Select>
+          </div>
+        </div>
+
+        {/* Auto climate status */}
+        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>{climStatus}</div>
+
+        {/* EPC parse */}
+        <div style={{ marginTop: 18 }}>
+          <h3 style={{ margin: '4px 0 8px' }}>EPC finder (from address)</h3>
+          <div style={{ ...row, marginBottom: 8 }}>
             <a href="https://www.gov.uk/find-energy-certificate" target="_blank" rel="noreferrer">
-              <button>Open GOV.UK EPC search →</button>
+              <Button>Open GOV.UK EPC search →</Button>
             </a>
-            <span style={{ color: '#666', fontSize: 12 }}>Find address → copy certificate page → paste → Parse.</span>
+            <span style={{ color: '#666', fontSize: 12 }}>
+              Find address → copy certificate page → paste → Parse.
+            </span>
           </div>
           <textarea
             rows={6}
             placeholder="Paste EPC page text here"
             value={epcPaste}
             onChange={(e) => setEpcPaste(e.target.value)}
-            style={{ width: '100%' }}
+            style={{ width: '100%', ...inputStyle, height: 140, resize: 'vertical' }}
           />
-          <div style={row}>
-            <button onClick={onParseEpc}>Parse pasted text</button>
-            <span style={{ fontFamily: 'ui-monospace', fontSize: 12 }}>Detected EPC: {epcDbg}</span>
+          <div style={{ ...row, marginTop: 8 }}>
+            <Button onClick={onParseEpc}>Parse pasted text</Button>
+            <span style={{ fontFamily: 'ui-monospace', fontSize: 12 }}>Detected EPC: {epcNo || '—'}</span>
           </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+          <button onClick={resetAll} style={secondaryBtn}>Reset</button>
+          <button onClick={onSave} style={secondaryBtn}>Save</button>
+          <button onClick={onSaveContinue} style={primaryBtn}>Save & Continue →</button>
         </div>
       </section>
     </main>
   );
 }
 
-/* ----------------------------- inline styles ----------------------------- */
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
-const lightCard: React.CSSProperties = { ...card, marginTop: 12 };
-const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 };
-const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 };
+/* ------------------------------ styles ------------------------------ */
+const card: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #e6e6e6',
+  borderRadius: 14,
+  padding: 16,
+};
+
+const grid3: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, 1fr)',
+  gap: 12,
+};
+const grid4: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(4, 1fr)',
+  gap: 12,
+};
 const row: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' };
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #ddd',
+  outline: 'none',
+  boxSizing: 'border-box',
+};
+
+const primaryBtn: React.CSSProperties = {
+  background: '#111',
+  color: '#fff',
+  border: '1px solid #111',
+  padding: '12px 18px',
+  borderRadius: 12,
+  cursor: 'pointer',
+};
+const secondaryBtn: React.CSSProperties = {
+  background: '#fff',
+  color: '#111',
+  border: '1px solid #ddd',
+  padding: '12px 18px',
+  borderRadius: 12,
+  cursor: 'pointer',
+};
+
