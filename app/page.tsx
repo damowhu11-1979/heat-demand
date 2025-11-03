@@ -42,7 +42,7 @@ async function geocodeAny(postcode: string, address: string, latlonText?: string
   const pc = toPC(postcode || '');
   if (pc) {
     try { return await geocodePostcode(pc); }
-    catch { return await geocodeAddress(pc); } // fallback if throttled/invalid
+    catch { return await geocodeAddress(pc); } // why: fallback if throttled/invalid
   }
   if (!address || address.trim().length < 4) throw new Error('enter postcode or address');
   return await geocodeAddress(address);
@@ -88,19 +88,6 @@ async function fetchMonthlyNormals(lat: number, lon: number): Promise<{ mean: nu
   return { mean, min };
 }
 
-/* ----- fallback design temperature when normals aren't available ----- */
-function designTempRegionalFallback(lat: number, lon: number, altitudeMeters: number): number {
-  // Simple UK bands by latitude (approx), then altitude correction (why: robust offline fallback).
-  let base: number;
-  if (lat < 51.5) base = -2;
-  else if (lat < 52.5) base = -3;
-  else if (lat < 53.5) base = -4;
-  else if (lat < 55.0) base = -5;
-  else base = -6;
-  const corrected = base - 0.0065 * (Number(altitudeMeters) || 0);
-  return Math.round(corrected);
-}
-
 function hddFromMeans(means: number[]): number {
   let sum = 0;
   for (let m = 0; m < 12; m++) {
@@ -114,9 +101,20 @@ function designTempFromDJF(mins: number[], altitudeMeters: number): number | nul
   const djfVals = djfIdx.map((i) => mins[i]).filter((v) => isFinite(v));
   if (!djfVals.length) return null;
   const base = Math.min(...djfVals);
-  const safety = base - 2;
-  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0);
+  const safety = base - 2; // conservative
+  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0); // °C/m
   return Math.round(lapse);
+}
+
+/* ----- regional fallback for design temp (ensures never null) ----- */
+function designTempRegionalFallback(lat: number, altitudeMeters: number): number {
+  let base: number;
+  if (lat < 51.5) base = -2;
+  else if (lat < 52.5) base = -3;
+  else if (lat < 53.5) base = -4;
+  else if (lat < 55.0) base = -5;
+  else base = -6;
+  return Math.round(base - 0.0065 * (Number(altitudeMeters) || 0));
 }
 
 async function autoClimateCalc(postcode: string, address: string, altitudeMeters: number) {
@@ -130,13 +128,11 @@ async function autoClimateCalc(postcode: string, address: string, altitudeMeters
     if (!isFinite(hdd as number)) hdd = hddFromMeans(normals.mean);
     designTemp = designTempFromDJF(normals.min, altitudeMeters);
   } catch {
-    // ignore; we'll use regional fallback below
+    // ignore; fallback below
   }
 
   if (!isFinite(hdd as number)) hdd = 2033; // UK typical fallback
-  if (!isFinite(designTemp as number)) {
-    designTemp = designTempRegionalFallback(geo.lat, geo.lon, altitudeMeters);
-  }
+  if (!isFinite(designTemp as number)) designTemp = designTempRegionalFallback(geo.lat, altitudeMeters);
 
   return { hdd: hdd!, designTemp: designTemp!, lat: geo.lat, lon: geo.lon };
 }
@@ -144,68 +140,6 @@ async function autoClimateCalc(postcode: string, address: string, altitudeMeters
 function extractRRN(text: string): string | null {
   const m = String(text || '').match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
   return m ? m[1] : null;
-}
-
-/* --------- Property age band (guess from EPC text / heuristics) --------- */
-const AGE_BANDS = [
-  'pre-1900', '1900-1929', '1930-1949', '1950-1966',
-  '1967-1975', '1976-1982', '1983-1990', '1991-1995',
-  '1996-2002', '2003-2006', '2007-2011', '2012-present'
-] as const;
-type AgeBand = typeof AGE_BANDS[number];
-
-function extractAgeBand(epcText: string, address: string): AgeBand | null {
-  const t = String(epcText || '').replace(/\s+/g, ' ');
-  // EPC official label
-  const m1 = t.match(/Construction age band\s*[:\-]?\s*([A-Za-z0-9\- ]{4,20})/i);
-  if (m1) {
-    const norm = m1[1].toLowerCase();
-    for (const b of AGE_BANDS) if (norm.includes(b.replace(/_/g, ''))) return b;
-    // Map common EPC words to bands
-    if (/before\s*1900|pre\s*1900/i.test(norm)) return 'pre-1900';
-    if (/1900-1929/i.test(norm)) return '1900-1929';
-    if (/1930-1949/i.test(norm)) return '1930-1949';
-    if (/1950-1966/i.test(norm)) return '1950-1966';
-    if (/1967-1975/i.test(norm)) return '1967-1975';
-    if (/1976-1982/i.test(norm)) return '1976-1982';
-    if (/1983-1990/i.test(norm)) return '1983-1990';
-    if (/1991-1995/i.test(norm)) return '1991-1995';
-    if (/1996-2002/i.test(norm)) return '1996-2002';
-    if (/2003-2006/i.test(norm)) return '2003-2006';
-    if (/2007-2011/i.test(norm)) return '2007-2011';
-    if (/2012|present|after\s*2012|2013\+?/i.test(norm)) return '2012-present';
-  }
-  const m2 = t.match(/Built (?:in|between)\s*([0-9]{4}\s*(?:-|to)\s*[0-9]{4}|before\s*1900|after\s*2012)/i);
-  if (m2) {
-    const s = m2[1];
-    if (/before\s*1900/i.test(s)) return 'pre-1900';
-    const mm = s.match(/(\d{4}).*?(\d{4})/);
-    if (mm) {
-      const y1 = +mm[1], y2 = +mm[2];
-      const yr = Math.round((y1 + y2) / 2);
-      return yearToBand(yr);
-    }
-  }
-  // Heuristics on address keywords (very rough; editable afterward)
-  const a = String(address || '').toLowerCase();
-  if (/apartment|flat|maisonette/.test(a)) return '1967-1995' as any;
-  if (/terrace|row/.test(a)) return '1900-1949' as any;
-  if (/new build|estate|drive|close|cul-de-sac|way/.test(a)) return '1996-2002';
-  return null;
-}
-function yearToBand(y: number): AgeBand {
-  if (y < 1900) return 'pre-1900';
-  if (y <= 1929) return '1900-1929';
-  if (y <= 1949) return '1930-1949';
-  if (y <= 1966) return '1950-1966';
-  if (y <= 1975) return '1967-1975';
-  if (y <= 1982) return '1976-1982';
-  if (y <= 1990) return '1983-1990';
-  if (y <= 1995) return '1991-1995';
-  if (y <= 2002) return '1996-2002';
-  if (y <= 2006) return '2003-2006';
-  if (y <= 2011) return '2007-2011';
-  return '2012-present';
 }
 
 /* ------------------------------- UI ------------------------------- */
@@ -250,7 +184,6 @@ export default function Page() {
   const [climStatus, setClimStatus] = useState('');
   const [epcPaste, setEpcPaste] = useState('');
   const [epcDbg, setEpcDbg] = useState('—');
-  const [ageBand, setAgeBand] = useState<AgeBand | ''>('');
 
   const onClimate = async () => {
     try {
@@ -267,10 +200,6 @@ export default function Page() {
     const rrn = extractRRN(epcPaste);
     setEpcDbg(rrn || 'not found');
     if (rrn) setEpcNo(rrn);
-  };
-  const onGuessAge = () => {
-    const g = extractAgeBand(epcPaste, address);
-    setAgeBand((g as AgeBand) || '');
   };
 
   return (
@@ -304,15 +233,10 @@ export default function Page() {
             <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="10 Example Rd, Town" />
           </div>
           <div>
-            <label>Property Age Band</label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select value={ageBand} onChange={(e) => setAgeBand(e.target.value as AgeBand)}>
-                <option value="">— select —</option>
-                {AGE_BANDS.map((b) => (<option key={b} value={b}>{b}</option>))}
-              </select>
-              <button onClick={onGuessAge}>Smart guess</button>
-              <span style={{ color: '#666', fontSize: 12 }}>Editable override</span>
-            </div>
+            <label>Country</label>
+            <select defaultValue="England">
+              <option>England</option><option>Wales</option><option>Scotland</option><option>Northern Ireland</option>
+            </select>
           </div>
           <div>
             <label>UPRN (optional)</label>
@@ -352,8 +276,8 @@ export default function Page() {
             <span style={{ color: '#666', fontSize: 12 }}>{climStatus}</span>
           </div>
           <div style={{ color: '#666', fontSize: 12 }}>
-            HDD via Open-Meteo normals. Design temp from DJF monthly minima with altitude correction (−0.0065 °C/m). 
-            If unavailable, a regional fallback is applied automatically. All values can be overridden.
+            HDD via Open-Meteo normals. Design temp from DJF monthly minima with altitude correction (−0.0065 °C/m).
+            Falls back to regional value so it’s never blank. All fields are editable.
           </div>
         </div>
 
@@ -388,4 +312,3 @@ const lightCard: React.CSSProperties = { ...card, marginTop: 12 };
 const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 };
 const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 };
 const row: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' };
-
