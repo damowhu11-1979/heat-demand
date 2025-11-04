@@ -1,23 +1,53 @@
 name: Deploy Next.js (static) to GitHub Pages
+
 on:
-  push: { branches: [ main ] }
+  push:
+    branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
-concurrency: { group: "pages", cancel-in-progress: true }
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: 'npm' }
-      - run: npm install
-      - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: ./out }
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Build postcode climate JSON from your ODS (if the file exists)
+      - name: Build postcode climate JSON
+        run: |
+          if [ -f "post codes spf data climate.ods" ]; then
+            npm run ods:json
+          else
+            echo "ODS not found, skipping JSON generation."
+          fi
+
+      # Build static site into ./out (see package.json note below)
+      - name: Build (Next -> static)
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -27,11 +57,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
- name: Install
-  run: npm ci
-
-- name: Build postcode climate JSON
-  run: npm run ods:json
-
-- name: Build
-  run: npm run build
