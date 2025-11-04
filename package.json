@@ -1,6 +1,5 @@
-// package.json  (root)
 {
-  "name": "nextjs",
+  "name": "heat-demand",
   "version": "0.1.0",
   "private": true,
   "scripts": {
