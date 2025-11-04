@@ -1,53 +1,51 @@
-// app/page.tsx
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-/* ---------------- storage helpers ---------------- */
+/* ---------- storage helpers ---------- */
 const STORAGE_KEY = 'heatload:property';
-const safeGet = <T,>(k: string, fallback: T): T => {
-  if (typeof window === 'undefined') return fallback;
-  try { const v = window.localStorage.getItem(k); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
+const safeGet = <T,>(k: string, fb: T): T => {
+  if (typeof window === 'undefined') return fb;
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) as T : fb; } catch { return fb; }
 };
 const safeSet = (k: string, v: unknown) => { if (typeof window !== 'undefined') try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-/* ---------------- postcode table (local first) ---------------- */
+/* ---------- local postcode table ---------- */
 type LocalClimateRow = { outcode: string; designTemp?: number; hdd?: number };
-const localClimateCache: { rows?: LocalClimateRow[] } = {};
-async function loadLocalClimate(): Promise<LocalClimateRow[] | null> {
-  if (localClimateCache.rows) return localClimateCache.rows;
+const localCache: { rows?: LocalClimateRow[] } = {};
+
+async function loadLocal(): Promise<LocalClimateRow[] | null> {
+  if (localCache.rows) return localCache.rows;
   try {
-    const r = await fetch('/climate/postcode_climate.json', { cache: 'no-store' });
+    const r = await fetch('/climate/postcode_climate.json', { cache: 'force-cache' });
     if (!r.ok) return null;
-    const rows = (await r.json()) as LocalClimateRow[];
-    localClimateCache.rows = rows;
+    const rows = await r.json() as LocalClimateRow[];
+    localCache.rows = rows;
     return rows;
   } catch { return null; }
 }
-const normalizeOutcode = (pc: string): { full?: string; area?: string } => {
+const normOutcode = (pc: string): { full?: string; area?: string } => {
   const m = (pc || '').toUpperCase().replace(/\s+/g, '').match(/^([A-Z]{1,2}\d[A-Z\d]?)/);
   if (!m) return {};
-  const full = m[1];                                   // e.g. SS8
-  const area = full.replace(/\d.*$/, '');              // e.g. SS
+  const full = m[1];                    // e.g. SS8
+  const area = full.replace(/\d.*$/, ''); // e.g. SS
   return { full, area };
 };
-async function lookupLocalClimate(postcode: string): Promise<{ designTemp?: number; hdd?: number } | null> {
-  const table = await loadLocalClimate();
-  if (!table) return null;
-  const { full, area } = normalizeOutcode(postcode);
+async function lookupLocal(pc: string) {
+  const t = await loadLocal(); if (!t) return null;
+  const { full, area } = normOutcode(pc);
   const hit =
-    (full && table.find(r => r.outcode.toUpperCase() === full)) ||
-    (area && table.find(r => r.outcode.toUpperCase() === area)) ||
+    (full && t.find(r => r.outcode.toUpperCase() === full)) ||
+    (area && t.find(r => r.outcode.toUpperCase() === area)) ||
     null;
   if (!hit) return null;
   return { designTemp: hit.designTemp, hdd: hit.hdd };
 }
 
-/* ---------------- core helpers (fallback APIs) ---------------- */
+/* ---------- API fallback helpers ---------- */
 type LatLon = { lat: number; lon: number; src: 'postcodes.io' | 'nominatim' | 'latlon' };
 const DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
 const toPC = (s: string) => {
   const raw = String(s || '').toUpperCase().replace(/\s+/g, '');
   const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/);
@@ -55,12 +53,10 @@ const toPC = (s: string) => {
 };
 const asLatLon = (s: string) => {
   const m = String(s || '').trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
-  if (!m) return null;
-  const lat = +m[1], lon = +m[2];
+  if (!m) return null; const lat = +m[1], lon = +m[2];
   if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   return { lat, lon };
 };
-
 async function geocodePostcode(pc: string): Promise<LatLon> {
   const url = `https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`;
   const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(`postcodes.io ${r.status}`);
@@ -75,33 +71,30 @@ async function geocodeAddress(addr: string): Promise<LatLon> {
   return { lat: +a[0].lat, lon: +a[0].lon, src: 'nominatim' };
 }
 async function geocodeAny(postcode: string, address: string, latlonText?: string): Promise<LatLon> {
-  const ll = latlonText ? asLatLon(latlonText) : null;
-  if (ll) return { ...ll, src: 'latlon' };
+  const ll = latlonText ? asLatLon(latlonText) : null; if (ll) return { ...ll, src: 'latlon' };
   const pc = toPC(postcode || '');
   if (pc) { try { return await geocodePostcode(pc); } catch { return await geocodeAddress(pc); } }
   if (!address || address.trim().length < 4) throw new Error('enter postcode or address');
   return await geocodeAddress(address);
 }
-async function elevation(lat: number, lon: number): Promise<{ metres: number; provider: string }> {
+async function elevation(lat: number, lon: number) {
   try {
-    const u = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`;
-    const r = await fetch(u, { cache: 'no-store' });
-    if (!r.ok) throw new Error('open-elevation http');
-    const j = await r.json(); const v = j?.results?.[0]?.elevation;
-    if (!isFinite(v)) throw new Error('open-elevation no result');
+    const r = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('open-elevation http'); const j = await r.json();
+    const v = j?.results?.[0]?.elevation; if (!isFinite(v)) throw new Error('open-elevation no result');
     return { metres: +v, provider: 'open-elevation' };
   } catch {
-    const u2 = `https://api.opentopodata.org/v1/eudem25m?locations=${lat},${lon}`;
-    const r2 = await fetch(u2, { cache: 'no-store' });
-    if (!r2.ok) throw new Error('opentopodata http');
-    const j2 = await r2.json(); const v2 = j2?.results?.[0]?.elevation;
-    if (!isFinite(v2)) throw new Error('opentopodata no result');
+    const r2 = await fetch(`https://api.opentopodata.org/v1/eudem25m?locations=${lat},${lon}`, { cache: 'no-store' });
+    if (!r2.ok) throw new Error('opentopodata http'); const j2 = await r2.json();
+    const v2 = j2?.results?.[0]?.elevation; if (!isFinite(v2)) throw new Error('opentopodata no result');
     return { metres: +v2, provider: 'opentopodata:eudem25m' };
   }
 }
 async function fetchHDD(lat: number, lon: number): Promise<number> {
-  const url = `https://climate-api.open-meteo.com/v1/degree-days?latitude=${lat}&longitude=${lon}&start_year=1991&end_year=2020&base_temperature=15.5&degree_day_type=heating`;
-  const r = await fetch(url, { cache: 'no-store' });
+  const r = await fetch(
+    `https://climate-api.open-meteo.com/v1/degree-days?latitude=${lat}&longitude=${lon}&start_year=1991&end_year=2020&base_temperature=15.5&degree_day_type=heating`,
+    { cache: 'no-store' }
+  );
   if (!r.ok) throw new Error('degree-days http');
   const j = await r.json();
   const arr: number[] = j?.data?.map((x: any) => x.heating_degree_days) || [];
@@ -109,9 +102,11 @@ async function fetchHDD(lat: number, lon: number): Promise<number> {
   const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
   return Math.round(avg);
 }
-async function fetchMonthlyNormals(lat: number, lon: number): Promise<{ mean: number[]; min: number[] }> {
-  const url = `https://climate-api.open-meteo.com/v1/climate?latitude=${lat}&longitude=${lon}&start_year=1991&end_year=2020&models=ERA5&monthly=temperature_2m_mean,temperature_2m_min`;
-  const r = await fetch(url, { cache: 'no-store' });
+async function fetchMonthlyNormals(lat: number, lon: number) {
+  const r = await fetch(
+    `https://climate-api.open-meteo.com/v1/climate?latitude=${lat}&longitude=${lon}&start_year=1991&end_year=2020&models=ERA5&monthly=temperature_2m_mean,temperature_2m_min`,
+    { cache: 'no-store' }
+  );
   if (!r.ok) throw new Error('monthly climate http');
   const j = await r.json();
   const mean: number[] = j?.monthly?.temperature_2m_mean || [];
@@ -119,64 +114,61 @@ async function fetchMonthlyNormals(lat: number, lon: number): Promise<{ mean: nu
   if (mean.length < 12 || min.length < 12) throw new Error('monthly arrays incomplete');
   return { mean, min };
 }
-function hddFromMeans(means: number[]): number {
+function hddFromMeans(means: number[]) {
   let sum = 0;
   for (let m = 0; m < 12; m++) { const T = means[m]; const d = DAYS[m]; if (isFinite(T)) sum += Math.max(0, 15.5 - T) * d; }
   return Math.round(sum);
 }
 function designTempFromDJF(mins: number[], altitudeMeters: number): number | null {
-  const djfIdx = [11, 0, 1];
-  const djfVals = djfIdx.map((i) => mins[i]).filter((v) => isFinite(v));
-  if (!djfVals.length) return null;
-  const base = Math.min(...djfVals);
-  const safety = base - 2;
-  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0);
-  return Math.round(lapse);
+  const i = [11, 0, 1], vals = i.map(k => mins[k]).filter(v => isFinite(v));
+  if (!vals.length) return null;
+  const base = Math.min(...vals), safety = base - 2;
+  return Math.round(safety - 0.0065 * (Number(altitudeMeters) || 0));
 }
 function designTempRegionalFallback(lat: number, altitudeMeters: number): number {
-  let base: number;
-  if (lat < 51.5) base = -2;
-  else if (lat < 52.5) base = -3;
-  else if (lat < 53.5) base = -4;
-  else if (lat < 55.0) base = -5;
-  else base = -6;
+  let base = lat < 51.5 ? -2 : lat < 52.5 ? -3 : lat < 53.5 ? -4 : lat < 55 ? -5 : -6;
   return Math.round(base - 0.0065 * (Number(altitudeMeters) || 0));
 }
-async function autoClimateCalc(postcode: string, address: string, altitudeMeters: number) {
-  const geo = await geocodeAny(postcode, address);
+async function autoClimateCalc(pc: string, addr: string, alt: number) {
+  const geo = await geocodeAny(pc, addr);
   let hdd: number | undefined;
   try { hdd = await fetchHDD(geo.lat, geo.lon); } catch {}
-  let designTemp: number | null = null;
+  let design: number | null = null;
   try {
     const normals = await fetchMonthlyNormals(geo.lat, geo.lon);
     if (!isFinite(hdd as number)) hdd = hddFromMeans(normals.mean);
-    designTemp = designTempFromDJF(normals.min, altitudeMeters);
+    design = designTempFromDJF(normals.min, alt);
   } catch {}
   if (!isFinite(hdd as number)) hdd = 2033;
-  if (!isFinite(designTemp as number)) designTemp = designTempRegionalFallback(geo.lat, altitudeMeters);
-  return { hdd: hdd!, designTemp: designTemp!, lat: geo.lat, lon: geo.lon };
+  if (!isFinite(design as number)) design = designTempRegionalFallback(geo.lat, alt);
+  return { hdd: hdd!, designTemp: design! };
 }
 function extractRRN(text: string): string | null {
   const m = String(text || '').match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/); return m ? m[1] : null;
 }
 
-/* ---------------- UI atoms ---------------- */
-function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
-}
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
-}
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
-}
+/* ---------- UI atoms ---------- */
+const Badge = ({ label, tone = 'neutral' }: { label: string; tone?: 'neutral'|'success'|'warning' }) => (
+  <span style={{
+    fontSize: 11, padding: '3px 8px', borderRadius: 999, border: '1px solid',
+    borderColor: tone === 'success' ? '#19a34a' : tone === 'warning' ? '#b76e00' : '#bbb',
+    color: tone === 'success' ? '#0c7a35' : tone === 'warning' ? '#7a4b00' : '#666',
+    background: tone === 'success' ? '#e8f7ee' : tone === 'warning' ? '#fff4e0' : '#f3f3f3',
+    display: 'inline-block'
+  }}>{label}</span>
+);
+const Label = ({ children }: { children: React.ReactNode }) => (
+  <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>
+);
+const Input = (p: React.InputHTMLAttributes<HTMLInputElement>) => <input {...p} style={{ ...inputStyle, ...(p.style||{}) }} />;
+const Select = (p: React.SelectHTMLAttributes<HTMLSelectElement>) => <select {...p} style={{ ...inputStyle, ...(p.style||{}) }} />;
 
-/* ---------------------------------- UI ---------------------------------- */
+/* ---------- Page ---------- */
 export default function Page(): React.JSX.Element {
   const router = useRouter();
-
-  // hydrate
   const initial = safeGet(STORAGE_KEY, null as any);
+
+  // property
   const [reference, setReference] = useState(initial?.reference ?? '');
   const [postcode, setPostcode] = useState(initial?.postcode ?? '');
   const [country, setCountry] = useState(initial?.country ?? 'England');
@@ -184,11 +176,13 @@ export default function Page(): React.JSX.Element {
   const [epcNo, setEpcNo] = useState(initial?.epcNo ?? '');
   const [uprn, setUprn] = useState(initial?.uprn ?? '');
 
+  // climate
   const [altitude, setAltitude] = useState<number | ''>(initial?.altitude ?? 0);
   const [tex, setTex] = useState<number | ''>(initial?.tex ?? -3);
   const [hdd, setHdd] = useState<number | ''>(initial?.hdd ?? 2033);
   const meanAnnual = 10.2;
 
+  // details
   const [dwelling, setDwelling] = useState(initial?.dwelling ?? '');
   const [attach, setAttach] = useState(initial?.attach ?? '');
   const [ageBand, setAgeBand] = useState(initial?.ageBand ?? '');
@@ -197,43 +191,49 @@ export default function Page(): React.JSX.Element {
   const [airtight, setAirtight] = useState(initial?.airtight ?? 'Standard Method');
   const [thermalTest, setThermalTest] = useState(initial?.thermalTest ?? 'No Test Performed');
 
+  // status
   const [climStatus, setClimStatus] = useState('');
   const [altStatus, setAltStatus] = useState('');
   const [epcPaste, setEpcPaste] = useState('');
   const [latlonOverride, setLatlonOverride] = useState('');
 
+  // source badge
+  const [source, setSource] = useState<'Local table' | 'API fallback' | 'Manual override' | ''>(initial?.source ?? '');
+
   const debounceClimate = useRef<number | null>(null);
   const debounceSave = useRef<number | null>(null);
 
-  // 1) LOCAL LOOKUP on postcode change (instant)
+  /* 1) LOCAL lookup on postcode (instant) */
   useEffect(() => {
-    let canceled = false;
+    let cancelled = false;
     (async () => {
       if (!postcode) return;
-      const local = await lookupLocalClimate(postcode);
-      if (canceled || !local) return;
-      if (isFinite(local.designTemp as number)) setTex(local.designTemp!);
-      if (isFinite(local.hdd as number)) setHdd(local.hdd!);
+      const hit = await lookupLocal(postcode);
+      if (cancelled || !hit) return;
+      if (isFinite(hit.designTemp as number)) setTex(hit.designTemp!);
+      if (isFinite(hit.hdd as number)) setHdd(hit.hdd!);
       setClimStatus('Climate from local table ✓');
+      setSource('Local table');
     })();
-    return () => { canceled = true; };
+    return () => { cancelled = true; };
   }, [postcode]);
 
-  // 2) Fallback: full auto climate (geocode + open-meteo) on postcode/address/altitude
+  /* 2) Fallback API (if local missing either DesignT or HDD) */
   useEffect(() => {
     if (!postcode && !address) return;
     if (debounceClimate.current) window.clearTimeout(debounceClimate.current);
     debounceClimate.current = window.setTimeout(async () => {
       try {
-        // If local already filled both values, skip heavy call.
-        const local = await lookupLocalClimate(postcode);
-        const hasLocalBoth = local && isFinite(local.designTemp as number) && isFinite(local.hdd as number);
-        if (!hasLocalBoth) {
+        const local = await lookupLocal(postcode);
+        const missingDesign = !(local && isFinite(local.designTemp as number));
+        const missingHDD = !(local && isFinite(local.hdd as number));
+        if (missingDesign || missingHDD) {
           setClimStatus('Auto climate: looking up…');
           const res = await autoClimateCalc(postcode, address, Number(altitude) || 0);
-          if (!isFinite(local?.designTemp as number)) setTex(res.designTemp);
-          if (!isFinite(local?.hdd as number)) setHdd(res.hdd);
+          if (missingDesign) setTex(res.designTemp);
+          if (missingHDD) setHdd(res.hdd);
           setClimStatus('Auto climate ✓');
+          setSource('API fallback');
         }
       } catch (e: any) {
         setClimStatus(`Auto climate failed: ${e?.message || e}`);
@@ -242,12 +242,16 @@ export default function Page(): React.JSX.Element {
     return () => { if (debounceClimate.current) window.clearTimeout(debounceClimate.current); };
   }, [postcode, address, altitude]);
 
-  // Auto-save
+  /* Manual overrides flip the badge */
+  const onManualTex = (v: string) => { setTex(v === '' ? '' : Number(v)); setSource('Manual override'); };
+  const onManualHdd = (v: string) => { setHdd(v === '' ? '' : Number(v)); setSource('Manual override'); };
+
+  /* Auto-save */
   const snapshot = useMemo(() => ({
     reference, postcode, country, address, epcNo, uprn,
     altitude, tex, meanAnnual, hdd, dwelling, attach, ageBand, occupants,
-    mode, airtight, thermalTest,
-  }), [reference, postcode, country, address, epcNo, uprn, altitude, tex, hdd, dwelling, attach, ageBand, occupants, mode, airtight, thermalTest]);
+    mode, airtight, thermalTest, source
+  }), [reference, postcode, country, address, epcNo, uprn, altitude, tex, hdd, dwelling, attach, ageBand, occupants, mode, airtight, thermalTest, source]);
 
   useEffect(() => {
     if (debounceSave.current) window.clearTimeout(debounceSave.current);
@@ -255,19 +259,18 @@ export default function Page(): React.JSX.Element {
     return () => { if (debounceSave.current) window.clearTimeout(debounceSave.current); };
   }, [snapshot]);
 
+  /* Altitude finder */
   const onFindAltitude = async () => {
     try {
       setAltStatus('Looking up…');
       const geo = await geocodeAny(postcode, address, latlonOverride);
       const elev = await elevation(geo.lat, geo.lon);
       setAltitude(Math.round(elev.metres));
-      setAltStatus(`Found ${Math.round(elev.metres)} m • geo:${geo.src} • elev:${elev.provider}`);
-    } catch (e: any) {
-      setAltStatus(`Failed: ${e?.message || String(e)}`);
-    }
+      setAltStatus(`Found ${Math.round(elev.metres)} m • ${elev.provider}`);
+    } catch (e: any) { setAltStatus(`Failed: ${e?.message || String(e)}`); }
   };
-  const onParseEpc = () => { const rrn = extractRRN(epcPaste); if (rrn) setEpcNo(rrn); };
 
+  const onParseEpc = () => { const rrn = extractRRN(epcPaste); if (rrn) setEpcNo(rrn); };
   const onSave = () => { safeSet(STORAGE_KEY, snapshot); alert('Saved to browser (localStorage).'); };
   const onSaveContinue = () => { safeSet(STORAGE_KEY, snapshot); router.push('/ventilation'); };
   const resetAll = () => {
@@ -275,7 +278,7 @@ export default function Page(): React.JSX.Element {
     setEpcNo(''); setUprn(''); setAltitude(0); setTex(-3); setHdd(2033);
     setDwelling(''); setAttach(''); setAgeBand(''); setOccupants(2);
     setMode('Net Internal'); setAirtight('Standard Method'); setThermalTest('No Test Performed');
-    setClimStatus(''); setAltStatus(''); setLatlonOverride(''); setEpcPaste('');
+    setClimStatus(''); setAltStatus(''); setLatlonOverride(''); setEpcPaste(''); setSource('');
     safeSet(STORAGE_KEY, {});
   };
 
@@ -296,10 +299,15 @@ export default function Page(): React.JSX.Element {
             <Label>Reference *</Label>
             <Input placeholder="e.g., Project ABC - v1" value={reference} onChange={(e) => setReference(e.target.value)} />
           </div>
+
           <div>
-            <Label>Postcode *</Label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <Label>Postcode *</Label>
+              {source && <Badge label={source} tone={source === 'Local table' ? 'success' : source === 'API fallback' ? 'neutral' : 'warning'} />}
+            </div>
             <Input placeholder="e.g., SS8 9HB" value={postcode} onChange={(e) => setPostcode(e.target.value)} />
           </div>
+
           <div>
             <Label>Country</Label>
             <Select value={country} onChange={(e) => setCountry(e.target.value)}>
@@ -330,8 +338,7 @@ export default function Page(): React.JSX.Element {
               <details>
                 <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude from getthedata.com</summary>
                 <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
-                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can also enter
-                  <em> lat,long </em> override:
+                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can also enter <em>lat,long</em> override:
                 </div>
               </details>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
@@ -344,7 +351,7 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Design External Air Temp (°C)</Label>
-            <Input type="number" value={tex} onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Input type="number" value={tex} onChange={(e) => onManualTex(e.target.value)} />
           </div>
 
           <div>
@@ -354,7 +361,7 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
-            <Input type="number" value={hdd} onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Input type="number" value={hdd} onChange={(e) => onManualHdd(e.target.value)} />
           </div>
         </div>
 
@@ -448,16 +455,10 @@ export default function Page(): React.JSX.Element {
   );
 }
 
-/* ------------------------------ styles ------------------------------ */
+/* ---------- styles ---------- */
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
 const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 };
 const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 };
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box',
-};
-const primaryBtn: React.CSSProperties = {
-  background: '#111', color: '#fff', border: '1px solid #111', padding: '12px 18px', borderRadius: 12, cursor: 'pointer',
-};
-const secondaryBtn: React.CSSProperties = {
-  background: '#fff', color: '#111', border: '1px solid #ddd', padding: '12px 18px', borderRadius: 12, cursor: 'pointer',
-};
+const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box' };
+const primaryBtn: React.CSSProperties = { background: '#111', color: '#fff', border: '1px solid #111', padding: '12px 18px', borderRadius: 12, cursor: 'pointer' };
+const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #ddd', padding: '12px 18px', borderRadius: 12, cursor: 'pointer' };
