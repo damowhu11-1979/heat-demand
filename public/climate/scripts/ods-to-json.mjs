@@ -1,4 +1,3 @@
-// scripts/ods-to-json.mjs
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,12 +8,10 @@ if (!inFileArg || !outFileArg) {
   console.error('Usage: node scripts/ods-to-json.mjs "input.ods" "output.json"');
   process.exit(1);
 }
-
 const INPUT = inFileArg;
 const OUTPUT = outFileArg;
 
 const slug = (h) => String(h || '').trim().toLowerCase().replace(/[\s\-_/]+/g, '').replace(/[^\w]/g, '');
-
 const H_POSTCODE = new Set(['postcode','postcodes','post_code','sector','outcode','district','area','pc','pcode','postcoderegion','postalcodesector']);
 const H_DESIGN   = new Set(['design','designtemp','externaldesigntemp','designext','tex','designc','designdegc','designoutside','designexternal','designexttemp']);
 const H_HDD      = new Set(['hdd','heatingdegreedays','degreedays','degree_days','hdd15','hdd155','hddb15','hddb155']);
@@ -33,8 +30,8 @@ function explodeKeysFromCode(s) {
   const set = new Set();
   const norm = normCode(s);
   if (!norm) return [];
-  set.add(norm.replace(/\s+/g, ''));            // full nospace
-  const out = norm.split(' ')[0];               // outcode
+  set.add(norm.replace(/\s+/g, ''));
+  const out = norm.split(' ')[0];
   const sec = norm.includes(' ') ? `${out} ${norm.split(' ')[1][0]}` : '';
   const area = out.replace(/\d.*/, '');
   set.add(out);
@@ -70,8 +67,8 @@ function pick(headers) {
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
   const headers = Object.keys(rows[0] || {});
   const { pc, d, h } = pick(headers);
-
   const out = [];
+
   for (const r of rows) {
     let code = pc ? objGet(r, pc) : undefined;
     if (!code) {
@@ -87,8 +84,8 @@ function pick(headers) {
 
     const designTemp = d ? parseNum(objGet(r, d)) : parseNum(objGet(r, 'design'));
     const hddVal     = h ? parseNum(objGet(r, h)) : parseNum(objGet(r, 'hdd'));
-
     if (designTemp === undefined && hddVal === undefined) continue;
+
     out.push({ keys, designTemp, hdd: hddVal });
   }
 
