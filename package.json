@@ -1,63 +1,31 @@
-// in app/page.tsx
-type RowLite = { designTemp?: number; hdd?: number };
-const localCache: { map: Map<string, RowLite> | null; size: number } = { map: null, size: 0 };
-
-async function loadLocalMap(): Promise<Map<string, RowLite> | null> {
-  if (localCache.map) return localCache.map;
-
-  // Try several paths (works on GitHub Pages and locally)
-  const candidates = (() => {
-    const urls = new Set<string>();
-    const pathname = (typeof window !== 'undefined' ? window.location.pathname : '/') || '/';
-    const curDir = pathname.replace(/[^/]*$/, '');
-    const seg = pathname.split('/').filter(Boolean);
-    const repoRoot = seg.length ? `/${seg[0]}/` : '/';
-    urls.add(`${curDir}climate/postcode_climate.json`);
-    urls.add(`${repoRoot}climate/postcode_climate.json`);
-    urls.add(`/climate/postcode_climate.json`);
-    urls.add(`climate/postcode_climate.json`);
-    urls.add(`/postcode_climate.json`);
-    return Array.from(urls);
-  })();
-
-  let rows: any = null, hit = '';
-  for (const u of candidates) {
-    try {
-      const r = await fetch(u, { cache: 'no-store' });
-      if (r.ok) { rows = await r.json(); hit = u; break; }
-    } catch {}
+{
+  "name": "nextjs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build && next export -o out",
+    "start": "next start",
+    "lint": "eslint .",
+    "ods:json": "node scripts/ods-to-json.mjs \"post codes spf data climate.ods\" public/climate/postcode_climate.json"
+  },
+  "dependencies": {
+    "next": "16.0.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.0.1",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": ">=20"
   }
-  if (!rows) return null;
-  console.info('Loaded postcode table from', hit);
-
-  const feed: any[] = Array.isArray(rows)
-    ? rows
-    : Object.entries(rows).map(([k, v]: any) => ({ key: k, ...(v || {}) }));
-
-  const map = new Map<string, RowLite>();
-  for (const r of feed) {
-    const designTemp = Number.isFinite(+r.designTemp) ? Math.round(+r.designTemp) : undefined;
-    const hdd = Number.isFinite(+r.hdd) ? Math.round(+r.hdd) : undefined;
-    if (designTemp === undefined && hdd === undefined) continue;
-
-    // Support keys[] from the converter, plus some common fallbacks
-    const fromArray = Array.isArray(r.keys) ? r.keys : [];
-    const derived = [
-      (r.postcode || r.post_code || r.key || '').toString(),
-      r.sector, r.outcode, r.area,
-    ].filter(Boolean);
-
-    const keyset = new Set<string>([
-      ...fromArray.map((x: string) => x.toString().toUpperCase()),
-      ...derived.map((x: string) => x.toString().toUpperCase()),
-    ]);
-
-    for (const k of keyset) {
-      const kNoSpace = k.replace(/\s+/g, '');
-      if (!map.has(kNoSpace)) map.set(kNoSpace, { designTemp, hdd });
-    }
-  }
-  localCache.map = map;
-  localCache.size = map.size;
-  return map;
 }
