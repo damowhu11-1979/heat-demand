@@ -8,17 +8,43 @@ import { useRouter } from 'next/navigation';
 const STORAGE_KEY = 'heatload:property';
 const safeGet = <T,>(k: string, fallback: T): T => {
   if (typeof window === 'undefined') return fallback;
-  try {
-    const v = window.localStorage.getItem(k);
-    return v ? (JSON.parse(v) as T) : fallback;
-  } catch { return fallback; }
+  try { const v = window.localStorage.getItem(k); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
 };
-const safeSet = (k: string, v: unknown) => {
-  if (typeof window === 'undefined') return;
-  try { window.localStorage.setItem(k, JSON.stringify(v)); } catch {}
-};
+const safeSet = (k: string, v: unknown) => { if (typeof window !== 'undefined') try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-/* ---------------- core helpers ---------------- */
+/* ---------------- postcode table (local first) ---------------- */
+type LocalClimateRow = { outcode: string; designTemp?: number; hdd?: number };
+const localClimateCache: { rows?: LocalClimateRow[] } = {};
+async function loadLocalClimate(): Promise<LocalClimateRow[] | null> {
+  if (localClimateCache.rows) return localClimateCache.rows;
+  try {
+    const r = await fetch('/climate/postcode_climate.json', { cache: 'no-store' });
+    if (!r.ok) return null;
+    const rows = (await r.json()) as LocalClimateRow[];
+    localClimateCache.rows = rows;
+    return rows;
+  } catch { return null; }
+}
+const normalizeOutcode = (pc: string): { full?: string; area?: string } => {
+  const m = (pc || '').toUpperCase().replace(/\s+/g, '').match(/^([A-Z]{1,2}\d[A-Z\d]?)/);
+  if (!m) return {};
+  const full = m[1];                                   // e.g. SS8
+  const area = full.replace(/\d.*$/, '');              // e.g. SS
+  return { full, area };
+};
+async function lookupLocalClimate(postcode: string): Promise<{ designTemp?: number; hdd?: number } | null> {
+  const table = await loadLocalClimate();
+  if (!table) return null;
+  const { full, area } = normalizeOutcode(postcode);
+  const hit =
+    (full && table.find(r => r.outcode.toUpperCase() === full)) ||
+    (area && table.find(r => r.outcode.toUpperCase() === area)) ||
+    null;
+  if (!hit) return null;
+  return { designTemp: hit.designTemp, hdd: hit.hdd };
+}
+
+/* ---------------- core helpers (fallback APIs) ---------------- */
 type LatLon = { lat: number; lon: number; src: 'postcodes.io' | 'nominatim' | 'latlon' };
 const DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
@@ -37,28 +63,22 @@ const asLatLon = (s: string) => {
 
 async function geocodePostcode(pc: string): Promise<LatLon> {
   const url = `https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`;
-  const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`postcodes.io ${r.status}`);
-  const j = await r.json();
-  if (j.status !== 200 || !j.result) throw new Error('postcode not found');
+  const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(`postcodes.io ${r.status}`);
+  const j = await r.json(); if (j.status !== 200 || !j.result) throw new Error('postcode not found');
   return { lat: j.result.latitude, lon: j.result.longitude, src: 'postcodes.io' };
 }
 async function geocodeAddress(addr: string): Promise<LatLon> {
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(addr)}`;
   const r = await fetch(url, { headers: { 'Accept-Language': 'en-GB' }, cache: 'no-store' });
   if (!r.ok) throw new Error(`nominatim ${r.status}`);
-  const a = await r.json();
-  if (!a.length) throw new Error('address not found');
+  const a = await r.json(); if (!a.length) throw new Error('address not found');
   return { lat: +a[0].lat, lon: +a[0].lon, src: 'nominatim' };
 }
 async function geocodeAny(postcode: string, address: string, latlonText?: string): Promise<LatLon> {
   const ll = latlonText ? asLatLon(latlonText) : null;
   if (ll) return { ...ll, src: 'latlon' };
   const pc = toPC(postcode || '');
-  if (pc) {
-    try { return await geocodePostcode(pc); }
-    catch { return await geocodeAddress(pc); } // fallback if throttled/invalid
-  }
+  if (pc) { try { return await geocodePostcode(pc); } catch { return await geocodeAddress(pc); } }
   if (!address || address.trim().length < 4) throw new Error('enter postcode or address');
   return await geocodeAddress(address);
 }
@@ -67,21 +87,18 @@ async function elevation(lat: number, lon: number): Promise<{ metres: number; pr
     const u = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`;
     const r = await fetch(u, { cache: 'no-store' });
     if (!r.ok) throw new Error('open-elevation http');
-    const j = await r.json();
-    const v = j?.results?.[0]?.elevation;
+    const j = await r.json(); const v = j?.results?.[0]?.elevation;
     if (!isFinite(v)) throw new Error('open-elevation no result');
     return { metres: +v, provider: 'open-elevation' };
   } catch {
     const u2 = `https://api.opentopodata.org/v1/eudem25m?locations=${lat},${lon}`;
     const r2 = await fetch(u2, { cache: 'no-store' });
     if (!r2.ok) throw new Error('opentopodata http');
-    const j2 = await r2.json();
-    const v2 = j2?.results?.[0]?.elevation;
+    const j2 = await r2.json(); const v2 = j2?.results?.[0]?.elevation;
     if (!isFinite(v2)) throw new Error('opentopodata no result');
     return { metres: +v2, provider: 'opentopodata:eudem25m' };
   }
 }
-
 async function fetchHDD(lat: number, lon: number): Promise<number> {
   const url = `https://climate-api.open-meteo.com/v1/degree-days?latitude=${lat}&longitude=${lon}&start_year=1991&end_year=2020&base_temperature=15.5&degree_day_type=heating`;
   const r = await fetch(url, { cache: 'no-store' });
@@ -102,13 +119,9 @@ async function fetchMonthlyNormals(lat: number, lon: number): Promise<{ mean: nu
   if (mean.length < 12 || min.length < 12) throw new Error('monthly arrays incomplete');
   return { mean, min };
 }
-
 function hddFromMeans(means: number[]): number {
   let sum = 0;
-  for (let m = 0; m < 12; m++) {
-    const T = means[m]; const d = DAYS[m];
-    if (isFinite(T)) sum += Math.max(0, 15.5 - T) * d;
-  }
+  for (let m = 0; m < 12; m++) { const T = means[m]; const d = DAYS[m]; if (isFinite(T)) sum += Math.max(0, 15.5 - T) * d; }
   return Math.round(sum);
 }
 function designTempFromDJF(mins: number[], altitudeMeters: number): number | null {
@@ -116,8 +129,8 @@ function designTempFromDJF(mins: number[], altitudeMeters: number): number | nul
   const djfVals = djfIdx.map((i) => mins[i]).filter((v) => isFinite(v));
   if (!djfVals.length) return null;
   const base = Math.min(...djfVals);
-  const safety = base - 2;                               // conservative margin
-  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0); // altitude correction
+  const safety = base - 2;
+  const lapse = safety - 0.0065 * (Number(altitudeMeters) || 0);
   return Math.round(lapse);
 }
 function designTempRegionalFallback(lat: number, altitudeMeters: number): number {
@@ -129,7 +142,6 @@ function designTempRegionalFallback(lat: number, altitudeMeters: number): number
   else base = -6;
   return Math.round(base - 0.0065 * (Number(altitudeMeters) || 0));
 }
-
 async function autoClimateCalc(postcode: string, address: string, altitudeMeters: number) {
   const geo = await geocodeAny(postcode, address);
   let hdd: number | undefined;
@@ -140,14 +152,12 @@ async function autoClimateCalc(postcode: string, address: string, altitudeMeters
     if (!isFinite(hdd as number)) hdd = hddFromMeans(normals.mean);
     designTemp = designTempFromDJF(normals.min, altitudeMeters);
   } catch {}
-  if (!isFinite(hdd as number)) hdd = 2033; // UK typical fallback
+  if (!isFinite(hdd as number)) hdd = 2033;
   if (!isFinite(designTemp as number)) designTemp = designTempRegionalFallback(geo.lat, altitudeMeters);
   return { hdd: hdd!, designTemp: designTemp!, lat: geo.lat, lon: geo.lon };
 }
-
 function extractRRN(text: string): string | null {
-  const m = String(text || '').match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
-  return m ? m[1] : null;
+  const m = String(text || '').match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/); return m ? m[1] : null;
 }
 
 /* ---------------- UI atoms ---------------- */
@@ -161,13 +171,12 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
 
+/* ---------------------------------- UI ---------------------------------- */
 export default function Page(): React.JSX.Element {
   const router = useRouter();
 
-  // hydrate from storage
+  // hydrate
   const initial = safeGet(STORAGE_KEY, null as any);
-
-  // Property info
   const [reference, setReference] = useState(initial?.reference ?? '');
   const [postcode, setPostcode] = useState(initial?.postcode ?? '');
   const [country, setCountry] = useState(initial?.country ?? 'England');
@@ -175,13 +184,11 @@ export default function Page(): React.JSX.Element {
   const [epcNo, setEpcNo] = useState(initial?.epcNo ?? '');
   const [uprn, setUprn] = useState(initial?.uprn ?? '');
 
-  // Location/climate
   const [altitude, setAltitude] = useState<number | ''>(initial?.altitude ?? 0);
   const [tex, setTex] = useState<number | ''>(initial?.tex ?? -3);
   const [hdd, setHdd] = useState<number | ''>(initial?.hdd ?? 2033);
   const meanAnnual = 10.2;
 
-  // Details
   const [dwelling, setDwelling] = useState(initial?.dwelling ?? '');
   const [attach, setAttach] = useState(initial?.attach ?? '');
   const [ageBand, setAgeBand] = useState(initial?.ageBand ?? '');
@@ -190,33 +197,52 @@ export default function Page(): React.JSX.Element {
   const [airtight, setAirtight] = useState(initial?.airtight ?? 'Standard Method');
   const [thermalTest, setThermalTest] = useState(initial?.thermalTest ?? 'No Test Performed');
 
-  // Status
   const [climStatus, setClimStatus] = useState('');
   const [altStatus, setAltStatus] = useState('');
   const [epcPaste, setEpcPaste] = useState('');
+  const [latlonOverride, setLatlonOverride] = useState('');
 
-  const debounce = useRef<number | null>(null);
-  const autoSaveDebounce = useRef<number | null>(null);
+  const debounceClimate = useRef<number | null>(null);
+  const debounceSave = useRef<number | null>(null);
 
-  // auto-climate on change
+  // 1) LOCAL LOOKUP on postcode change (instant)
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      if (!postcode) return;
+      const local = await lookupLocalClimate(postcode);
+      if (canceled || !local) return;
+      if (isFinite(local.designTemp as number)) setTex(local.designTemp!);
+      if (isFinite(local.hdd as number)) setHdd(local.hdd!);
+      setClimStatus('Climate from local table ✓');
+    })();
+    return () => { canceled = true; };
+  }, [postcode]);
+
+  // 2) Fallback: full auto climate (geocode + open-meteo) on postcode/address/altitude
   useEffect(() => {
     if (!postcode && !address) return;
-    if (debounce.current) window.clearTimeout(debounce.current);
-    debounce.current = window.setTimeout(async () => {
+    if (debounceClimate.current) window.clearTimeout(debounceClimate.current);
+    debounceClimate.current = window.setTimeout(async () => {
       try {
-        setClimStatus('Auto climate: looking up…');
-        const res = await autoClimateCalc(postcode, address, Number(altitude) || 0);
-        setHdd(res.hdd);
-        setTex(res.designTemp);
-        setClimStatus(`Auto climate ✓  HDD ${res.hdd}, DesignT ${res.designTemp}°C`);
+        // If local already filled both values, skip heavy call.
+        const local = await lookupLocalClimate(postcode);
+        const hasLocalBoth = local && isFinite(local.designTemp as number) && isFinite(local.hdd as number);
+        if (!hasLocalBoth) {
+          setClimStatus('Auto climate: looking up…');
+          const res = await autoClimateCalc(postcode, address, Number(altitude) || 0);
+          if (!isFinite(local?.designTemp as number)) setTex(res.designTemp);
+          if (!isFinite(local?.hdd as number)) setHdd(res.hdd);
+          setClimStatus('Auto climate ✓');
+        }
       } catch (e: any) {
         setClimStatus(`Auto climate failed: ${e?.message || e}`);
       }
     }, 700);
-    return () => { if (debounce.current) window.clearTimeout(debounce.current); };
+    return () => { if (debounceClimate.current) window.clearTimeout(debounceClimate.current); };
   }, [postcode, address, altitude]);
 
-  // auto-save
+  // Auto-save
   const snapshot = useMemo(() => ({
     reference, postcode, country, address, epcNo, uprn,
     altitude, tex, meanAnnual, hdd, dwelling, attach, ageBand, occupants,
@@ -224,13 +250,11 @@ export default function Page(): React.JSX.Element {
   }), [reference, postcode, country, address, epcNo, uprn, altitude, tex, hdd, dwelling, attach, ageBand, occupants, mode, airtight, thermalTest]);
 
   useEffect(() => {
-    if (autoSaveDebounce.current) window.clearTimeout(autoSaveDebounce.current);
-    autoSaveDebounce.current = window.setTimeout(() => safeSet(STORAGE_KEY, snapshot), 400);
-    return () => { if (autoSaveDebounce.current) window.clearTimeout(autoSaveDebounce.current); };
+    if (debounceSave.current) window.clearTimeout(debounceSave.current);
+    debounceSave.current = window.setTimeout(() => safeSet(STORAGE_KEY, snapshot), 300);
+    return () => { if (debounceSave.current) window.clearTimeout(debounceSave.current); };
   }, [snapshot]);
 
-  // altitude lookup
-  const [latlonOverride, setLatlonOverride] = useState('');
   const onFindAltitude = async () => {
     try {
       setAltStatus('Looking up…');
@@ -242,14 +266,8 @@ export default function Page(): React.JSX.Element {
       setAltStatus(`Failed: ${e?.message || String(e)}`);
     }
   };
+  const onParseEpc = () => { const rrn = extractRRN(epcPaste); if (rrn) setEpcNo(rrn); };
 
-  // EPC parse
-  const onParseEpc = () => {
-    const rrn = extractRRN(epcPaste);
-    if (rrn) setEpcNo(rrn);
-  };
-
-  // actions
   const onSave = () => { safeSet(STORAGE_KEY, snapshot); alert('Saved to browser (localStorage).'); };
   const onSaveContinue = () => { safeSet(STORAGE_KEY, snapshot); router.push('/ventilation'); };
   const resetAll = () => {
@@ -258,7 +276,7 @@ export default function Page(): React.JSX.Element {
     setDwelling(''); setAttach(''); setAgeBand(''); setOccupants(2);
     setMode('Net Internal'); setAirtight('Standard Method'); setThermalTest('No Test Performed');
     setClimStatus(''); setAltStatus(''); setLatlonOverride(''); setEpcPaste('');
-    safeSet(STORAGE_KEY, {}); // clear persisted
+    safeSet(STORAGE_KEY, {});
   };
 
   return (
@@ -422,8 +440,8 @@ export default function Page(): React.JSX.Element {
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
           <button onClick={resetAll} style={secondaryBtn}>Reset</button>
-          <button onClick={() => { safeSet(STORAGE_KEY, snapshot); alert('Saved to browser (localStorage).'); }} style={secondaryBtn}>Save</button>
-          <button onClick={() => { safeSet(STORAGE_KEY, snapshot); router.push('/ventilation'); }} style={primaryBtn}>Save & Continue →</button>
+          <button onClick={onSave} style={secondaryBtn}>Save</button>
+          <button onClick={onSaveContinue} style={primaryBtn}>Save & Continue →</button>
         </div>
       </section>
     </main>
