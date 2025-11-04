@@ -230,14 +230,17 @@ export default function Page(): React.JSX.Element {
   const [hdd, setHdd] = useState<number | ''>(initial?.hdd ?? 2033);
   const meanAnnual = 10.2;
 
-  // Details
-  const [dwelling, setDwelling] = useState(initial?.dwelling ?? '');
-  the const [attach, setAttach] = useState(initial?.attach ?? ''); // NOTE: keep fields intact
-  const [ageBand, setAgeBand] = useState(initial?.ageBand ?? '');
-  const [occupants, setOccupants] = useState<number>(initial?.occupants ?? 2);
-  const [mode, setMode] = useState(initial?.mode ?? 'Net Internal');
-  const [airtight, setAirtight] = useState(initial?.airtight ?? 'Standard Method');
-  const [thermalTest, setThermalTest] = useState(initial?.thermalTest ?? 'No Test Performed');
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@
+   // Details
+   const [dwelling, setDwelling] = useState(initial?.dwelling ?? '');
+-  the const [attach, setAttach] = useState(initial?.attach ?? ''); // NOTE: keep fields intact
++  const [attach, setAttach] = useState(initial?.attach ?? ''); // NOTE: keep fields intact
+   const [ageBand, setAgeBand] = useState(initial?.ageBand ?? '');
+   const [occupants, setOccupants] = useState<number>(initial?.occupants ?? 2);
+   const [mode, setMode] = useState(initial?.mode ?? 'Net Internal');
+
 
   // Status
   const [climStatus, setClimStatus] = useState('');
