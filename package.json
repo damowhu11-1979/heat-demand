@@ -24,3 +24,11 @@
     "eslint-config-next": "16.0.1"
   }
 }
+{
+  "devDependencies": {
+    "xlsx": "^0.18.5"
+  },
+  "scripts": {
+    "ods:json": "node scripts/ods-to-json.mjs \"post codes spf data climate.ods\" public/climate/postcode_climate.json"
+  }
+}
