@@ -27,3 +27,11 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+ name: Install
+  run: npm ci
+
+- name: Build postcode climate JSON
+  run: npm run ods:json
+
+- name: Build
+  run: npm run build
