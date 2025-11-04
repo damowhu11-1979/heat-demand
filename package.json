@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",                       // <- no `next export`
+    "build": "next build",                    
     "start": "next start",
     "lint": "eslint .",
     "ods:json": "node scripts/ods-to-json.mjs \"post codes spf data climate.ods\" public/climate/postcode_climate.json"
