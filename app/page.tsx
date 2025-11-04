@@ -4,138 +4,158 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-/* ---------------- storage helpers ---------------- */
+/* ---------------- persistence ---------------- */
 const STORAGE_KEY = 'heatload:property';
-const safeGet = <T,>(k: string, fb: T): T => {
+const lsGet = <T,>(k: string, fb: T): T => {
   if (typeof window === 'undefined') return fb;
-  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) as T : fb; } catch { return fb; }
+  try {
+    const v = localStorage.getItem(k);
+    return v ? (JSON.parse(v) as T) : fb;
+  } catch {
+    return fb;
+  }
 };
-const safeSet = (k: string, v: unknown) => { if (typeof window !== 'undefined') try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const lsSet = (k: string, v: unknown) => {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(k, JSON.stringify(v));
+    } catch {}
+  }
+};
 
-/* ---------------- postcode table (accepts full/sector/outcode/area) ---------------- */
+/* ---------------- postcode climate table ---------------- */
 type ClimateRow = {
-  // accepts any of the following (strings), exporter will fill at least one:
-  postcode?: string; post_code?: string; key?: string;
-  sector?: string; outcode?: string; area?: string;
-  designTemp?: number; hdd?: number;
+  postcode?: string;
+  post_code?: string;
+  key?: string;
+  sector?: string;
+  outcode?: string;
+  area?: string;
+  designTemp?: number;
+  hdd?: number;
 };
 type RowLite = { designTemp?: number; hdd?: number };
 const localCache: { map?: Map<string, RowLite> } = {};
 
-/** Normalise: remove spaces & uppercase */
 const up = (s?: string) => (s || '').toUpperCase();
-/** Build key variants for a UK postcode string */
 function keyVariantsFromPostcode(input: string): string[] {
   const raw = up(input).replace(/\s+/g, '');
   if (!raw) return [];
-  // parse outward/inward, sector, area
-  const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d)([A-Z]{2})$/); // OUT + SECTOR + UNIT
-  const out = m ? m[1] : '';               // e.g. N9
-  const sector = m ? `${out} ${m[2]}` : ''; // e.g. "N9 8"
-  const area = out.replace(/\d.*$/, '');    // e.g. N
+  const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d)([A-Z]{2})$/);
+  const out = m ? m[1] : '';
+  const sector = m ? `${out} ${m[2]}` : '';
+  const area = out.replace(/\d.*$/, '');
   const keys: string[] = [];
-  keys.push(raw);             // FULL: "N98AN"
-  if (sector) keys.push(sector); // "N9 8"
-  if (out) keys.push(out);    // "N9"
-  if (area) keys.push(area);  // "N"
+  keys.push(raw);
+  if (sector) keys.push(sector);
+  if (out) keys.push(out);
+  if (area) keys.push(area);
   return keys;
 }
-
-/** Load JSON and build a lookup map with many aliases */
 async function loadLocalMap(): Promise<Map<string, RowLite> | null> {
   if (localCache.map) return localCache.map;
   try {
     const r = await fetch('/climate/postcode_climate.json', { cache: 'force-cache' });
     if (!r.ok) return null;
-    const rows = await r.json() as ClimateRow[] | Record<string, any>;
-    const map = new Map<string, RowLite>();
-
+    const rows = (await r.json()) as ClimateRow[] | Record<string, any>;
     const feed: ClimateRow[] = Array.isArray(rows)
       ? rows
       : Object.entries(rows).map(([k, v]: any) => ({ key: k, ...(v || {}) }));
 
+    const map = new Map<string, RowLite>();
     for (const r of feed) {
       const val: RowLite = {};
       if (isFinite(r.designTemp as number)) val.designTemp = Math.round(r.designTemp as number);
       if (isFinite(r.hdd as number)) val.hdd = Math.round(r.hdd as number);
-
-      const possibleKeys = [
+      const keys = [
         up(r.postcode).replace(/\s+/g, ''),
         up(r.post_code).replace(/\s+/g, ''),
         up(r.key).replace(/\s+/g, ''),
-
-        up(r.sector),                // keep space form "N9 8" if provided
+        up(r.sector),
         up(r.outcode),
-        up(r.area)
+        up(r.area),
       ].filter(Boolean) as string[];
-
-      for (const k of possibleKeys) if (k && (val.designTemp !== undefined || val.hdd !== undefined)) {
-        if (!map.has(k)) map.set(k, val);
+      if (val.designTemp !== undefined || val.hdd !== undefined) {
+        for (const k of keys) if (!map.has(k)) map.set(k, val);
       }
     }
     localCache.map = map;
     return map;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
-
-/** Try: FULL -> SECTOR -> OUTCODE -> AREA */
 async function lookupLocalClimate(postcode: string): Promise<{ designTemp?: number; hdd?: number; matchedKey?: string } | null> {
   const map = await loadLocalMap();
   if (!map) return null;
-  const keys = keyVariantsFromPostcode(postcode);
-  for (const k of keys) {
+  for (const k of keyVariantsFromPostcode(postcode)) {
     const v = map.get(k);
     if (v) return { ...v, matchedKey: k };
   }
   return null;
 }
 
-/* ---------------- core helpers (fallback APIs) ---------------- */
+/* ---------------- geocoding / climate fallbacks ---------------- */
 type LatLon = { lat: number; lon: number; src: 'postcodes.io' | 'nominatim' | 'latlon' };
 const DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-const toPC = (s: string) => {
+
+const normalisePC = (s: string) => {
   const raw = String(s || '').toUpperCase().replace(/\s+/g, '');
   const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/);
   return m ? `${m[1]} ${m[2]}` : null;
 };
-const asLatLon = (s: string) => {
+const parseLatLon = (s: string) => {
   const m = String(s || '').trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (!m) return null;
-  const lat = +m[1], lon = +m[2];
+  const lat = +m[1];
+  const lon = +m[2];
   if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   return { lat, lon };
 };
-
 async function geocodePostcode(pc: string): Promise<LatLon> {
   const url = `https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`;
-  const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(`postcodes.io ${r.status}`);
-  const j = await r.json(); if (j.status !== 200 || !j.result) throw new Error('postcode not found');
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`postcodes.io ${r.status}`);
+  const j = await r.json();
+  if (j.status !== 200 || !j.result) throw new Error('postcode not found');
   return { lat: j.result.latitude, lon: j.result.longitude, src: 'postcodes.io' };
 }
 async function geocodeAddress(addr: string): Promise<LatLon> {
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(addr)}`;
   const r = await fetch(url, { headers: { 'Accept-Language': 'en-GB' }, cache: 'no-store' });
   if (!r.ok) throw new Error(`nominatim ${r.status}`);
-  const a = await r.json(); if (!a.length) throw new Error('address not found');
+  const a = await r.json();
+  if (!a.length) throw new Error('address not found');
   return { lat: +a[0].lat, lon: +a[0].lon, src: 'nominatim' };
 }
 async function geocodeAny(postcode: string, address: string, latlonText?: string): Promise<LatLon> {
-  const ll = latlonText ? asLatLon(latlonText) : null; if (ll) return { ...ll, src: 'latlon' };
-  const pc = toPC(postcode || '');
-  if (pc) { try { return await geocodePostcode(pc); } catch { return await geocodeAddress(pc); } }
+  const ll = latlonText ? parseLatLon(latlonText) : null;
+  if (ll) return { ...ll, src: 'latlon' };
+  const pc = normalisePC(postcode || '');
+  if (pc) {
+    try {
+      return await geocodePostcode(pc);
+    } catch {
+      return await geocodeAddress(pc);
+    }
+  }
   if (!address || address.trim().length < 4) throw new Error('enter postcode or address');
   return await geocodeAddress(address);
 }
 async function elevation(lat: number, lon: number) {
   try {
     const r = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`, { cache: 'no-store' });
-    if (!r.ok) throw new Error('open-elevation http'); const j = await r.json();
-    const v = j?.results?.[0]?.elevation; if (!isFinite(v)) throw new Error('open-elevation no result');
+    if (!r.ok) throw new Error('open-elevation http');
+    const j = await r.json();
+    const v = j?.results?.[0]?.elevation;
+    if (!isFinite(v)) throw new Error('open-elevation no result');
     return { metres: +v, provider: 'open-elevation' };
   } catch {
     const r2 = await fetch(`https://api.opentopodata.org/v1/eudem25m?locations=${lat},${lon}`, { cache: 'no-store' });
-    if (!r2.ok) throw new Error('opentopodata http'); const j2 = await r2.json();
-    const v2 = j2?.results?.[0]?.elevation; if (!isFinite(v2)) throw new Error('opentopodata no result');
+    if (!r2.ok) throw new Error('opentopodata http');
+    const j2 = await r2.json();
+    const v2 = j2?.results?.[0]?.elevation;
+    if (!isFinite(v2)) throw new Error('opentopodata no result');
     return { metres: +v2, provider: 'opentopodata:eudem25m' };
   }
 }
@@ -165,13 +185,19 @@ async function fetchMonthlyNormals(lat: number, lon: number) {
 }
 function hddFromMeans(means: number[]) {
   let sum = 0;
-  for (let m = 0; m < 12; m++) { const T = means[m]; const d = DAYS[m]; if (isFinite(T)) sum += Math.max(0, 15.5 - T) * d; }
+  for (let m = 0; m < 12; m++) {
+    const T = means[m];
+    const d = DAYS[m];
+    if (isFinite(T)) sum += Math.max(0, 15.5 - T) * d;
+  }
   return Math.round(sum);
 }
 function designTempFromDJF(mins: number[], altitudeMeters: number): number | null {
-  const i = [11, 0, 1], vals = i.map(k => mins[k]).filter(v => isFinite(v));
+  const i = [11, 0, 1];
+  const vals = i.map((k) => mins[k]).filter((v) => isFinite(v));
   if (!vals.length) return null;
-  const base = Math.min(...vals), safety = base - 2;
+  const base = Math.min(...vals);
+  const safety = base - 2;
   return Math.round(safety - 0.0065 * (Number(altitudeMeters) || 0));
 }
 function designTempRegionalFallback(lat: number, altitudeMeters: number): number {
@@ -181,7 +207,9 @@ function designTempRegionalFallback(lat: number, altitudeMeters: number): number
 async function autoClimateCalc(pc: string, addr: string, alt: number) {
   const geo = await geocodeAny(pc, addr);
   let hdd: number | undefined;
-  try { hdd = await fetchHDD(geo.lat, geo.lon); } catch {}
+  try {
+    hdd = await fetchHDD(geo.lat, geo.lon);
+  } catch {}
   let design: number | null = null;
   try {
     const normals = await fetchMonthlyNormals(geo.lat, geo.lon);
@@ -193,30 +221,39 @@ async function autoClimateCalc(pc: string, addr: string, alt: number) {
   return { hdd: hdd!, designTemp: design! };
 }
 function extractRRN(text: string): string | null {
-  const m = String(text || '').match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/); return m ? m[1] : null;
+  const m = String(text || '').match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
+  return m ? m[1] : null;
 }
 
 /* ---------------- UI atoms ---------------- */
-const Badge = ({ label, tone = 'neutral' }: { label: string; tone?: 'neutral'|'success'|'warning' }) => (
-  <span style={{
-    fontSize: 11, padding: '3px 8px', borderRadius: 999, border: '1px solid',
-    borderColor: tone === 'success' ? '#19a34a' : tone === 'warning' ? '#b76e00' : '#bbb',
-    color: tone === 'success' ? '#0c7a35' : tone === 'warning' ? '#7a4b00' : '#666',
-    background: tone === 'success' ? '#e8f7ee' : tone === 'warning' ? '#fff4e0' : '#f3f3f3',
-    display: 'inline-block'
-  }}>{label}</span>
+const Badge = ({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'success' | 'warning' }) => (
+  <span
+    style={{
+      fontSize: 11,
+      padding: '3px 8px',
+      borderRadius: 999,
+      border: '1px solid',
+      borderColor: tone === 'success' ? '#19a34a' : tone === 'warning' ? '#b76e00' : '#bbb',
+      color: tone === 'success' ? '#0c7a35' : tone === 'warning' ? '#7a4b00' : '#666',
+      background: tone === 'success' ? '#e8f7ee' : tone === 'warning' ? '#fff4e0' : '#f3f3f3',
+      display: 'inline-block',
+    }}
+  >
+    {label}
+  </span>
 );
-const Label = ({ children }: { children: React.ReactNode }) =>
-  <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
-const Input = (p: React.InputHTMLAttributes<HTMLInputElement>) => <input {...p} style={{ ...inputStyle, ...(p.style||{}) }} />;
-const Select = (p: React.SelectHTMLAttributes<HTMLSelectElement>) => <select {...p} style={{ ...inputStyle, ...(p.style||{}) }} />;
+const Label = ({ children }: { children: React.ReactNode }) => (
+  <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>
+);
+const Input = (p: React.InputHTMLAttributes<HTMLInputElement>) => <input {...p} style={{ ...inputStyle, ...(p.style || {}) }} />;
+const Select = (p: React.SelectHTMLAttributes<HTMLSelectElement>) => <select {...p} style={{ ...inputStyle, ...(p.style || {}) }} />;
 
-/* ---------------- Page ---------------- */
+/* ---------------- page ---------------- */
 export default function Page(): React.JSX.Element {
   const router = useRouter();
-  const initial = safeGet(STORAGE_KEY, null as any);
+  const initial = lsGet(STORAGE_KEY, null as any);
 
-  // Property info
+  // Property
   const [reference, setReference] = useState(initial?.reference ?? '');
   const [postcode, setPostcode] = useState(initial?.postcode ?? '');
   const [country, setCountry] = useState(initial?.country ?? 'England');
@@ -230,14 +267,14 @@ export default function Page(): React.JSX.Element {
   const [hdd, setHdd] = useState<number | ''>(initial?.hdd ?? 2033);
   const meanAnnual = 10.2;
 
-   // Details
-   const [dwelling, setDwelling] = useState(initial?.dwelling ?? '');
--  the const [attach, setAttach] = useState(initial?.attach ?? ''); // NOTE: keep fields intact
-+  const [attach, setAttach] = useState(initial?.attach ?? ''); // NOTE: keep fields intact
-   const [ageBand, setAgeBand] = useState(initial?.ageBand ?? '');
-   const [occupants, setOccupants] = useState<number>(initial?.occupants ?? 2);
-   const [mode, setMode] = useState(initial?.mode ?? 'Net Internal');
-
+  // Details
+  const [dwelling, setDwelling] = useState(initial?.dwelling ?? '');
+  const [attach, setAttach] = useState(initial?.attach ?? '');
+  const [ageBand, setAgeBand] = useState(initial?.ageBand ?? '');
+  const [occupants, setOccupants] = useState<number>(initial?.occupants ?? 2);
+  const [mode, setMode] = useState(initial?.mode ?? 'Net Internal');
+  const [airtight, setAirtight] = useState(initial?.airtight ?? 'Standard Method');
+  const [thermalTest, setThermalTest] = useState(initial?.thermalTest ?? 'No Test Performed');
 
   // Status
   const [climStatus, setClimStatus] = useState('');
@@ -249,7 +286,7 @@ export default function Page(): React.JSX.Element {
   const debounceClimate = useRef<number | null>(null);
   const debounceSave = useRef<number | null>(null);
 
-  /* LOCAL lookup first (matches FULL, SECTOR, OUTCODE, AREA) */
+  // Local table first
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -261,10 +298,12 @@ export default function Page(): React.JSX.Element {
       setClimStatus(`Climate from local table ✓ (${hit.matchedKey})`);
       setSource('Local table');
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [postcode]);
 
-  /* Fallback to API if any missing */
+  // Fallback API if needed
   useEffect(() => {
     if (!postcode && !address) return;
     if (debounceClimate.current) window.clearTimeout(debounceClimate.current);
@@ -281,28 +320,76 @@ export default function Page(): React.JSX.Element {
           setClimStatus('Auto climate ✓');
           setSource('API fallback');
         }
-      } catch (e: any) { setClimStatus(`Auto climate failed: ${e?.message || e}`); }
+      } catch (e: any) {
+        setClimStatus(`Auto climate failed: ${e?.message || e}`);
+      }
     }, 600);
-    return () => { if (debounceClimate.current) window.clearTimeout(debounceClimate.current); };
+    return () => {
+      if (debounceClimate.current) window.clearTimeout(debounceClimate.current);
+    };
   }, [postcode, address, altitude]);
 
   // Manual override badge
-  const onManualTex = (v: string) => { setTex(v === '' ? '' : Number(v)); setSource('Manual override'); };
-  const onManualHdd = (v: string) => { setHdd(v === '' ? '' : Number(v)); setSource('Manual override'); };
+  const onManualTex = (v: string) => {
+    setTex(v === '' ? '' : Number(v));
+    setSource('Manual override');
+  };
+  const onManualHdd = (v: string) => {
+    setHdd(v === '' ? '' : Number(v));
+    setSource('Manual override');
+  };
 
   // Auto-save
-  const snapshot = useMemo(() => ({
-    reference, postcode, country, address, epcNo, uprn,
-    altitude, tex, meanAnnual, hdd, dwelling, attach, ageBand, occupants,
-    mode, airtight, thermalTest, source
-  }), [reference, postcode, country, address, epcNo, uprn, altitude, tex, hdd, dwelling, attach, ageBand, occupants, mode, airtight, thermalTest, source]);
+  const snapshot = useMemo(
+    () => ({
+      reference,
+      postcode,
+      country,
+      address,
+      epcNo,
+      uprn,
+      altitude,
+      tex,
+      meanAnnual,
+      hdd,
+      dwelling,
+      attach,
+      ageBand,
+      occupants,
+      mode,
+      airtight,
+      thermalTest,
+      source,
+    }),
+    [
+      reference,
+      postcode,
+      country,
+      address,
+      epcNo,
+      uprn,
+      altitude,
+      tex,
+      hdd,
+      dwelling,
+      attach,
+      ageBand,
+      occupants,
+      mode,
+      airtight,
+      thermalTest,
+      source,
+    ]
+  );
   useEffect(() => {
     if (debounceSave.current) window.clearTimeout(debounceSave.current);
-    debounceSave.current = window.setTimeout(() => safeSet(STORAGE_KEY, snapshot), 300);
-    return () => { if (debounceSave.current) window.clearTimeout(debounceSave.current); };
+    debounceSave.current = window.setTimeout(() => lsSet(STORAGE_KEY, snapshot), 300);
+    return () => {
+      if (debounceSave.current) window.clearTimeout(debounceSave.current);
+    };
   }, [snapshot]);
 
-  // Altitude
+  // Altitude lookup
   const onFindAltitude = async () => {
     try {
       setAltStatus('Looking up…');
@@ -310,19 +397,47 @@ export default function Page(): React.JSX.Element {
       const elev = await elevation(geo.lat, geo.lon);
       setAltitude(Math.round(elev.metres));
       setAltStatus(`Found ${Math.round(elev.metres)} m • ${elev.provider}`);
-    } catch (e: any) { setAltStatus(`Failed: ${e?.message || String(e)}`); }
+    } catch (e: any) {
+      setAltStatus(`Failed: ${e?.message || String(e)}`);
+    }
   };
 
-  const onParseEpc = () => { const rrn = extractRRN(epcPaste); if (rrn) setEpcNo(rrn); };
-  const onSave = () => { safeSet(STORAGE_KEY, snapshot); alert('Saved to browser (localStorage).'); };
-  const onSaveContinue = () => { safeSet(STORAGE_KEY, snapshot); router.push('/ventilation'); };
+  const onParseEpc = () => {
+    const rrn = extractRRN(epcPaste);
+    if (rrn) setEpcNo(rrn);
+  };
+
+  const onSave = () => {
+    lsSet(STORAGE_KEY, snapshot);
+    alert('Saved to browser (localStorage).');
+  };
+  const onSaveContinue = () => {
+    lsSet(STORAGE_KEY, snapshot);
+    router.push('/ventilation');
+  };
   const resetAll = () => {
-    setReference(''); setPostcode(''); setCountry('England'); setAddress('');
-    setEpcNo(''); setUprn(''); setAltitude(0); setTex(-3); setHdd(2033);
-    setDwelling(''); setAttach(''); setAgeBand(''); setOccupants(2);
-    setMode('Net Internal'); setAirtight('Standard Method'); setThermalTest('No Test Performed');
-    setClimStatus(''); setAltStatus(''); setLatlonOverride(''); setEpcPaste(''); setSource('');
-    safeSet(STORAGE_KEY, {});
+    setReference('');
+    setPostcode('');
+    setCountry('England');
+    setAddress('');
+    setEpcNo('');
+    setUprn('');
+    setAltitude(0);
+    setTex(-3);
+    setHdd(2033);
+    setDwelling('');
+    setAttach('');
+    setAgeBand('');
+    setOccupants(2);
+    setMode('Net Internal');
+    setAirtight('Standard Method');
+    setThermalTest('No Test Performed');
+    setClimStatus('');
+    setAltStatus('');
+    setLatlonOverride('');
+    setEpcPaste('');
+    setSource('');
+    lsSet(STORAGE_KEY, {});
   };
 
   return (
@@ -344,7 +459,6 @@ export default function Page(): React.JSX.Element {
           </div>
 
           <div>
-            {/* Example postcode changed to a random London one */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Label>Postcode *</Label>
               {source && <Badge label={source} tone={source === 'Local table' ? 'success' : source === 'API fallback' ? 'neutral' : 'warning'} />}
@@ -355,7 +469,10 @@ export default function Page(): React.JSX.Element {
           <div>
             <Label>Country</Label>
             <Select value={country} onChange={(e) => setCountry(e.target.value)}>
-              <option>England</option><option>Wales</option><option>Scotland</option><option>Northern Ireland</option>
+              <option>England</option>
+              <option>Wales</option>
+              <option>Scotland</option>
+              <option>Northern Ireland</option>
             </Select>
           </div>
 
@@ -381,12 +498,12 @@ export default function Page(): React.JSX.Element {
             <div style={{ marginTop: 8 }}>
               <details>
                 <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude from getthedata.com</summary>
-                <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
-                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can also enter <em>lat,long</em>:
-                </div>
+                <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). Enter lat,long override if needed.</div>
               </details>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-                <button onClick={onFindAltitude} style={secondaryBtn}>Get altitude</button>
+                <button onClick={onFindAltitude} style={secondaryBtn}>
+                  Get altitude
+                </button>
                 <Input placeholder="(optional) 51.5,-0.12" value={latlonOverride} onChange={(e) => setLatlonOverride(e.target.value)} style={{ maxWidth: 180 }} />
                 <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
               </div>
@@ -412,12 +529,110 @@ export default function Page(): React.JSX.Element {
         <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>{climStatus}</div>
 
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Property Details</h3>
-        {/* ... rest of your form unchanged ... */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <div>
+            <Label>Dwelling Type</Label>
+            <Select value={dwelling} onChange={(e) => setDwelling(e.target.value)}>
+              <option value="">Select</option>
+              <option>Detached</option>
+              <option>Semi-detached</option>
+              <option>Terraced</option>
+              <option>Flat</option>
+              <option>Bungalow</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Attachment (what is this?)</Label>
+            <Select value={attach} onChange={(e) => setAttach(e.target.value)}>
+              <option value="">Select attachment</option>
+              <option>Mid</option>
+              <option>End</option>
+              <option>Corner</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Age Band</Label>
+            <Select value={ageBand} onChange={(e) => setAgeBand(e.target.value)}>
+              <option value="">Select age band</option>
+              <option>pre-1900</option>
+              <option>1900-1929</option>
+              <option>1930-1949</option>
+              <option>1950-1966</option>
+              <option>1967-1975</option>
+              <option>1976-1982</option>
+              <option>1983-1990</option>
+              <option>1991-1995</option>
+              <option>1996-2002</option>
+              <option>2003-2006</option>
+              <option>2007-2011</option>
+              <option>2012-present</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Occupants</Label>
+            <Input type="number" value={occupants} onChange={(e) => setOccupants(Number(e.target.value || 0))} />
+          </div>
+        </div>
+
+        <h3 style={{ marginTop: 18, marginBottom: 8 }}>Dimension Specification</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <div>
+            <Label>Mode</Label>
+            <Select value={mode} onChange={(e) => setMode(e.target.value)}>
+              <option>Net Internal</option>
+              <option>Gross Internal</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Airtightness Method</Label>
+            <Select value={airtight} onChange={(e) => setAirtight(e.target.value)}>
+              <option>Standard Method</option>
+              <option>Measured n50</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Thermal Performance Test</Label>
+            <Select value={thermalTest} onChange={(e) => setThermalTest(e.target.value)}>
+              <option>No Test Performed</option>
+              <option>Thermal Imaging</option>
+              <option>Co-heating</option>
+            </Select>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 18 }}>
+          <h3 style={{ margin: '4px 0 8px' }}>EPC finder (from address)</h3>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <a href="https://www.gov.uk/find-energy-certificate" target="_blank" rel="noreferrer">
+              <button style={secondaryBtn}>Open GOV.UK EPC search →</button>
+            </a>
+            <span style={{ color: '#666', fontSize: 12 }}>Find address → copy certificate page → paste → Parse.</span>
+          </div>
+          <textarea
+            rows={6}
+            placeholder="Paste EPC page text here"
+            value={epcPaste}
+            onChange={(e) => setEpcPaste(e.target.value)}
+            style={{ width: '100%', ...inputStyle, height: 140, resize: 'vertical' as const }}
+          />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+            <button onClick={onParseEpc} style={secondaryBtn}>
+              Parse pasted text
+            </button>
+            <span style={{ fontFamily: 'ui-monospace', fontSize: 12 }}>Detected EPC: {epcNo || '—'}</span>
+          </div>
+        </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-          <button onClick={resetAll} style={secondaryBtn}>Reset</button>
-          <button onClick={onSave} style={secondaryBtn}>Save</button>
-          <button onClick={onSaveContinue} style={primaryBtn}>Save & Continue →</button>
+          <button onClick={resetAll} style={secondaryBtn}>
+            Reset
+          </button>
+          <button onClick={onSave} style={secondaryBtn}>
+            Save
+          </button>
+          <button onClick={onSaveContinue} style={primaryBtn}>
+            Save & Continue →
+          </button>
         </div>
       </section>
     </main>
@@ -426,6 +641,27 @@ export default function Page(): React.JSX.Element {
 
 /* ---------------- styles ---------------- */
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
-const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box' };
-const primaryBtn: React.CSSProperties = { background: '#111', color: '#fff', border: '1px solid '#111', padding: '12px 18px', borderRadius: 12, cursor: 'pointer' };
-const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #ddd', padding: '12px 18px', borderRadius: 12, cursor: 'pointer' };
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #ddd',
+  outline: 'none',
+  boxSizing: 'border-box',
+};
+const primaryBtn: React.CSSProperties = {
+  background: '#111',
+  color: '#fff',
+  border: '1px solid #111',
+  padding: '12px 18px',
+  borderRadius: 12,
+  cursor: 'pointer',
+};
+const secondaryBtn: React.CSSProperties = {
+  background: '#fff',
+  color: '#111',
+  border: '1px solid #ddd',
+  padding: '12px 18px',
+  borderRadius: 12,
+  cursor: 'pointer',
+};
