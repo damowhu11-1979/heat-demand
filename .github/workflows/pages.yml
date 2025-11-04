@@ -3,7 +3,7 @@ name: Deploy Next.js (static) to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -19,14 +19,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          cache: 'npm'
 
       - name: Install
         run: npm install
@@ -36,10 +34,11 @@ jobs:
           if [ -f "post codes spf data climate.ods" ]; then
             npm run ods:json
           else
-            echo "ODS not found, skipping JSON generation."
+            echo "::error::ODS file 'post codes spf data climate.ods' not found in repo root."
+            exit 1
           fi
 
-      - name: Build (Next -> static)
+      - name: Build (Next -> static export)
         run: npm run build
 
       - name: Upload artifact
