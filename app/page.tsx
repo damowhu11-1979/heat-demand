@@ -37,29 +37,34 @@ function keyVariantsFromPostcode(input: string): string[] {
 async function loadLocalMap(): Promise<Map<string, RowLite> | null> {
   if (localCache.map) return localCache.map;
 
-  // WHY: GH Pages serves under /<repo>/, so absolute "/climate/..." 404s.
   const candidates = (() => {
     const urls = new Set<string>();
     const pathname = (typeof window !== 'undefined' ? window.location.pathname : '/') || '/';
-    const curDir = pathname.replace(/[^/]*$/, '');                // current dir with trailing slash
+    const curDir = pathname.replace(/[^/]*$/, '');
     const seg = pathname.split('/').filter(Boolean);
-    const repoRoot = seg.length ? `/${seg[0]}/` : '/';            // "/repo/" for GH Pages; "/" for user pages
+    const repoRoot = seg.length ? `/${seg[0]}/` : '/';
 
-    urls.add(`${curDir}climate/postcode_climate.json`);           // relative (best)
-    urls.add(`${repoRoot}climate/postcode_climate.json`);         // repo root
-    urls.add(`/climate/postcode_climate.json`);                   // site root
-    urls.add(`climate/postcode_climate.json`);                    // plain relative
-    urls.add(`/postcode_climate.json`);                           // fallback
-
+    urls.add(`${curDir}climate/postcode_climate.json`);
+    urls.add(`${repoRoot}climate/postcode_climate.json`);
+    urls.add(`/climate/postcode_climate.json`);
+    urls.add(`climate/postcode_climate.json`);
+    urls.add(`/postcode_climate.json`);
     return Array.from(urls);
   })();
 
   let rows: any = null;
+  let hit = '';
   for (const u of candidates) {
-    try { const r = await fetch(u, { cache: 'no-store' }); if (r.ok) { rows = await r.json(); break; } } catch {}
+    try {
+      const r = await fetch(u, { cache: 'no-store' });
+      if (r.ok) { rows = await r.json(); hit = u; break; }
+    } catch {}
   }
   if (!rows) return null;
 
+  console.info('Loaded postcode table from', hit);
+
+  // Accept array or object map
   const feed: any[] = Array.isArray(rows)
     ? rows
     : Object.entries(rows).map(([k, v]: any) => ({ key: k, ...(v || {}) }));
@@ -69,26 +74,27 @@ async function loadLocalMap(): Promise<Map<string, RowLite> | null> {
     const designTemp = Number.isFinite(+r.designTemp) ? Math.round(+r.designTemp) : undefined;
     const hdd = Number.isFinite(+r.hdd) ? Math.round(+r.hdd) : undefined;
     if (designTemp === undefined && hdd === undefined) continue;
-    const keys = [
-      fullNoSpace(r.postcode), fullNoSpace(r.post_code), fullNoSpace(r.key),
-      up(r.sector), up(r.outcode), up(r.area),
-    ].filter(Boolean) as string[];
-    for (const k of keys) if (!map.has(k)) map.set(k, { designTemp, hdd });
-  }
 
+    // NEW: support keys[] from converter
+    const fromArray = Array.isArray(r.keys) ? r.keys : [];
+    const derived = [
+      (r.postcode || r.post_code || r.key || '').toString(),
+      r.sector, r.outcode, r.area
+    ].filter(Boolean);
+
+    const keyset = new Set<string>([
+      ...fromArray.map((x: string) => x.toString().toUpperCase()),
+      ...derived.map((x: string) => x.toString().toUpperCase())
+    ]);
+
+    for (const k of keyset) {
+      const kNoSpace = k.replace(/\s+/g, '');
+      if (!map.has(kNoSpace)) map.set(kNoSpace, { designTemp, hdd });
+    }
+  }
   localCache.map = map;
   localCache.size = map.size;
   return map;
-}
-
-async function lookupLocalClimate(postcode: string): Promise<{ designTemp?: number; hdd?: number; matchedKey?: string } | null> {
-  const map = await loadLocalMap();
-  if (!map) return null;
-  for (const k of keyVariantsFromPostcode(postcode)) {
-    const v = map.get(k);
-    if (v) return { ...v, matchedKey: k };
-  }
-  return null;
 }
 
 /* ------------ geocoding & API fallback ------------ */
