@@ -2,15 +2,14 @@
 import type { NextConfig } from 'next';
 
 const isCI = process.env.GITHUB_ACTIONS === 'true';
+// If your repo name ever changes, update this:
+const repo = 'heat-demand';
 
-const nextConfig: NextConfig = {
-  // tell Next to create `out/` on build — no `next export` needed
-  output: 'export',
+const config: NextConfig = {
+  output: 'export',            // <-- static export (replaces `next export`)
   images: { unoptimized: true },
-
-  // for GitHub Pages under /heat-demand
-  basePath: isCI ? '/heat-demand' : undefined,
-  assetPrefix: isCI ? '/heat-demand/' : undefined,
+  basePath: isCI ? `/${repo}` : undefined,
+  assetPrefix: isCI ? `/${repo}/` : undefined,
 };
 
-export default nextConfig;
+export default config;
