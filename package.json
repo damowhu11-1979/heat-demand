@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && next export",   // ← removed `-o out`
+    "build": "next build && next export",
     "start": "next start",
     "lint": "eslint .",
     "ods:json": "node scripts/ods-to-json.mjs \"post codes spf data climate.ods\" public/climate/postcode_climate.json"
@@ -25,5 +25,8 @@
     "typescript": "^5",
     "xlsx": "^0.18.5"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
+
