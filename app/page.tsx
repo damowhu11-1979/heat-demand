@@ -230,9 +230,6 @@ export default function Page(): React.JSX.Element {
   const [hdd, setHdd] = useState<number | ''>(initial?.hdd ?? 2033);
   const meanAnnual = 10.2;
 
---- a/app/page.tsx
-+++ b/app/page.tsx
-@@
    // Details
    const [dwelling, setDwelling] = useState(initial?.dwelling ?? '');
 -  the const [attach, setAttach] = useState(initial?.attach ?? ''); // NOTE: keep fields intact
