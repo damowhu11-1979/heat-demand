@@ -24,22 +24,14 @@ const lsSet = (k: string, v: unknown) => {
 };
 
 /* ---------------- postcode climate table ---------------- */
-type ClimateRow = {
-  postcode?: string;
-  post_code?: string;
-  key?: string;
-  sector?: string;
-  outcode?: string;
-  area?: string;
-  designTemp?: number;
-  hdd?: number;
-};
 type RowLite = { designTemp?: number; hdd?: number };
-const localCache: { map?: Map<string, RowLite> } = {};
+const localCache: { map?: Map<string, RowLite>; size?: number } = {};
 
 const up = (s?: string) => (s || '').toUpperCase();
+const fullNoSpace = (s?: string) => up(s).replace(/\s+/g, '');
+
 function keyVariantsFromPostcode(input: string): string[] {
-  const raw = up(input).replace(/\s+/g, '');
+  const raw = fullNoSpace(input);
   if (!raw) return [];
   const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d)([A-Z]{2})$/);
   const out = m ? m[1] : '';
@@ -52,39 +44,68 @@ function keyVariantsFromPostcode(input: string): string[] {
   if (area) keys.push(area);
   return keys;
 }
-async function loadLocalMap(): Promise<Map<string, RowLite> | null> {
-  if (localCache.map) return localCache.map;
-  try {
-    const r = await fetch('/climate/postcode_climate.json', { cache: 'force-cache' });
-    if (!r.ok) return null;
-    const rows = (await r.json()) as ClimateRow[] | Record<string, any>;
-    const feed: ClimateRow[] = Array.isArray(rows)
-      ? rows
-      : Object.entries(rows).map(([k, v]: any) => ({ key: k, ...(v || {}) }));
 
-    const map = new Map<string, RowLite>();
-    for (const r of feed) {
-      const val: RowLite = {};
-      if (isFinite(r.designTemp as number)) val.designTemp = Math.round(r.designTemp as number);
-      if (isFinite(r.hdd as number)) val.hdd = Math.round(r.hdd as number);
-      const keys = [
-        up(r.postcode).replace(/\s+/g, ''),
-        up(r.post_code).replace(/\s+/g, ''),
-        up(r.key).replace(/\s+/g, ''),
-        up(r.sector),
-        up(r.outcode),
-        up(r.area),
-      ].filter(Boolean) as string[];
-      if (val.designTemp !== undefined || val.hdd !== undefined) {
-        for (const k of keys) if (!map.has(k)) map.set(k, val);
-      }
-    }
-    localCache.map = map;
-    return map;
+async function tryFetch(url: string): Promise<any | null> {
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
   } catch {
     return null;
   }
 }
+
+async function loadLocalMap(): Promise<Map<string, RowLite> | null> {
+  if (localCache.map) return localCache.map;
+
+  // Primary and fallback URLs inside /public
+  const urls = [
+    '/climate/postcode_climate.json',
+    '/postcode_climate.json', // fallback if user put it at public root by mistake
+  ];
+
+  let rows: any = null;
+  for (const u of urls) {
+    rows = await tryFetch(u);
+    if (rows) break;
+  }
+  if (!rows) return null;
+
+  // Accept array or object map
+  const feed: any[] = Array.isArray(rows)
+    ? rows
+    : Object.entries(rows).map(([k, v]: any) => ({ key: k, ...(v || {}) }));
+
+  const map = new Map<string, RowLite>();
+  let added = 0;
+
+  for (const r of feed) {
+    const designTemp = Number.isFinite(+r.designTemp) ? Math.round(+r.designTemp) : undefined;
+    const hdd = Number.isFinite(+r.hdd) ? Math.round(+r.hdd) : undefined;
+    if (designTemp === undefined && hdd === undefined) continue;
+
+    const keys = [
+      fullNoSpace(r.postcode),
+      fullNoSpace(r.post_code),
+      fullNoSpace(r.key),
+      up(r.sector),
+      up(r.outcode),
+      up(r.area),
+    ].filter(Boolean) as string[];
+
+    for (const k of keys) {
+      if (!map.has(k)) {
+        map.set(k, { designTemp, hdd });
+        added++;
+      }
+    }
+  }
+
+  localCache.map = map;
+  localCache.size = map.size;
+  return map;
+}
+
 async function lookupLocalClimate(postcode: string): Promise<{ designTemp?: number; hdd?: number; matchedKey?: string } | null> {
   const map = await loadLocalMap();
   if (!map) return null;
@@ -107,11 +128,11 @@ const normalisePC = (s: string) => {
 const parseLatLon = (s: string) => {
   const m = String(s || '').trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (!m) return null;
-  const lat = +m[1];
-  const lon = +m[2];
+  const lat = +m[1], lon = +m[2];
   if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   return { lat, lon };
 };
+
 async function geocodePostcode(pc: string): Promise<LatLon> {
   const url = `https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`;
   const r = await fetch(url, { cache: 'no-store' });
@@ -133,11 +154,8 @@ async function geocodeAny(postcode: string, address: string, latlonText?: string
   if (ll) return { ...ll, src: 'latlon' };
   const pc = normalisePC(postcode || '');
   if (pc) {
-    try {
-      return await geocodePostcode(pc);
-    } catch {
-      return await geocodeAddress(pc);
-    }
+    try { return await geocodePostcode(pc); }
+    catch { return await geocodeAddress(pc); }
   }
   if (!address || address.trim().length < 4) throw new Error('enter postcode or address');
   return await geocodeAddress(address);
@@ -186,8 +204,7 @@ async function fetchMonthlyNormals(lat: number, lon: number) {
 function hddFromMeans(means: number[]) {
   let sum = 0;
   for (let m = 0; m < 12; m++) {
-    const T = means[m];
-    const d = DAYS[m];
+    const T = means[m], d = DAYS[m];
     if (isFinite(T)) sum += Math.max(0, 15.5 - T) * d;
   }
   return Math.round(sum);
@@ -207,9 +224,7 @@ function designTempRegionalFallback(lat: number, altitudeMeters: number): number
 async function autoClimateCalc(pc: string, addr: string, alt: number) {
   const geo = await geocodeAny(pc, addr);
   let hdd: number | undefined;
-  try {
-    hdd = await fetchHDD(geo.lat, geo.lon);
-  } catch {}
+  try { hdd = await fetchHDD(geo.lat, geo.lon); } catch {}
   let design: number | null = null;
   try {
     const normals = await fetchMonthlyNormals(geo.lat, geo.lon);
@@ -229,18 +244,13 @@ function extractRRN(text: string): string | null {
 const Badge = ({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'success' | 'warning' }) => (
   <span
     style={{
-      fontSize: 11,
-      padding: '3px 8px',
-      borderRadius: 999,
-      border: '1px solid',
+      fontSize: 11, padding: '3px 8px', borderRadius: 999, border: '1px solid',
       borderColor: tone === 'success' ? '#19a34a' : tone === 'warning' ? '#b76e00' : '#bbb',
       color: tone === 'success' ? '#0c7a35' : tone === 'warning' ? '#7a4b00' : '#666',
       background: tone === 'success' ? '#e8f7ee' : tone === 'warning' ? '#fff4e0' : '#f3f3f3',
       display: 'inline-block',
     }}
-  >
-    {label}
-  </span>
+  >{label}</span>
 );
 const Label = ({ children }: { children: React.ReactNode }) => (
   <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>
@@ -281,7 +291,8 @@ export default function Page(): React.JSX.Element {
   const [altStatus, setAltStatus] = useState('');
   const [epcPaste, setEpcPaste] = useState('');
   const [latlonOverride, setLatlonOverride] = useState('');
-  const [source, setSource] = useState<'Local table' | 'API fallback' | 'Manual override' | ''>(initial?.source ?? '');
+  const [source, setSource] = useState<'Local table' | 'API fallback' | 'Manual override' | 'No table' | ''>(initial?.source ?? '');
+  const [debug, setDebug] = useState({ tableSize: localCache.size ?? 0, matchedKey: '' });
 
   const debounceClimate = useRef<number | null>(null);
   const debounceSave = useRef<number | null>(null);
@@ -290,17 +301,31 @@ export default function Page(): React.JSX.Element {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!postcode) return;
-      const hit = await lookupLocalClimate(postcode);
-      if (cancelled || !hit) return;
-      if (isFinite(hit.designTemp as number)) setTex(hit.designTemp!);
-      if (isFinite(hit.hdd as number)) setHdd(hit.hdd!);
-      setClimStatus(`Climate from local table ✓ (${hit.matchedKey})`);
-      setSource('Local table');
+      const map = await loadLocalMap();
+      if (cancelled) return;
+      setDebug((d) => ({ ...d, tableSize: map?.size ?? 0 }));
+      if (!postcode) {
+        setSource(map ? '' : 'No table');
+        return;
+      }
+      if (map) {
+        const hit = await lookupLocalClimate(postcode);
+        if (cancelled) return;
+        if (hit) {
+          if (isFinite(hit.designTemp as number)) setTex(hit.designTemp!);
+          if (isFinite(hit.hdd as number)) setHdd(hit.hdd!);
+          setClimStatus(`Local table ✓ matched: ${hit.matchedKey}`);
+          setSource('Local table');
+          setDebug((d) => ({ ...d, matchedKey: hit.matchedKey || '' }));
+        } else {
+          setDebug((d) => ({ ...d, matchedKey: '' }));
+        }
+      } else {
+        setSource('No table');
+        setClimStatus('No local climate table found (public/climate/postcode_climate.json)');
+      }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [postcode]);
 
   // Fallback API if needed
@@ -318,7 +343,7 @@ export default function Page(): React.JSX.Element {
           if (needDesign) setTex(res.designTemp);
           if (needHdd) setHdd(res.hdd);
           setClimStatus('Auto climate ✓');
-          setSource('API fallback');
+          setSource((s) => (s === 'No table' ? 'No table' : 'API fallback'));
         }
       } catch (e: any) {
         setClimStatus(`Auto climate failed: ${e?.message || e}`);
@@ -330,63 +355,22 @@ export default function Page(): React.JSX.Element {
   }, [postcode, address, altitude]);
 
   // Manual override badge
-  const onManualTex = (v: string) => {
-    setTex(v === '' ? '' : Number(v));
-    setSource('Manual override');
-  };
-  const onManualHdd = (v: string) => {
-    setHdd(v === '' ? '' : Number(v));
-    setSource('Manual override');
-  };
+  const onManualTex = (v: string) => { setTex(v === '' ? '' : Number(v)); setSource('Manual override'); };
+  const onManualHdd = (v: string) => { setHdd(v === '' ? '' : Number(v)); setSource('Manual override'); };
 
   // Auto-save
   const snapshot = useMemo(
     () => ({
-      reference,
-      postcode,
-      country,
-      address,
-      epcNo,
-      uprn,
-      altitude,
-      tex,
-      meanAnnual,
-      hdd,
-      dwelling,
-      attach,
-      ageBand,
-      occupants,
-      mode,
-      airtight,
-      thermalTest,
-      source,
+      reference, postcode, country, address, epcNo, uprn,
+      altitude, tex, meanAnnual, hdd,
+      dwelling, attach, ageBand, occupants, mode, airtight, thermalTest, source,
     }),
-    [
-      reference,
-      postcode,
-      country,
-      address,
-      epcNo,
-      uprn,
-      altitude,
-      tex,
-      hdd,
-      dwelling,
-      attach,
-      ageBand,
-      occupants,
-      mode,
-      airtight,
-      thermalTest,
-      source,
-    ]
+    [reference, postcode, country, address, epcNo, uprn, altitude, tex, hdd, dwelling, attach, ageBand, occupants, mode, airtight, thermalTest, source]
   );
   useEffect(() => {
     if (debounceSave.current) window.clearTimeout(debounceSave.current);
     debounceSave.current = window.setTimeout(() => lsSet(STORAGE_KEY, snapshot), 300);
-    return () => {
-      if (debounceSave.current) window.clearTimeout(debounceSave.current);
-    };
+    return () => { if (debounceSave.current) window.clearTimeout(debounceSave.current); };
   }, [snapshot]);
 
   // Altitude lookup
@@ -407,45 +391,23 @@ export default function Page(): React.JSX.Element {
     if (rrn) setEpcNo(rrn);
   };
 
-  const onSave = () => {
-    lsSet(STORAGE_KEY, snapshot);
-    alert('Saved to browser (localStorage).');
-  };
-  const onSaveContinue = () => {
-    lsSet(STORAGE_KEY, snapshot);
-    router.push('/ventilation');
-  };
+  const onSave = () => { lsSet(STORAGE_KEY, snapshot); alert('Saved to browser (localStorage).'); };
+  const onSaveContinue = () => { lsSet(STORAGE_KEY, snapshot); router.push('/ventilation'); };
   const resetAll = () => {
-    setReference('');
-    setPostcode('');
-    setCountry('England');
-    setAddress('');
-    setEpcNo('');
-    setUprn('');
-    setAltitude(0);
-    setTex(-3);
-    setHdd(2033);
-    setDwelling('');
-    setAttach('');
-    setAgeBand('');
-    setOccupants(2);
-    setMode('Net Internal');
-    setAirtight('Standard Method');
-    setThermalTest('No Test Performed');
-    setClimStatus('');
-    setAltStatus('');
-    setLatlonOverride('');
-    setEpcPaste('');
-    setSource('');
-    lsSet(STORAGE_KEY, {});
+    setReference(''); setPostcode(''); setCountry('England'); setAddress('');
+    setEpcNo(''); setUprn(''); setAltitude(0); setTex(-3); setHdd(2033);
+    setDwelling(''); setAttach(''); setAgeBand(''); setOccupants(2);
+    setMode('Net Internal'); setAirtight('Standard Method'); setThermalTest('No Test Performed');
+    setClimStatus(''); setAltStatus(''); setLatlonOverride(''); setEpcPaste('');
+    setSource(''); lsSet(STORAGE_KEY, {});
   };
+
+  const sourceTone = source === 'Local table' ? 'success' : source === 'Manual override' ? 'warning' : 'neutral';
 
   return (
     <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Heat Load Calculator (MCS-style)</h1>
-      <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>
-        Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results
-      </div>
+      <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results</div>
 
       <section style={card}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, padding: 12, borderRadius: 10, background: '#f7f7f7' }}>
@@ -461,7 +423,7 @@ export default function Page(): React.JSX.Element {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Label>Postcode *</Label>
-              {source && <Badge label={source} tone={source === 'Local table' ? 'success' : source === 'API fallback' ? 'neutral' : 'warning'} />}
+              {source && <Badge label={`${source}${localCache.size ? ` (${localCache.size})` : ''}`} tone={sourceTone as any} />}
             </div>
             <Input placeholder="e.g., E1 6AN" value={postcode} onChange={(e) => setPostcode(e.target.value)} />
           </div>
@@ -469,10 +431,7 @@ export default function Page(): React.JSX.Element {
           <div>
             <Label>Country</Label>
             <Select value={country} onChange={(e) => setCountry(e.target.value)}>
-              <option>England</option>
-              <option>Wales</option>
-              <option>Scotland</option>
-              <option>Northern Ireland</option>
+              <option>England</option><option>Wales</option><option>Scotland</option><option>Northern Ireland</option>
             </Select>
           </div>
 
@@ -501,9 +460,7 @@ export default function Page(): React.JSX.Element {
                 <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). Enter lat,long override if needed.</div>
               </details>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-                <button onClick={onFindAltitude} style={secondaryBtn}>
-                  Get altitude
-                </button>
+                <button onClick={onFindAltitude} style={secondaryBtn}>Get altitude</button>
                 <Input placeholder="(optional) 51.5,-0.12" value={latlonOverride} onChange={(e) => setLatlonOverride(e.target.value)} style={{ maxWidth: 180 }} />
                 <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
               </div>
@@ -526,7 +483,14 @@ export default function Page(): React.JSX.Element {
           </div>
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>{climStatus}</div>
+        <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+          {climStatus}
+          {localCache.size !== undefined && (
+            <span style={{ marginLeft: 8, color: '#999' }}>
+              • table size: {localCache.size ?? 0} {debug.matchedKey ? `• matched: ${debug.matchedKey}` : ''}
+            </span>
+          )}
+        </div>
 
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Property Details</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
@@ -534,38 +498,25 @@ export default function Page(): React.JSX.Element {
             <Label>Dwelling Type</Label>
             <Select value={dwelling} onChange={(e) => setDwelling(e.target.value)}>
               <option value="">Select</option>
-              <option>Detached</option>
-              <option>Semi-detached</option>
-              <option>Terraced</option>
-              <option>Flat</option>
-              <option>Bungalow</option>
+              <option>Detached</option><option>Semi-detached</option><option>Terraced</option>
+              <option>Flat</option><option>Bungalow</option>
             </Select>
           </div>
           <div>
             <Label>Attachment (what is this?)</Label>
             <Select value={attach} onChange={(e) => setAttach(e.target.value)}>
               <option value="">Select attachment</option>
-              <option>Mid</option>
-              <option>End</option>
-              <option>Corner</option>
+              <option>Mid</option><option>End</option><option>Corner</option>
             </Select>
           </div>
           <div>
             <Label>Age Band</Label>
             <Select value={ageBand} onChange={(e) => setAgeBand(e.target.value)}>
               <option value="">Select age band</option>
-              <option>pre-1900</option>
-              <option>1900-1929</option>
-              <option>1930-1949</option>
-              <option>1950-1966</option>
-              <option>1967-1975</option>
-              <option>1976-1982</option>
-              <option>1983-1990</option>
-              <option>1991-1995</option>
-              <option>1996-2002</option>
-              <option>2003-2006</option>
-              <option>2007-2011</option>
-              <option>2012-present</option>
+              <option>pre-1900</option><option>1900-1929</option><option>1930-1949</option>
+              <option>1950-1966</option><option>1967-1975</option><option>1976-1982</option>
+              <option>1983-1990</option><option>1991-1995</option><option>1996-2002</option>
+              <option>2003-2006</option><option>2007-2011</option><option>2012-present</option>
             </Select>
           </div>
           <div>
@@ -579,23 +530,19 @@ export default function Page(): React.JSX.Element {
           <div>
             <Label>Mode</Label>
             <Select value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option>Net Internal</option>
-              <option>Gross Internal</option>
+              <option>Net Internal</option><option>Gross Internal</option>
             </Select>
           </div>
           <div>
             <Label>Airtightness Method</Label>
             <Select value={airtight} onChange={(e) => setAirtight(e.target.value)}>
-              <option>Standard Method</option>
-              <option>Measured n50</option>
+              <option>Standard Method</option><option>Measured n50</option>
             </Select>
           </div>
           <div>
             <Label>Thermal Performance Test</Label>
             <Select value={thermalTest} onChange={(e) => setThermalTest(e.target.value)}>
-              <option>No Test Performed</option>
-              <option>Thermal Imaging</option>
-              <option>Co-heating</option>
+              <option>No Test Performed</option><option>Thermal Imaging</option><option>Co-heating</option>
             </Select>
           </div>
         </div>
@@ -606,7 +553,9 @@ export default function Page(): React.JSX.Element {
             <a href="https://www.gov.uk/find-energy-certificate" target="_blank" rel="noreferrer">
               <button style={secondaryBtn}>Open GOV.UK EPC search →</button>
             </a>
-            <span style={{ color: '#666', fontSize: 12 }}>Find address → copy certificate page → paste → Parse.</span>
+            <span style={{ color: '#666', fontSize: 12 }}>
+              Find address → copy certificate page → paste → Parse.
+            </span>
           </div>
           <textarea
             rows={6}
@@ -616,23 +565,15 @@ export default function Page(): React.JSX.Element {
             style={{ width: '100%', ...inputStyle, height: 140, resize: 'vertical' as const }}
           />
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-            <button onClick={onParseEpc} style={secondaryBtn}>
-              Parse pasted text
-            </button>
+            <button onClick={onParseEpc} style={secondaryBtn}>Parse pasted text</button>
             <span style={{ fontFamily: 'ui-monospace', fontSize: 12 }}>Detected EPC: {epcNo || '—'}</span>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-          <button onClick={resetAll} style={secondaryBtn}>
-            Reset
-          </button>
-          <button onClick={onSave} style={secondaryBtn}>
-            Save
-          </button>
-          <button onClick={onSaveContinue} style={primaryBtn}>
-            Save & Continue →
-          </button>
+          <button onClick={resetAll} style={secondaryBtn}>Reset</button>
+          <button onClick={onSave} style={secondaryBtn}>Save</button>
+          <button onClick={onSaveContinue} style={primaryBtn}>Save & Continue →</button>
         </div>
       </section>
     </main>
@@ -642,26 +583,11 @@ export default function Page(): React.JSX.Element {
 /* ---------------- styles ---------------- */
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
 const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #ddd',
-  outline: 'none',
-  boxSizing: 'border-box',
+  width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box',
 };
 const primaryBtn: React.CSSProperties = {
-  background: '#111',
-  color: '#fff',
-  border: '1px solid #111',
-  padding: '12px 18px',
-  borderRadius: 12,
-  cursor: 'pointer',
+  background: '#111', color: '#fff', border: '1px solid #111', padding: '12px 18px', borderRadius: 12, cursor: 'pointer',
 };
 const secondaryBtn: React.CSSProperties = {
-  background: '#fff',
-  color: '#111',
-  border: '1px solid #ddd',
-  padding: '12px 18px',
-  borderRadius: 12,
-  cursor: 'pointer',
+  background: '#fff', color: '#111', border: '1px solid #ddd', padding: '12px 18px', borderRadius: 12, cursor: 'pointer',
 };
