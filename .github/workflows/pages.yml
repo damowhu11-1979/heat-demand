@@ -1,3 +1,4 @@
+# .github/workflows/pages.yml
 name: Deploy Next.js (static) to GitHub Pages
 
 on:
@@ -28,9 +29,8 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci
+        run: npm install
 
-      # Build postcode climate JSON from your ODS (if the file exists)
       - name: Build postcode climate JSON
         run: |
           if [ -f "post codes spf data climate.ods" ]; then
@@ -39,7 +39,6 @@ jobs:
             echo "ODS not found, skipping JSON generation."
           fi
 
-      # Build static site into ./out (see package.json note below)
       - name: Build (Next -> static)
         run: npm run build
 
