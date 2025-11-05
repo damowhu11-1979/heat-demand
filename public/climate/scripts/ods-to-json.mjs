@@ -3,18 +3,25 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
 
-const [, , inFileArg, outFileArg] = process.argv;
-if (!inFileArg || !outFileArg) {
-  console.error('Usage: node scripts/ods-to-json.mjs "input.ods" "output.json"');
+const [, , inputPath, outputPath] = process.argv;
+
+if (!inputPath || !outputPath) {
+  console.error('Usage: node scripts/ods-to-json.mjs "<input.ods>" "<output.json>"');
   process.exit(1);
 }
-const INPUT = inFileArg;
-const OUTPUT = outFileArg;
 
-const slug = (h) => String(h || '').trim().toLowerCase().replace(/[\s\-_/]+/g, '').replace(/[^\w]/g, '');
-const H_POSTCODE = new Set(['postcode','postcodes','post_code','sector','outcode','district','area','pc','pcode','postcoderegion','postalcodesector']);
-const H_DESIGN   = new Set(['design','designtemp','externaldesigntemp','designext','tex','designc','designdegc','designoutside','designexternal','designexttemp']);
-const H_HDD      = new Set(['hdd','heatingdegreedays','degreedays','degree_days','hdd15','hdd155','hddb15','hddb155']);
+const slug = (h) =>
+  String(h || '').trim().toLowerCase().replace(/[\s\-_/]+/g, '').replace(/[^\w]/g, '');
+
+const H_POSTCODE = new Set([
+  'postcode','postcodes','post_code','sector','outcode','district','area','pc','pcode','postcoderegion','postalcodesector'
+]);
+const H_DESIGN = new Set([
+  'design','designtemp','externaldesigntemp','designext','tex','designc','designdegc','designoutside','designexternal','designexttemp'
+]);
+const H_HDD = new Set([
+  'hdd','heatingdegreedays','degreedays','degree_days','hdd15','hdd155','hddb15','hddb155'
+]);
 
 function normCode(s) {
   const raw = String(s || '').toUpperCase().replace(/\s+/g, '');
@@ -30,12 +37,12 @@ function explodeKeysFromCode(s) {
   const set = new Set();
   const norm = normCode(s);
   if (!norm) return [];
-  set.add(norm.replace(/\s+/g, ''));
-  const out = norm.split(' ')[0];
-  const sec = norm.includes(' ') ? `${out} ${norm.split(' ')[1][0]}` : '';
+  set.add(norm.replace(/\s+/g, ''));            // full, no space
+  const out = norm.split(' ')[0];               // outcode
+  const sector = norm.includes(' ') ? `${out} ${norm.split(' ')[1][0]}` : '';
   const area = out.replace(/\d.*/, '');
   set.add(out);
-  if (sec) set.add(sec);
+  if (sector) set.add(sector);
   if (area) set.add(area);
   return Array.from(set);
 }
@@ -62,13 +69,13 @@ function pick(headers) {
 }
 
 (async () => {
-  const wb = XLSX.readFile(INPUT, { raw: true });
+  const wb = XLSX.readFile(inputPath, { raw: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
   const headers = Object.keys(rows[0] || {});
   const { pc, d, h } = pick(headers);
-  const out = [];
 
+  const out = [];
   for (const r of rows) {
     let code = pc ? objGet(r, pc) : undefined;
     if (!code) {
@@ -89,7 +96,7 @@ function pick(headers) {
     out.push({ keys, designTemp, hdd: hddVal });
   }
 
-  await fs.mkdir(path.dirname(OUTPUT), { recursive: true });
-  await fs.writeFile(OUTPUT, JSON.stringify(out, null, 2), 'utf8');
-  console.log(`Wrote ${out.length} rows → ${OUTPUT}`);
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, JSON.stringify(out, null, 2), 'utf8');
+  console.log(`Wrote ${out.length} rows → ${outputPath}`);
 })();
