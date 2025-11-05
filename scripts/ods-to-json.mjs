@@ -76,15 +76,15 @@ for (const r of rows) {
   const raw = norm(code);
   if (!raw) continue;
 
-  // Build key set: FULL, OUTCODE, SECTOR, AREA
+ // Build key set: FULL, OUTCODE, SECTOR, AREA
   const keys = new Set([raw]);
 
-  // OUTCODE (e.g. SW1A)
+  // OUTCODE
   const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(.*)$/);
   const outcode = m?.[1] ?? '';
   if (outcode) keys.add(outcode);
 
-  // SECTOR (outcode + first digit of the inward, if any)
+  // SECTOR
   if (outcode) {
     const inward = raw.slice(outcode.length);
     const firstDigit = inward.match(/\d/);
@@ -96,7 +96,10 @@ for (const r of rows) {
     const area = outcode.replace(/\d.*/, '');
     if (area) keys.add(area);
   }
-
+ // NEW: coarse regional fallbacks (first 2 letters, then first 1 letter)
+  const letters = raw.replace(/[^A-Z]/g, '');
+  if (letters.length >= 2) keys.add(letters.slice(0, 2)); // FIRST2 e.g. "CO"
+  if (letters.length >= 1) keys.add(letters.slice(0, 1)); // FIRST1 e.g. "C"
   const designTemp = d ? parseNum(objGet(r, d)) : undefined;
   const hddVal     = h ? parseNum(objGet(r, h)) : undefined;
   if (designTemp === undefined && hddVal === undefined) continue;
