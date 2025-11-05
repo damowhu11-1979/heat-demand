@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "ods:json": "node scripts/ods-to-json.mjs \"post codes spf data climate.ods\" public/climate/postcode_climate.json"
+    "ods:json": "node scripts/ods-to-json.mjs"
   },
   "dependencies": {
     "next": "16.0.1",
