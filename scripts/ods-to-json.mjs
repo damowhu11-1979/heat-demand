@@ -3,13 +3,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
 
-// --- resolve input/output ---
 const inArg  = process.argv[2] || 'post codes spf data climate.ods';
 const outArg = process.argv[3] || 'public/climate/postcode_climate.json';
 const INPUT  = inArg;
 const OUTPUT = outArg;
 
-// --- tiny helpers ---
 const slug = (h) =>
   String(h || '').trim().toLowerCase().replace(/[\s\-_/]+/g, '').replace(/[^\w]/g, '');
 
@@ -48,9 +46,9 @@ const pick = (headers) => {
   return { pc, d, h };
 };
 
-// --- read workbook (ESM-friendly) ---
+// --- read workbook as buffer (ESM-friendly) ---
 const buf = await fs.readFile(INPUT);
-const wb  = XLSX.read(buf, { type: 'buffer' });  // <-- instead of readFile
+const wb  = XLSX.read(buf, { type: 'buffer' });
 const ws  = wb.Sheets[wb.SheetNames[0]];
 const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
 if (!rows.length) {
@@ -65,7 +63,7 @@ const out = [];
 for (const r of rows) {
   let code = pc ? objGet(r, pc) : undefined;
 
-  // tolerate various splits/labels if main column missing
+  // tolerate split pieces if there's no single postcode column
   if (!code) {
     const area = objGet(r, 'area') || objGet(r, 'Area');
     const outc = objGet(r, 'outcode') || objGet(r, 'Outcode') || objGet(r, 'district');
@@ -78,12 +76,23 @@ for (const r of rows) {
   const raw = norm(code);
   if (!raw) continue;
 
-  // Build keys we’ll match on: FULL (no space), OUTCODE, AREA
+  // Build key set: FULL, OUTCODE, SECTOR, AREA
   const keys = new Set([raw]);
-  const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d?)([A-Z]{0,2})?$/);
-  if (m) {
-    const outcode = m[1];
-    keys.add(outcode);
+
+  // OUTCODE (e.g. SW1A)
+  const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(.*)$/);
+  const outcode = m?.[1] ?? '';
+  if (outcode) keys.add(outcode);
+
+  // SECTOR (outcode + first digit of the inward, if any)
+  if (outcode) {
+    const inward = raw.slice(outcode.length);
+    const firstDigit = inward.match(/\d/);
+    if (firstDigit) keys.add(`${outcode}${firstDigit[0]}`);
+  }
+
+  // AREA (letters until first digit)
+  if (outcode) {
     const area = outcode.replace(/\d.*/, '');
     if (area) keys.add(area);
   }
@@ -95,7 +104,6 @@ for (const r of rows) {
   out.push({ keys: Array.from(keys), designTemp, hdd: hddVal });
 }
 
-// --- write json ---
 await fs.mkdir(path.dirname(OUTPUT), { recursive: true });
 await fs.writeFile(OUTPUT, JSON.stringify(out, null, 2), 'utf8');
 console.log(`Wrote ${out.length} rows → ${OUTPUT}`);
