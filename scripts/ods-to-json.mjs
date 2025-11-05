@@ -3,19 +3,27 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
 
-const [, , inFileArg, outFileArg] = process.argv;
-if (!inFileArg || !outFileArg) {
-  console.error('Usage: node scripts/ods-to-json.mjs "<input.ods>" "<output.json>"');
-  process.exit(1);
-}
-const INPUT = inFileArg;
-const OUTPUT = outFileArg;
+// --- resolve input/output ---
+const inArg  = process.argv[2] || 'post codes spf data climate.ods';
+const outArg = process.argv[3] || 'public/climate/postcode_climate.json';
+const INPUT  = inArg;
+const OUTPUT = outArg;
 
-// helpers
-const slug = (h) => String(h || '').trim().toLowerCase().replace(/[\s\-_/]+/g, '').replace(/[^\w]/g, '');
-const H_POSTCODE = new Set(['postcode','postcodes','post_code','sector','outcode','district','area','pc','pcode','postcoderegion','postalcodesector']);
-const H_DESIGN   = new Set(['design','designtemp','externaldesigntemp','designext','tex','designc','designdegc','designoutside','designexternal','designexttemp']);
-const H_HDD      = new Set(['hdd','heatingdegreedays','degreedays','degree_days','hdd15','hdd155','hddb15','hddb155']);
+// --- tiny helpers ---
+const slug = (h) =>
+  String(h || '').trim().toLowerCase().replace(/[\s\-_/]+/g, '').replace(/[^\w]/g, '');
+
+const H_POSTCODE = new Set([
+  'postcode','postcodes','post_code','sector','outcode','district','area','pc','pcode',
+  'postcoderegion','postalcodesector'
+]);
+const H_DESIGN = new Set([
+  'design','designtemp','externaldesigntemp','designext','tex','designc','designdegc',
+  'designoutside','designexternal','designexttemp'
+]);
+const H_HDD = new Set([
+  'hdd','heatingdegreedays','degreedays','degree_days','hdd15','hdd155','hddb15','hddb155'
+]);
 
 const norm = (s) => String(s || '').toUpperCase().replace(/\s+/g, '');
 const parseNum = (x) => {
@@ -40,27 +48,37 @@ const pick = (headers) => {
   return { pc, d, h };
 };
 
-const wb = XLSX.readFile(INPUT, { raw: true });
-const ws = wb.Sheets[wb.SheetNames[0]];
+// --- read workbook (ESM-friendly) ---
+const buf = await fs.readFile(INPUT);
+const wb  = XLSX.read(buf, { type: 'buffer' });  // <-- instead of readFile
+const ws  = wb.Sheets[wb.SheetNames[0]];
 const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+if (!rows.length) {
+  console.error('No rows found in the first sheet.');
+  process.exit(1);
+}
+
 const headers = Object.keys(rows[0] || {});
 const { pc, d, h } = pick(headers);
 
 const out = [];
 for (const r of rows) {
   let code = pc ? objGet(r, pc) : undefined;
+
+  // tolerate various splits/labels if main column missing
   if (!code) {
     const area = objGet(r, 'area') || objGet(r, 'Area');
     const outc = objGet(r, 'outcode') || objGet(r, 'Outcode') || objGet(r, 'district');
     const sec  = objGet(r, 'sector') || objGet(r, 'Sector') || objGet(r, 'sect');
-    const unit = objGet(r, 'unit') || objGet(r, 'Unit');
+    const unit = objGet(r, 'unit')   || objGet(r, 'Unit');
     const concat = [area || outc || '', sec || '', unit || ''].join('').trim();
     if (concat) code = concat;
   }
+
   const raw = norm(code);
   if (!raw) continue;
 
-  // build keys (FULL no space, OUTCODE, AREA)
+  // Build keys we’ll match on: FULL (no space), OUTCODE, AREA
   const keys = new Set([raw]);
   const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d?)([A-Z]{0,2})?$/);
   if (m) {
@@ -77,6 +95,7 @@ for (const r of rows) {
   out.push({ keys: Array.from(keys), designTemp, hdd: hddVal });
 }
 
+// --- write json ---
 await fs.mkdir(path.dirname(OUTPUT), { recursive: true });
 await fs.writeFile(OUTPUT, JSON.stringify(out, null, 2), 'utf8');
 console.log(`Wrote ${out.length} rows → ${OUTPUT}`);
