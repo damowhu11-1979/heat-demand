@@ -45,21 +45,26 @@ function keysFor(raw: string): string[] {
   return Array.from(keys);
 }
 
-/** Try several paths (works on GitHub Pages and locally) */
 async function loadClimateMap(): Promise<ClimateMap> {
-  const candidates = (() => {
-    const urls = new Set<string>();
-    const pathname =
-      typeof window !== 'undefined' ? window.location.pathname : '/' || '/';
-    const curDir = pathname.replace(/[^/]*$/, '');
-    const seg = pathname.split('/').filter(Boolean);
-    const repoRoot = seg.length ? `/${seg[0]}` : '/';
-    urls.add(`${curDir}climate/postcode_climate.json`);
-    urls.add(`${repoRoot}climate/postcode_climate.json`);
-    urls.add(`/climate/postcode_climate.json`);
-    urls.add(`/postcode_climate.json`);
-    return Array.from(urls);
-  })();
+  // --- figure out where we are (SSR-safe) ---
+  const isBrowser = typeof window !== 'undefined';
+  const pathname = isBrowser && window.location ? window.location.pathname : '/';
+
+  // current directory of the page (e.g. /heat-demand/)
+  const curDir = pathname.replace(/[^/]*$/, ''); // strip trailing filename
+  // first segment as the repo root when deployed at /<repo>/
+  const seg = pathname.split('/').filter(Boolean);
+  const repoRoot = seg.length ? `/${seg[0]}/` : '/';
+
+  // try several candidates; order matters
+  const candidates: string[] = Array.from(
+    new Set([
+      `${curDir}climate/postcode_climate.json`,
+      `${repoRoot}climate/postcode_climate.json`,
+      `/climate/postcode_climate.json`,
+      `/postcode_climate.json`,
+    ])
+  );
 
   let feed: any[] | null = null;
   for (const u of candidates) {
@@ -70,9 +75,10 @@ async function loadClimateMap(): Promise<ClimateMap> {
         break;
       }
     } catch {
-      /* ignore */
+      /* ignore and try next */
     }
   }
+
   if (!Array.isArray(feed)) return new Map();
 
   const map: ClimateMap = new Map();
@@ -84,17 +90,6 @@ async function loadClimateMap(): Promise<ClimateMap> {
     }
   }
   return map;
-}
-
-/** Look up row from climate map by trying full→outcode→sector→area */
-function lookupDesign(map: ClimateMap, rawPostcode: string): RowLite | null {
-  if (!map || !rawPostcode) return null;
-  const tries = keysFor(rawPostcode);
-  for (const k of tries) {
-    const hit = map.get(k);
-    if (hit) return hit;
-  }
-  return null;
 }
 
 function parseLatLon(s: string): LatLon | null {
