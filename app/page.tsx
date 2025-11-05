@@ -4,7 +4,100 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 /* -------------------------------- helpers ------------------------------- */
+// ==== postcode climate types ====
+type ClimateRow = { designTemp?: number; hdd?: number };
+type ClimateMap = Map<string, ClimateRow>;
 
+// ==== postcode helpers ====
+const normPC = (s: string): string | null => {
+  const raw = String(s || "").toUpperCase().replace(/\s+/g, "");
+  return raw ? raw : null;
+};
+
+/** Expand a postcode to keys we can try in the climate map:
+ * - FULL (no space), e.g. "SW1A1AA"
+ * - OUTCODE, e.g. "SW1A"
+ * - SECTOR, e.g. "SW1A1"
+ * - AREA, e.g. "SW"
+ */
+function explodeQueryKeys(pc?: string): string[] {
+  const raw = normPC(pc || "");
+  if (!raw) return [];
+
+  // Typical UK PC shapes; tolerate partials
+  const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d?)([A-Z]{0,2})?$/);
+
+  const keys = new Set<string>([raw]);
+  if (m) {
+    const out = m[1];                 // OUTCODE (e.g. SW1A)
+    const sector = m[2];              // "1"
+    const area = out.replace(/\d.*/, ""); // "SW"
+
+    keys.add(out);
+    if (sector) keys.add(`${out}${sector}`); // SECTOR (e.g. SW1A1)
+    if (area) keys.add(area);
+  }
+  return Array.from(keys);
+}
+
+/** Lookup best match from climate map for a given postcode */
+function lookupDesign(map: ClimateMap, postcode: string): ClimateRow | undefined {
+  for (const k of explodeQueryKeys(postcode)) {
+    const hit = map.get(k);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+// ==== corrected SSR-safe climate loader ====
+async function loadClimateMap(): Promise<ClimateMap> {
+  // Figure environment safely (SSR vs browser)
+  const isBrowser = typeof window !== "undefined";
+  const pathname = isBrowser && (window as any).location
+    ? (window as any).location.pathname
+    : "/";
+
+  // Current directory of this route, used to form relative candidates
+  const curDir = pathname.replace(/[^/]*$/, ""); // strip trailing filename
+  // First path segment (repo root when deployed under /<repo>/ on GitHub Pages)
+  const seg = pathname.split("/").filter(Boolean);
+  const repoRoot = seg.length ? `/${seg[0]}/` : "/";
+
+  // Try several candidates that work locally and on GitHub Pages
+  const candidates = Array.from(
+    new Set([
+      `${curDir}climate/postcode_climate.json`,
+      `${repoRoot}climate/postcode_climate.json`,
+      `/climate/postcode_climate.json`,
+      `/postcode_climate.json`,
+    ])
+  );
+
+  let feed: any[] | null = null;
+  for (const u of candidates) {
+    try {
+      const r = await fetch(u, { cache: "no-store" });
+      if (r.ok) {
+        feed = await r.json();
+        break;
+      }
+    } catch {
+      // ignore and try next candidate
+    }
+  }
+  if (!Array.isArray(feed)) return new Map();
+
+  // Build the in-memory lookup map (store keys without spaces)
+  const map: ClimateMap = new Map();
+  for (const row of feed) {
+    const { keys = [], designTemp, hdd } = row || {};
+    for (const k of keys) {
+      const key = normPC(k);
+      if (key) map.set(key, { designTemp, hdd });
+    }
+  }
+  return map;
+}
 type RowLite = { designTemp?: number; hdd?: number };
 type ClimateMap = Map<string, RowLite>;
 type LatLon = { lat: number; lon: number };
