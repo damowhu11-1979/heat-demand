@@ -1,27 +1,30 @@
 // app/page.tsx
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-/* -------------------------------- helpers ------------------------------- */
-// ==== postcode climate types ====
+/* ----------------------------- Helpers & Types ---------------------------- */
+
+// Climate data row and lookup map
 type ClimateRow = { designTemp?: number; hdd?: number };
 type ClimateMap = Map<string, ClimateRow>;
 
-// ==== postcode helpers ====
-const normPC = (s: string): string | null => {
-  const raw = String(s || "").toUpperCase().replace(/\s+/g, "");
-  return raw ? raw : null;
-};
+// Geocoding
+type LatLon = { lat: number; lon: number };
 
-/** Expand a postcode to keys we can try in the climate map:
- * - FULL (no space), e.g. "SW1A1AA"
- * - OUTCODE, e.g. "SW1A"
- * - SECTOR, e.g. "SW1A1"
- * - AREA, e.g. "SW"
+// Normalise a postcode-ish string to uppercase with no spaces
+function normPC(s: string): string {
+  return String(s || '').toUpperCase().replace(/\s+/g, '');
+}
+
+/** Build the set of keys we’ll try for a given raw postcode:
+ *  - FULL (no space), e.g. "SW1A1AA"
+ *  - OUTCODE, e.g. "SW1A"
+ *  - SECTOR, e.g. "SW1A1"
+ *  - AREA, e.g. "SW"
  */
 function explodeQueryKeys(pc?: string): string[] {
-  const raw = normPC(pc || "");
+  const raw = normPC(pc || '');
   if (!raw) return [];
 
   // Typical UK PC shapes; tolerate partials
@@ -29,12 +32,12 @@ function explodeQueryKeys(pc?: string): string[] {
 
   const keys = new Set<string>([raw]);
   if (m) {
-    const out = m[1];                 // OUTCODE (e.g. SW1A)
-    const sector = m[2];              // "1"
-    const area = out.replace(/\d.*/, ""); // "SW"
+    const out = m[1];                      // OUTCODE (e.g. SW1A)
+    const sectorDigit = m[2];              // '1'
+    const area = out.replace(/\d.*/, '');  // 'SW'
 
     keys.add(out);
-    if (sector) keys.add(`${out}${sector}`); // SECTOR (e.g. SW1A1)
+    if (sectorDigit) keys.add(`${out}${sectorDigit}`); // SECTOR (e.g. SW1A1)
     if (area) keys.add(area);
   }
   return Array.from(keys);
@@ -49,108 +52,20 @@ function lookupDesign(map: ClimateMap, postcode: string): ClimateRow | undefined
   return undefined;
 }
 
-// ==== corrected SSR-safe climate loader ====
+/** SSR-safe climate loader that works locally and on GitHub Pages */
 async function loadClimateMap(): Promise<ClimateMap> {
-  // Figure environment safely (SSR vs browser)
-  const isBrowser = typeof window !== "undefined";
+  const isBrowser = typeof window !== 'undefined';
   const pathname = isBrowser && (window as any).location
     ? (window as any).location.pathname
-    : "/";
+    : '/';
 
-  // Current directory of this route, used to form relative candidates
-  const curDir = pathname.replace(/[^/]*$/, ""); // strip trailing filename
-  // First path segment (repo root when deployed under /<repo>/ on GitHub Pages)
-  const seg = pathname.split("/").filter(Boolean);
-  const repoRoot = seg.length ? `/${seg[0]}/` : "/";
-
-  // Try several candidates that work locally and on GitHub Pages
-  const candidates = Array.from(
-    new Set([
-      `${curDir}climate/postcode_climate.json`,
-      `${repoRoot}climate/postcode_climate.json`,
-      `/climate/postcode_climate.json`,
-      `/postcode_climate.json`,
-    ])
-  );
-
-  let feed: any[] | null = null;
-  for (const u of candidates) {
-    try {
-      const r = await fetch(u, { cache: "no-store" });
-      if (r.ok) {
-        feed = await r.json();
-        break;
-      }
-    } catch {
-      // ignore and try next candidate
-    }
-  }
-  if (!Array.isArray(feed)) return new Map();
-
-  // Build the in-memory lookup map (store keys without spaces)
-  const map: ClimateMap = new Map();
-  for (const row of feed) {
-    const { keys = [], designTemp, hdd } = row || {};
-    for (const k of keys) {
-      const key = normPC(k);
-      if (key) map.set(key, { designTemp, hdd });
-    }
-  }
-  return map;
-}
-type RowLite = { designTemp?: number; hdd?: number };
-type ClimateMap = Map<string, RowLite>;
-type LatLon = { lat: number; lon: number };
-
-const meanAnnualDefault = 10.2;
-
-/** Normalise any postcode-ish string to uppercase + no spaces */
-function normPC(s: string): string {
-  return String(s || '').toUpperCase().replace(/\s+/g, '');
-}
-
-/** Build the set of keys we’ll try for a given raw postcode */
-function keysFor(raw: string): string[] {
-  const clean = normPC(raw);
-  if (!clean) return [];
-  // FULL
-  const keys = new Set<string>([clean]);
-
-  // OUTCODE (letters+first digit sequence)
-  const m = clean.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})?$/); // SW1A1AA or SW1A
-  const out = m?.[1] ?? '';
-  if (out) keys.add(out);
-
-  // SECTOR (outcode + first number after space in normal PC)
-  const sector = (() => {
-    // Try to infer sector from typical forms
-    // If we have a 5+ length with digits, take outcode + first digit of inward
-    const inward = clean.slice(out.length);
-    const firstDigit = inward.match(/\d/);
-    return firstDigit ? `${out}${firstDigit[0]}` : '';
-  })();
-  if (sector) keys.add(sector);
-
-  // AREA (letters until first digit)
-  const area = out.replace(/\d.*/, '');
-  if (area) keys.add(area);
-
-  return Array.from(keys);
-}
-
-async function loadClimateMap(): Promise<ClimateMap> {
-  // --- figure out where we are (SSR-safe) ---
-  const isBrowser = typeof window !== 'undefined';
-  const pathname = isBrowser && window.location ? window.location.pathname : '/';
-
-  // current directory of the page (e.g. /heat-demand/)
-  const curDir = pathname.replace(/[^/]*$/, ''); // strip trailing filename
-  // first segment as the repo root when deployed at /<repo>/
+  // e.g. '/heat-demand/' when deployed under a repo on GH Pages
+  const curDir = pathname.replace(/[^/]*$/, '');     // strip trailing filename
   const seg = pathname.split('/').filter(Boolean);
   const repoRoot = seg.length ? `/${seg[0]}/` : '/';
 
-  // try several candidates; order matters
-  const candidates: string[] = Array.from(
+  // Try several candidates
+  const candidates = Array.from(
     new Set([
       `${curDir}climate/postcode_climate.json`,
       `${repoRoot}climate/postcode_climate.json`,
@@ -168,12 +83,12 @@ async function loadClimateMap(): Promise<ClimateMap> {
         break;
       }
     } catch {
-      /* ignore and try next */
+      // ignore and try the next candidate
     }
   }
-
   if (!Array.isArray(feed)) return new Map();
 
+  // Build in-memory map (keys stored w/out spaces)
   const map: ClimateMap = new Map();
   for (const row of feed) {
     const { keys = [], designTemp, hdd } = row || {};
@@ -185,35 +100,47 @@ async function loadClimateMap(): Promise<ClimateMap> {
   return map;
 }
 
+// Lat/Lon parsing
 function parseLatLon(s: string): LatLon | null {
-  const m = String(s || '').trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  const m = String(s || '')
+    .trim()
+    .match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (!m) return null;
-  const lat = +m[1], lon = +m[2];
+  const lat = +m[1],
+    lon = +m[2];
   if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   return { lat, lon };
 }
 
-async function geoByPostcodeOrAddress(postcode: string, address: string, latlonOverride?: string): Promise<LatLon> {
+// PC/address → geocode
+async function geoByPostcodeOrAddress(
+  postcode: string,
+  address: string,
+  latlonOverride?: string
+): Promise<LatLon> {
   const direct = latlonOverride ? parseLatLon(latlonOverride) : null;
   if (direct) return direct;
 
   const pc = normPC(postcode);
   if (pc) {
     try {
-      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, { cache: 'no-store' });
+      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, {
+        cache: 'no-store',
+      });
       if (r.ok) {
         const j = await r.json();
-        if (j?.status === 200?.toString() || j?.status === 200) {
-          return { lat: j.result.latitude, lon: j.result.longitude };
-        }
+        if (j?.result) return { lat: j.result.latitude, lon: j.result.longitude };
       }
     } catch {
-      /* ignore and fall through */
+      /* fall through */
     }
   }
   const q = (postcode || address || '').trim();
   if (q.length < 3) throw new Error('Enter postcode or address');
-  const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+
+  const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+    q
+  )}`;
   const r2 = await fetch(u, { headers: { 'Accept-Language': 'en-GB' }, cache: 'no-store' });
   if (!r2.ok) throw new Error('Address lookup failed');
   const a = await r2.json();
@@ -221,7 +148,11 @@ async function geoByPostcodeOrAddress(postcode: string, address: string, latlonO
   return { lat: +a[0].lat, lon: +a[0].lon };
 }
 
-async function elevation(lat: number, lon: number): Promise<{ metres: number; provider: string }> {
+// Elevation from two free providers
+async function elevation(
+  lat: number,
+  lon: number
+): Promise<{ metres: number; provider: string }> {
   try {
     const u = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`;
     const r = await fetch(u, { cache: 'no-store' });
@@ -243,6 +174,8 @@ async function elevation(lat: number, lon: number): Promise<{ metres: number; pr
 
 /* ---------------------------------- UI ---------------------------------- */
 
+const MEAN_ANNUAL_DEFAULT = 10.2;
+
 export default function Page(): React.JSX.Element {
   // Property info
   const [reference, setReference] = useState('');
@@ -256,7 +189,7 @@ export default function Page(): React.JSX.Element {
   const [altitude, setAltitude] = useState<number | ''>(0);
   const [tex, setTex] = useState<number | ''>(-3);
   const [hdd, setHdd] = useState<number | ''>(2100);
-  const meanAnnual = meanAnnualDefault;
+  const meanAnnual = MEAN_ANNUAL_DEFAULT;
 
   // Details
   const [dwelling, setDwelling] = useState('');
@@ -267,7 +200,7 @@ export default function Page(): React.JSX.Element {
   const [airtight, setAirtight] = useState('Standard Method');
   const [thermalTest, setThermalTest] = useState('No Test Performed');
 
-  // Local data
+  // Status / local
   const [climStatus, setClimStatus] = useState('');
   const [altStatus, setAltStatus] = useState('');
   const [latlonOverride, setLatlonOverride] = useState('');
@@ -279,25 +212,25 @@ export default function Page(): React.JSX.Element {
       setClimStatus('Loading climate table…');
       const map = await loadClimateMap();
       climateRef.current = map;
-      setClimStatus(map.size ? `Climate table loaded (${map.size} keys).` : 'No climate table found (using manual/API).');
+      setClimStatus(
+        map.size ? `Climate table loaded (${map.size} keys).` : 'No climate table found (manual/API only).'
+      );
     })();
   }, []);
 
-  // Update design temp/HDD when postcode changes (if we have a table)
+  // Update design temp/HDD when postcode changes
   useEffect(() => {
     const map = climateRef.current;
-    if (!map) return;
-    if (!postcode) return;
+    if (!map || !postcode) return;
 
     const hit = lookupDesign(map, postcode);
     if (hit) {
       if (typeof hit.designTemp === 'number') setTex(hit.designTemp);
       if (typeof hit.hdd === 'number') setHdd(hit.hdd);
-      setClimStatus(`Auto climate ✓ matched ${keysFor(postcode).join(' → ')}`);
+      setClimStatus(`Auto climate ✓ matched: ${explodeQueryKeys(postcode).join(' → ')}`);
     } else {
       setClimStatus('Auto climate: no match in table (you can override).');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postcode]);
 
   // Altitude button
@@ -316,16 +249,37 @@ export default function Page(): React.JSX.Element {
   // Save (placeholder)
   const onSave = () => {
     const payload = {
-      reference, postcode, country, address, epcNo, uprn,
-      altitude, tex, meanAnnual, hdd,
-      dwelling, attach, ageBand, occupants, mode, airtight, thermalTest,
+      reference,
+      postcode,
+      country,
+      address,
+      epcNo,
+      uprn,
+      altitude,
+      tex,
+      meanAnnual,
+      hdd,
+      dwelling,
+      attach,
+      ageBand,
+      occupants,
+      mode,
+      airtight,
+      thermalTest,
     };
     console.log('SAVE', payload);
     alert('Saved locally (console).');
   };
 
   return (
-    <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
+    <main
+      style={{
+        maxWidth: 1040,
+        margin: '0 auto',
+        padding: 24,
+        fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+      }}
+    >
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Heat Load Calculator (MCS-style)</h1>
       <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>
         Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results
@@ -349,7 +303,10 @@ export default function Page(): React.JSX.Element {
           <div>
             <Label>Country</Label>
             <Select value={country} onChange={(e) => setCountry(e.target.value)}>
-              <option>England</option><option>Wales</option><option>Scotland</option><option>Northern Ireland</option>
+              <option>England</option>
+              <option>Wales</option>
+              <option>Scotland</option>
+              <option>Northern Ireland</option>
             </Select>
           </div>
 
@@ -372,7 +329,11 @@ export default function Page(): React.JSX.Element {
         <div style={grid4}>
           <div>
             <Label>Altitude (m)</Label>
-            <Input type="number" value={altitude} onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Input
+              type="number"
+              value={altitude}
+              onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))}
+            />
             <div style={{ marginTop: 8 }}>
               <details>
                 <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude</summary>
@@ -383,7 +344,12 @@ export default function Page(): React.JSX.Element {
               </details>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
                 <Button onClick={onFindAltitude}>Get altitude</Button>
-                <Input placeholder="(optional) 51.5,-0.12" value={latlonOverride} onChange={(e) => setLatlonOverride(e.target.value)} style={{ maxWidth: 180 }} />
+                <Input
+                  placeholder="(optional) 51.5,-0.12"
+                  value={latlonOverride}
+                  onChange={(e) => setLatlonOverride(e.target.value)}
+                  style={{ maxWidth: 180 }}
+                />
                 <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
               </div>
             </div>
@@ -412,25 +378,38 @@ export default function Page(): React.JSX.Element {
             <Label>Dwelling Type</Label>
             <Select value={dwelling} onChange={(e) => setDwelling(e.target.value)}>
               <option value="">Select</option>
-              <option>Detached</option><option>Semi-detached</option><option>Terraced</option>
-              <option>Flat</option><option>Bungalow</option>
+              <option>Detached</option>
+              <option>Semi-detached</option>
+              <option>Terraced</option>
+              <option>Flat</option>
+              <option>Bungalow</option>
             </Select>
           </div>
           <div>
             <Label>Attachment (what is this?)</Label>
             <Select value={attach} onChange={(e) => setAttach(e.target.value)}>
               <option value="">Select attachment</option>
-              <option>Mid</option><option>End</option><option>Corner</option>
+              <option>Mid</option>
+              <option>End</option>
+              <option>Corner</option>
             </Select>
           </div>
           <div>
             <Label>Age Band</Label>
             <Select value={ageBand} onChange={(e) => setAgeBand(e.target.value)}>
               <option value="">Select age band</option>
-              <option>pre-1900</option><option>1900-1929</option><option>1930-1949</option>
-              <option>1950-1966</option><option>1967-1975</option><option>1976-1982</option>
-              <option>1983-1990</option><option>1991-1995</option><option>1996-2002</option>
-              <option>2003-2006</option><option>2007-2011</option><option>2012-present</option>
+              <option>pre-1900</option>
+              <option>1900-1929</option>
+              <option>1930-1949</option>
+              <option>1950-1966</option>
+              <option>1967-1975</option>
+              <option>1976-1982</option>
+              <option>1983-1990</option>
+              <option>1991-1995</option>
+              <option>1996-2002</option>
+              <option>2003-2006</option>
+              <option>2007-2011</option>
+              <option>2012-present</option>
             </Select>
           </div>
           <div>
@@ -445,48 +424,55 @@ export default function Page(): React.JSX.Element {
           <div>
             <Label>Mode</Label>
             <Select value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option>Net Internal</option><option>Gross Internal</option>
+              <option>Net Internal</option>
+              <option>Gross Internal</option>
             </Select>
           </div>
           <div>
             <Label>Airtightness Method</Label>
             <Select value={airtight} onChange={(e) => setAirtight(e.target.value)}>
-              <option>Standard Method</option><option>Measured n50</option>
+              <option>Standard Method</option>
+              <option>Measured n50</option>
             </Select>
           </div>
           <div>
             <Label>Thermal Performance Test</Label>
             <Select value={thermalTest} onChange={(e) => setThermalTest(e.target.value)}>
-              <option>No Test Performed</option><option>Thermal Imaging</option><option>Co-heating</option>
+              <option>No Test Performed</option>
+              <option>Thermal Imaging</option>
+              <option>Co-heating</option>
             </Select>
           </div>
         </div>
 
         {/* Auto climate status */}
-        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>
-          Auto climate ✓ {climStatus}
-        </div>
+        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>Auto climate • {climStatus}</div>
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-          <button onClick={onSave} style={primaryBtn}>Save</button>
+          <button onClick={onSave} style={primaryBtn}>
+            Save
+          </button>
         </div>
       </section>
     </main>
   );
 }
 
-/* ------------------------------ small UI bits ------------------------------ */
+/* ------------------------------ Small UI bits ----------------------------- */
 
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
+
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
+
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
+
 function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -504,7 +490,7 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   );
 }
 
-/* ------------------------------ styles ------------------------------ */
+/* --------------------------------- Styles -------------------------------- */
 
 const card: React.CSSProperties = {
   background: '#fff',
