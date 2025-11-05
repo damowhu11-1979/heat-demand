@@ -1,5 +1,4 @@
 [
-  { "outcode": "SS8", "designTemp": -3, "hdd": 2033 },
-  { "outcode": "SS",  "designTemp": -3, "hdd": 2033 },
-  { "outcode": "AB10", "designTemp": -5, "hdd": 2500 }
+  { "keys": ["SW1A", "SW1", "SW"], "designTemp": -3, "hdd": 2100 },
+  { "keys": ["E14", "E1", "E"], "designTemp": -3, "hdd": 2050 }
 ]
