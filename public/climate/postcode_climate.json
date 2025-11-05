@@ -1,28 +1,5 @@
-// Show what we loaded and what keys we’ll try
-useEffect(() => {
-  (async () => {
-    const map = await loadClimateMap();
-    climateRef.current = map;
-    console.log('[climate] map size =', map.size);
-    setClimStatus(map.size ? `Climate table loaded (${map.size} keys).` : 'No climate table found (using manual/API).');
-  })();
-}, []);
-
-useEffect(() => {
-  const map = climateRef.current;
-  if (!map || !postcode) return;
-
-  const keys = keysFor(postcode);
-  console.log('[climate] postcode', postcode, '→ try', keys);
-
-  const hit = lookupDesign(map, postcode);
-  console.log('[climate] hit =', hit);
-
-  if (hit) {
-    if (typeof hit.designTemp === 'number') setTex(hit.designTemp);
-    if (typeof hit.hdd === 'number') setHdd(hit.hdd);
-    setClimStatus(`Auto climate ✓ matched ${keys.join(' → ')}`);
-  } else {
-    setClimStatus('Auto climate: no match in table (you can override).');
-  }
-}, [postcode]);
+[
+  { "keys": ["CO1", "CO", "C"],  "designTemp": -3, "hdd": 2100 },
+  { "keys": ["SW1A", "SW1", "SW"], "designTemp": -2, "hdd": 2050 },
+  { "keys": ["RH10", "RH", "R"],   "designTemp": -3, "hdd": 2100 }
+]
