@@ -490,15 +490,17 @@ export default function Page(): React.JSX.Element {
             </Select>
           </div>
           <div>
-            <Label>Attachment (what is this?)</Label>
-            <Select value={attach} onChange={(e) => setAttach(e.target.value)}>
-              <option value="">Select attachment</option>
-              <option>Mid</option>
-              <option>End</option>
-              <option>Corner</option>
-            </Select>
-          </div>
-          <div>
+  <Label>Terrace type</Label>
+  <Select
+    value={attach}
+    onChange={(e) => setAttach(e.target.value)}
+  >
+    <option value="">Select terrace type</option>
+    <option>Mid-terrace</option>
+    <option>End-terrace</option>
+    <option>Corner-plot</option>
+  </Select>
+</div>
             <Label>Age Band</Label>
             <Select value={ageBand} onChange={(e) => setAgeBand(e.target.value)}>
               <option value="">Select age band</option>
