@@ -3,64 +3,68 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-/* ======================== Config ======================== */
-const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
-const MEAN_ANNUAL_DEFAULT = 10.2;
+/* ------------------------------- constants ------------------------------ */
 
-/* ==================== Climate types ===================== */
+const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
+
+/* -------------------------------- types -------------------------------- */
+
 type ClimateRow = { designTemp?: number; hdd?: number };
 type ClimateMap = Map<string, ClimateRow>;
+
 type LatLon = { lat: number; lon: number };
 
-/* ==================== Postcode helpers ================== */
+/* ------------------------------ small utils ---------------------------- */
+
 function normPC(s: string): string {
   return String(s || '').toUpperCase().replace(/\s+/g, '');
 }
 
-/** Build set of keys to try for a postcode:
- * - FULL (no space), e.g. "SW1A1AA"
- * - OUTCODE, e.g. "SW1A"
- * - SECTOR, e.g. "SW1A1"
- * - AREA, e.g. "SW"
- */
-function explodeQueryKeys(pc?: string): string[] {
-  const raw = normPC(pc || '');
-  if (!raw) return [];
-  const keys = new Set<string>([raw]);
+/** Build the set of keys we’ll try for a given raw postcode */
+function keysFor(raw: string): string[] {
+  const clean = normPC(raw);
+  if (!clean) return [];
+  const keys = new Set<string>([clean]);
 
-  const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d?)([A-Z]{0,2})?$/);
-  if (m) {
-    const out = m[1]; // OUTCODE
-    const sector = m[2]; // first inward digit
-    const area = out.replace(/\d.*/, ''); // AREA
+  // OUTCODE (letters+first digit sequence)
+  const m = clean.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})?$/); // SW1A1AA or SW1A
+  const out = m?.[1] ?? '';
+  if (out) keys.add(out);
 
-    keys.add(out);
-    if (sector) keys.add(`${out}${sector}`);
-    if (area) keys.add(area);
-  }
+  // SECTOR (outcode + first digit in inward code)
+  const inward = clean.slice(out.length);
+  const firstDigit = inward.match(/\d/);
+  if (firstDigit) keys.add(`${out}${firstDigit[0]}`);
+
+  // AREA (letters until first digit)
+  const area = out.replace(/\d.*/, '');
+  if (area) keys.add(area);
+
   return Array.from(keys);
 }
 
 function lookupDesign(map: ClimateMap, postcode: string): ClimateRow | undefined {
-  for (const k of explodeQueryKeys(postcode)) {
+  for (const k of keysFor(postcode)) {
     const hit = map.get(k);
     if (hit) return hit;
   }
   return undefined;
 }
 
-/* ==================== Climate loader ==================== */
+/* ---------------------- climate JSON (SSR-safe) ------------------------ */
+
 async function loadClimateMap(): Promise<ClimateMap> {
   const isBrowser = typeof window !== 'undefined';
-  const pathname = isBrowser && (window as any).location ? (window as any).location.pathname : '/';
+  const pathname = isBrowser && typeof window.location !== 'undefined'
+    ? window.location.pathname
+    : '/';
 
-  // path where this page is served; and repo root for GH Pages /<repo>/
-  const curDir = pathname.replace(/[^/]*$/, '');
+  const curDir = pathname.replace(/[^/]*$/, ''); // strip trailing filename
   const seg = pathname.split('/').filter(Boolean);
   const repoRoot = seg.length ? `/${seg[0]}/` : '/';
 
   const candidates = Array.from(
-    new Set<string>([
+    new Set([
       `${curDir}climate/postcode_climate.json`,
       `${repoRoot}climate/postcode_climate.json`,
       `/climate/postcode_climate.json`,
@@ -77,23 +81,24 @@ async function loadClimateMap(): Promise<ClimateMap> {
         break;
       }
     } catch {
-      /* next */
+      /* ignore */
     }
   }
-  if (!Array.isArray(feed)) return new Map();
-
   const map: ClimateMap = new Map();
+  if (!Array.isArray(feed)) return map;
+
   for (const row of feed) {
     const { keys = [], designTemp, hdd } = row || {};
-    for (const k of keys) {
-      const kk = normPC(k);
-      if (kk) map.set(kk, { designTemp, hdd });
+    for (const k of keys as string[]) {
+      const key = normPC(k);
+      if (key) map.set(key, { designTemp, hdd });
     }
   }
   return map;
 }
 
-/* =================== Geocoding & altitude ================ */
+/* ----------------------------- geocoding ------------------------------ */
+
 function parseLatLon(s: string): LatLon | null {
   const m = String(s || '')
     .trim()
@@ -105,45 +110,58 @@ function parseLatLon(s: string): LatLon | null {
   return { lat, lon };
 }
 
-async function geoByPostcodeOrAddress(postcode: string, address: string, latlonOverride?: string): Promise<LatLon> {
+async function geoByPostcodeOrAddress(
+  postcode: string,
+  address: string,
+  latlonOverride?: string
+): Promise<LatLon> {
   const direct = latlonOverride ? parseLatLon(latlonOverride) : null;
   if (direct) return direct;
 
   const pc = normPC(postcode);
   if (pc) {
     try {
-      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, { cache: 'no-store' });
+      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, {
+        cache: 'no-store',
+      });
       if (r.ok) {
         const j = await r.json();
-        if ((j?.status as any) === 200 && j?.result) {
+        if ((j?.status ?? 0) === 200 && j?.result) {
           return { lat: j.result.latitude, lon: j.result.longitude };
         }
       }
     } catch {
-      /* fallthrough */
+      /* fall through */
     }
   }
 
   const q = (postcode || address || '').trim();
   if (q.length < 3) throw new Error('Enter postcode or address');
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
-  const r2 = await fetch(url, { headers: { 'Accept-Language': 'en-GB' }, cache: 'no-store' });
+  const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+    q
+  )}`;
+  const r2 = await fetch(u, { headers: { 'Accept-Language': 'en-GB' }, cache: 'no-store' });
   if (!r2.ok) throw new Error('Address lookup failed');
   const a = await r2.json();
   if (!a?.length) throw new Error('Address not found');
   return { lat: +a[0].lat, lon: +a[0].lon };
 }
 
-async function elevation(lat: number, lon: number): Promise<{ metres: number; provider: string }> {
+async function elevation(
+  lat: number,
+  lon: number
+): Promise<{ metres: number; provider: string }> {
   try {
-    const r = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`, { cache: 'no-store' });
+    const u = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`;
+    const r = await fetch(u, { cache: 'no-store' });
     if (!r.ok) throw new Error('open-elevation http');
     const j = await r.json();
     const v = j?.results?.[0]?.elevation;
     if (!isFinite(v)) throw new Error('open-elevation no result');
     return { metres: +v, provider: 'open-elevation' };
   } catch {
-    const r2 = await fetch(`https://api.opentopodata.org/v1/eudem25m?locations=${lat},${lon}`, { cache: 'no-store' });
+    const u2 = `https://api.opentopodata.org/v1/eudem25m?locations=${lat},${lon}`;
+    const r2 = await fetch(u2, { cache: 'no-store' });
     if (!r2.ok) throw new Error('opentopodata http');
     const j2 = await r2.json();
     const v2 = j2?.results?.[0]?.elevation;
@@ -152,22 +170,22 @@ async function elevation(lat: number, lon: number): Promise<{ metres: number; pr
   }
 }
 
-/* ================= PropertyChecker parsing ================= */
-const reRRN = /\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/i;
-const reOccupants = /occupants?\s*[:=]?\s*(\d+)/i;
-const reAgeBand =
-  /(pre-1900|1900-1929|1930-1949|1950-1966|1967-1975|1976-1982|1983-1990|1991-1995|1996-2002|2003-2006|2007-2011|2012\s*-\s*present|2012\s*to\s*present)/i;
-const reTerrace =
-  /(mid[-\s]?terrace|end[-\s]?terrace|corner[-\s]?terrace|semi[-\s]?detached|detached|flat|bungalow)/i;
+/* --------------------- PropertyChecker parsing bits -------------------- */
 
-function match1(re: RegExp, s: string) {
-  const m = re.exec(s);
-  return m ? m[1] : '';
+const reRRN = /\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/;
+const reOccupants = /\boccupants?\s*[:=]?\s*(\d{1,2})\b/i;
+const reAgeBand = /\b(19\d{2}\s*-\s*\d{2,4}|pre-?1900|1900-1929|1930-1949|1950-1966|1967-1975|1976-1982|1983-1990|1991-1995|1996-2002|2003-2006|2007-2011|2012-present)\b/i;
+const reTerrace = /\bterrac\w*\b.*?\b(mid|end|corner)\b/i;
+
+function match1(re: RegExp, s: string): string {
+  const m = s.match(re);
+  return m ? (m[1] || m[0]) : '';
 }
-function normaliseAgeBand(s: string) {
-  const t = s.toLowerCase().replace(/\s+/g, '');
-  if (t.startsWith('pre-1900') || t.startsWith('pre1900')) return 'pre-1900';
-  const map: Record<string, string> = {
+
+function normaliseAgeBand(s: string): string {
+  const t = s.toLowerCase();
+  const table: Record<string, string> = {
+    'pre-1900': 'pre-1900',
     '1900-1929': '1900-1929',
     '1930-1949': '1930-1949',
     '1950-1966': '1950-1966',
@@ -179,23 +197,23 @@ function normaliseAgeBand(s: string) {
     '2003-2006': '2003-2006',
     '2007-2011': '2007-2011',
     '2012-present': '2012-present',
-    '2012topresent': '2012-present',
   };
-  return map[t] ?? '';
-}
-function normaliseTerraceLabel(det: string) {
-  const t = det.toLowerCase();
-  if (t.includes('mid')) return 'Terraced (mid)';
-  if (t.includes('end')) return 'Terraced (end)';
-  if (t.includes('corner')) return 'Terraced (corner)';
-  if (t.includes('semi')) return 'Semi-detached';
-  if (t.includes('detached')) return 'Detached';
-  if (t.includes('flat')) return 'Flat';
-  if (t.includes('bungalow')) return 'Bungalow';
+  for (const k of Object.keys(table)) {
+    if (t.includes(k)) return table[k];
+  }
   return '';
 }
 
-/* ========================= UI ============================ */
+function normaliseTerraceSubtype(s: string): '' | 'Mid' | 'End' | 'Corner' {
+  const t = s.toLowerCase();
+  if (t.includes('mid')) return 'Mid';
+  if (t.includes('end')) return 'End';
+  if (t.includes('corner')) return 'Corner';
+  return '';
+}
+
+/* --------------------------------- page -------------------------------- */
+
 export default function Page(): React.JSX.Element {
   // Property info
   const [reference, setReference] = useState('');
@@ -209,39 +227,41 @@ export default function Page(): React.JSX.Element {
   const [altitude, setAltitude] = useState<number | ''>(0);
   const [tex, setTex] = useState<number | ''>(-3);
   const [hdd, setHdd] = useState<number | ''>(2100);
-  const meanAnnual = MEAN_ANNUAL_DEFAULT;
+  const meanAnnual = 10.2;
 
   // Details
   const [dwelling, setDwelling] = useState('');
-  const [attach, setAttach] = useState(''); // terrace/subtype
+  const [attach, setAttach] = useState(''); // terrace subtype: Mid/End/Corner
   const [ageBand, setAgeBand] = useState('');
   const [occupants, setOccupants] = useState(2);
   const [mode, setMode] = useState('Net Internal');
   const [airtight, setAirtight] = useState('Standard Method');
   const [thermalTest, setThermalTest] = useState('No Test Performed');
 
-  // Local status
+  // Status & helpers
   const [climStatus, setClimStatus] = useState('');
   const [altStatus, setAltStatus] = useState('');
   const [latlonOverride, setLatlonOverride] = useState('');
+  const climateRef = useRef<ClimateMap | null>(null);
 
   // PropertyChecker paste
   const [pcPaste, setPcPaste] = useState('');
 
-  // Climate map
-  const climateRef = useRef<ClimateMap | null>(null);
-
-  // Load postcode climate map (once)
+  // Load postcode climate map once
   useEffect(() => {
     (async () => {
       setClimStatus('Loading climate table…');
       const map = await loadClimateMap();
       climateRef.current = map;
-      setClimStatus(map.size ? `Climate table loaded (${map.size} keys).` : 'No climate table found (using manual/API).');
+      setClimStatus(
+        map.size
+          ? `Climate table loaded (${map.size} keys).`
+          : 'No climate table found (using manual/API).'
+      );
     })();
   }, []);
 
-  // Auto update from postcode if climate table present
+  // Update design temp/HDD when postcode changes (if we have a table)
   useEffect(() => {
     const map = climateRef.current;
     if (!map) return;
@@ -251,11 +271,10 @@ export default function Page(): React.JSX.Element {
     if (hit) {
       if (typeof hit.designTemp === 'number') setTex(hit.designTemp);
       if (typeof hit.hdd === 'number') setHdd(hit.hdd);
-      setClimStatus(`Auto climate ✓ matched ${explodeQueryKeys(postcode).join(' → ')}`);
+      setClimStatus(`Auto climate ✓ matched ${keysFor(postcode).join(' → ')}`);
     } else {
       setClimStatus('Auto climate: no match in table (you can override).');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postcode]);
 
   // Altitude button
@@ -285,15 +304,20 @@ export default function Page(): React.JSX.Element {
     const age = normaliseAgeBand(match1(reAgeBand, txt));
     if (age) setAgeBand(age);
 
-    const terr = normaliseTerraceLabel(match1(reTerrace, txt));
-    if (terr) setAttach(terr);
+    // terrace subtype → set dwelling + subtype
+    const terrRaw = match1(reTerrace, txt);
+    const terrSubtype = terrRaw ? normaliseTerraceSubtype(terrRaw) : '';
+    if (terrSubtype) {
+      setDwelling('Terraced');
+      setAttach(terrSubtype); // 'Mid' | 'End' | 'Corner'
+    }
 
-    // Optional postcode capture
+    // guess postcode if visible in paste
     const pcMatch = txt.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i);
     if (pcMatch) setPostcode(`${pcMatch[1].toUpperCase()} ${pcMatch[2].toUpperCase()}`);
   };
 
-  // Save placeholder
+  // Save (placeholder)
   const onSave = () => {
     const payload = {
       reference,
@@ -319,53 +343,76 @@ export default function Page(): React.JSX.Element {
   };
 
   return (
-    <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
+    <main
+      style={{
+        maxWidth: 1040,
+        margin: '0 auto',
+        padding: 24,
+        fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+      }}
+    >
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Heat Load Calculator (MCS-style)</h1>
       <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>
         Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results
       </div>
 
-      {/* Import block */}
-      <section style={{ ...card, marginBottom: 12 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-          <strong>Import from PropertyChecker.co.uk</strong>
-          <span>(optional)</span>
-          <a href={PROPERTY_CHECKER_URL} target="_blank" rel="noreferrer">
-            <Button type="button">Open site →</Button>
-          </a>
-        </div>
-
-        <Label>Paste PropertyChecker page (text or HTML)</Label>
-        <textarea
-          rows={5}
-          value={pcPaste}
-          onChange={(e) => setPcPaste(e.target.value)}
-          placeholder="Paste the page here, then click Parse"
-          style={{ width: '100%', ...inputStyle, height: 140, resize: 'vertical' }}
-        />
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <Button type="button" onClick={onParsePropertyChecker}>
-            Parse
-          </Button>
-          <span style={{ fontSize: 12, color: '#666' }}>Fills EPC number, occupants, terrace type, and age band when found.</span>
-        </div>
-      </section>
-
-      {/* Main form */}
       <section style={card}>
+        {/* Import / helper strip */}
+        <div
+          style={{
+            ...row,
+            marginBottom: 14,
+            padding: 12,
+            borderRadius: 10,
+            background: '#f7f7f7',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <strong>Import from PropertyChecker.co.uk</strong>
+          <a href={PROPERTY_CHECKER_URL} target="_blank" rel="noreferrer">
+            <Button>Open PropertyChecker →</Button>
+          </a>
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <textarea
+              placeholder="Paste text from a PropertyChecker page, then click Parse"
+              rows={3}
+              value={pcPaste}
+              onChange={(e) => setPcPaste(e.target.value)}
+              style={{ ...inputStyle, width: '100%', resize: 'vertical' }}
+            />
+          </div>
+          <Button onClick={onParsePropertyChecker}>Parse</Button>
+        </div>
+
         {/* Top grid */}
         <div style={grid3}>
           <div>
             <Label>Reference *</Label>
-            <Input placeholder="e.g., Project ABC - v1" value={reference} onChange={(e) => setReference(e.target.value)} />
+            <Input
+              placeholder="e.g., Project ABC - v1"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+            />
           </div>
+
           <div>
             <Label>Postcode *</Label>
-            <Input placeholder="e.g., SW1A 1AA" value={postcode} onChange={(e) => setPostcode(e.target.value)} />
+            <Input
+              placeholder="e.g., SW1A 1AA"
+              value={postcode}
+              onChange={(e) => setPostcode(e.target.value)}
+            />
           </div>
+
           <div>
             <Label>Country</Label>
-            <Select value={country} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCountry(e.target.value)}>
+            <Select
+              value={country}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCountry(e.target.value)}
+            >
               <option>England</option>
               <option>Wales</option>
               <option>Scotland</option>
@@ -375,15 +422,29 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Address (editable)</Label>
-            <Input placeholder="e.g., 10 Example Road, Town" value={address} onChange={(e) => setAddress(e.target.value)} />
+            <Input
+              placeholder="e.g., 10 Example Road, Town"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
           </div>
+
           <div>
             <Label>EPC Number *</Label>
-            <Input placeholder="e.g., 1234-5678-9012-3456-7890" value={epcNo} onChange={(e) => setEpcNo(e.target.value)} />
+            <Input
+              placeholder="e.g., 1234-5678-9012-3456-7890"
+              value={epcNo}
+              onChange={(e) => setEpcNo(e.target.value)}
+            />
           </div>
+
           <div>
             <Label>UPRN (optional)</Label>
-            <Input placeholder="Unique Property Reference Number" value={uprn} onChange={(e) => setUprn(e.target.value)} />
+            <Input
+              placeholder="Unique Property Reference Number"
+              value={uprn}
+              onChange={(e) => setUprn(e.target.value)}
+            />
           </div>
         </div>
 
@@ -401,7 +462,8 @@ export default function Page(): React.JSX.Element {
               <details>
                 <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude</summary>
                 <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
-                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can also enter <em>lat,long</em>:
+                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData).
+                  You can also enter <em>lat,long</em> override:
                 </div>
               </details>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
@@ -419,7 +481,11 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Design External Air Temp (°C)</Label>
-            <Input type="number" value={tex} onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Input
+              type="number"
+              value={tex}
+              onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
+            />
           </div>
 
           <div>
@@ -429,7 +495,11 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
-            <Input type="number" value={hdd} onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Input
+              type="number"
+              value={hdd}
+              onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
+            />
           </div>
         </div>
 
@@ -438,7 +508,14 @@ export default function Page(): React.JSX.Element {
         <div style={grid4}>
           <div>
             <Label>Dwelling Type</Label>
-            <Select value={dwelling} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setDwelling(e.target.value)}>
+            <Select
+              value={dwelling}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                const v = e.target.value;
+                setDwelling(v);
+                if (v !== 'Terraced') setAttach(''); // clear terrace subtype if moving away
+              }}
+            >
               <option value="">Select</option>
               <option>Detached</option>
               <option>Semi-detached</option>
@@ -448,23 +525,25 @@ export default function Page(): React.JSX.Element {
             </Select>
           </div>
 
-          <div>
-            <Label>Terrace / Dwelling subtype</Label>
-            <Select value={attach} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAttach(e.target.value)}>
-              <option value="">Select terrace type</option>
-              <option>Terraced (mid)</option>
-              <option>Terraced (end)</option>
-              <option>Terraced (corner)</option>
-              <option>Semi-detached</option>
-              <option>Detached</option>
-              <option>Flat</option>
-              <option>Bungalow</option>
-            </Select>
-          </div>
+          {/* ONLY show when Terraced */}
+          {dwelling === 'Terraced' && (
+            <div>
+              <Label>Terrace subtype</Label>
+              <Select
+                value={attach}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAttach(e.target.value)}
+              >
+                <option value="">Select terrace subtype</option>
+                <option>Mid</option>
+                <option>End</option>
+                <option>Corner</option>
+              </Select>
+            </div>
+          )}
 
           <div>
             <Label>Age Band</Label>
-            <Select value={ageBand} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAgeBand(e.target.value)}>
+            <Select value={ageBand} onChange={(e) => setAgeBand(e.target.value)}>
               <option value="">Select age band</option>
               <option>pre-1900</option>
               <option>1900-1929</option>
@@ -486,7 +565,7 @@ export default function Page(): React.JSX.Element {
             <Input
               type="number"
               value={occupants}
-              onChange={(e) => setOccupants(Number(e.target.value || 0))}
+              onChange={(e) => setOccupants(Number(e.target.value || 0)))}
             />
           </div>
         </div>
@@ -496,21 +575,23 @@ export default function Page(): React.JSX.Element {
         <div style={grid3}>
           <div>
             <Label>Mode</Label>
-            <Select value={mode} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setMode(e.target.value)}>
+            <Select value={mode} onChange={(e) => setMode(e.target.value)}>
               <option>Net Internal</option>
               <option>Gross Internal</option>
             </Select>
           </div>
+
           <div>
             <Label>Airtightness Method</Label>
-            <Select value={airtight} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAirtight(e.target.value)}>
+            <Select value={airtight} onChange={(e) => setAirtight(e.target.value)}>
               <option>Standard Method</option>
               <option>Measured n50</option>
             </Select>
           </div>
+
           <div>
             <Label>Thermal Performance Test</Label>
-            <Select value={thermalTest} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setThermalTest(e.target.value)}>
+            <Select value={thermalTest} onChange={(e) => setThermalTest(e.target.value)}>
               <option>No Test Performed</option>
               <option>Thermal Imaging</option>
               <option>Co-heating</option>
@@ -518,9 +599,12 @@ export default function Page(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Status + actions */}
-        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>Auto climate ✓ {climStatus}</div>
+        {/* Auto climate status */}
+        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>
+          Auto climate ✓ {climStatus}
+        </div>
 
+        {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
           <button onClick={onSave} style={primaryBtn}>
             Save
@@ -531,7 +615,8 @@ export default function Page(): React.JSX.Element {
   );
 }
 
-/* ======================= Small UI bits ======================= */
+/* ------------------------------- UI bits ------------------------------- */
+
 function Label({ children }: { children: React.ReactNode }) {
   return (
     <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>
@@ -539,12 +624,15 @@ function Label({ children }: { children: React.ReactNode }) {
     </label>
   );
 }
+
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
+
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
+
 function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -556,13 +644,14 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
         background: props.disabled ? '#eee' : '#111',
         color: props.disabled ? '#888' : '#fff',
         cursor: props.disabled ? 'not-allowed' : 'pointer',
-        ...props.style,
+        ...(props.style || {}),
       }}
     />
   );
 }
 
-/* ========================= Styles =========================== */
+/* -------------------------------- styles ------------------------------- */
+
 const card: React.CSSProperties = {
   background: '#fff',
   border: '1px solid #e6e6e6',
@@ -581,6 +670,8 @@ const grid4: React.CSSProperties = {
   gridTemplateColumns: 'repeat(4, 1fr)',
   gap: 12,
 };
+
+const row: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
