@@ -3,6 +3,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 
+const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/'; // change if needed
+
 /* ----------------------------- Helpers & Types ---------------------------- */
 
 // Climate data row and lookup map
