@@ -3,68 +3,54 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-/* ------------------------------------------------------------------ */
-/* Config                                                              */
-/* ------------------------------------------------------------------ */
+/* ============================= Config ============================= */
 
-const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/'; // open in new tab
+const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/'; // change if needed
+const MEAN_ANNUAL_DEFAULT = 10.2;
 
-/* ------------------------------------------------------------------ */
-/* Types & helpers                                                     */
-/* ------------------------------------------------------------------ */
+/* =========================== Types ================================ */
 
 type ClimateRow = { designTemp?: number; hdd?: number };
 type ClimateMap = Map<string, ClimateRow>;
 type LatLon = { lat: number; lon: number };
 
-const meanAnnualDefault = 10.2;
+/* ======================== Helpers: postcode ======================= */
 
-/** Normalise any postcode-ish string to uppercase + no spaces */
 function normPC(s: string): string {
   return String(s || '').toUpperCase().replace(/\s+/g, '');
 }
 
-/** Build the set of keys we’ll try for a given raw postcode
- *  FULL -> OUTCODE -> SECTOR -> AREA
- *  Works for partials too (CO, CO1, CO11AH, etc.)
- */
-function keysFor(raw: string): string[] {
-  const clean = normPC(raw);
-  if (!clean) return [];
-  const keys = new Set<string>([clean]); // FULL (no space)
-
-  // OUTCODE (letters + first digit sequence)
-  const m = clean.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})?$/); // SW1A1AA or SW1A
-  const out = m?.[1] ?? '';
-  if (out) keys.add(out);
-
-  // SECTOR (outcode + first digit of inward)
-  const inward = clean.slice(out.length);
-  const firstDigit = inward.match(/\d/);
-  if (firstDigit) keys.add(`${out}${firstDigit[0]}`);
-
-  // AREA (letters until first digit)
-  const area = out.replace(/\d.*/, '');
-  if (area) keys.add(area);
-
+/** Expand a postcode to keys we can try: FULL, OUTCODE, SECTOR, AREA */
+function explodeQueryKeys(pc?: string): string[] {
+  const raw = normPC(pc || '');
+  if (!raw) return [];
+  // typical UK shapes; tolerate partials
+  const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d?)([A-Z]{0,2})?$/);
+  const keys = new Set<string>([raw]);
+  if (m) {
+    const out = m[1]; // OUTCODE
+    const sector = m[2]; // single digit
+    const area = out.replace(/\d.*/, '');
+    keys.add(out);
+    if (sector) keys.add(`${out}${sector}`); // SECTOR (e.g. SW1A1)
+    if (area) keys.add(area);
+  }
   return Array.from(keys);
 }
 
-/** Lookup best match in the climate map */
 function lookupDesign(map: ClimateMap, postcode: string): ClimateRow | undefined {
-  for (const k of keysFor(postcode)) {
+  for (const k of explodeQueryKeys(postcode)) {
     const hit = map.get(k);
     if (hit) return hit;
   }
   return undefined;
 }
 
-/** Load climate table from public paths (works locally & on GitHub Pages) */
+/** SSR-safe climate file loader (tries several relative locations) */
 async function loadClimateMap(): Promise<ClimateMap> {
   const isBrowser = typeof window !== 'undefined';
-  const pathname = isBrowser && window.location ? window.location.pathname : '/';
-
-  const curDir = pathname.replace(/[^/]*$/, ''); // strip trailing filename
+  const pathname = isBrowser && (window as any).location ? (window as any).location.pathname : '/';
+  const curDir = pathname.replace(/[^/]*$/, '');
   const seg = pathname.split('/').filter(Boolean);
   const repoRoot = seg.length ? `/${seg[0]}/` : '/';
 
@@ -74,7 +60,7 @@ async function loadClimateMap(): Promise<ClimateMap> {
       `${repoRoot}climate/postcode_climate.json`,
       `/climate/postcode_climate.json`,
       `/postcode_climate.json`,
-    ])
+    ]),
   );
 
   let feed: any[] | null = null;
@@ -86,12 +72,12 @@ async function loadClimateMap(): Promise<ClimateMap> {
         break;
       }
     } catch {
-      /* try next */
+      /* keep trying */
     }
   }
+  if (!Array.isArray(feed)) return new Map();
 
   const map: ClimateMap = new Map();
-  if (!Array.isArray(feed)) return map;
   for (const row of feed) {
     const { keys = [], designTemp, hdd } = row || {};
     for (const k of keys) {
@@ -102,12 +88,10 @@ async function loadClimateMap(): Promise<ClimateMap> {
   return map;
 }
 
-/* ----------------------------- Geocoding ----------------------------- */
+/* ===================== Helpers: geocoding/altitude ===================== */
 
 function parseLatLon(s: string): LatLon | null {
-  const m = String(s || '')
-    .trim()
-    .match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  const m = String(s || '').trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (!m) return null;
   const lat = +m[1],
     lon = +m[2];
@@ -115,23 +99,17 @@ function parseLatLon(s: string): LatLon | null {
   return { lat, lon };
 }
 
-async function geoByPostcodeOrAddress(
-  postcode: string,
-  address: string,
-  latlonOverride?: string
-): Promise<LatLon> {
+async function geoByPostcodeOrAddress(postcode: string, address: string, latlonOverride?: string): Promise<LatLon> {
   const direct = latlonOverride ? parseLatLon(latlonOverride) : null;
   if (direct) return direct;
 
   const pc = normPC(postcode);
   if (pc) {
     try {
-      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, {
-        cache: 'no-store',
-      });
+      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
-        if (j?.result?.latitude && j?.result?.longitude) {
+        if (j?.status === 200 || j?.status === '200') {
           return { lat: j.result.latitude, lon: j.result.longitude };
         }
       }
@@ -141,9 +119,7 @@ async function geoByPostcodeOrAddress(
   }
   const q = (postcode || address || '').trim();
   if (q.length < 3) throw new Error('Enter postcode or address');
-  const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
-    q
-  )}`;
+  const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
   const r2 = await fetch(u, { headers: { 'Accept-Language': 'en-GB' }, cache: 'no-store' });
   if (!r2.ok) throw new Error('Address lookup failed');
   const a = await r2.json();
@@ -171,52 +147,87 @@ async function elevation(lat: number, lon: number): Promise<{ metres: number; pr
   }
 }
 
-/* ------------------------- Import/paste helpers ---------------------- */
-
-function extractPostcode(text: string): string | null {
-  // tolerant UK postcode finder (handles missing space)
-  const m = text.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[ A-Z]{2})\b/i);
-  if (!m) return null;
-  return `${m[1].toUpperCase()} ${m[2].toUpperCase().replace(/\s+/g, '')}`;
-}
+/* ====================== Helpers: import / parsing ====================== */
 
 function extractRRN(text: string): string | null {
-  const m = text.match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
+  const m = String(text || '').match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
   return m ? m[1] : null;
 }
 
-function extractAddress(text: string, pc: string | null): string | null {
-  // “Address: ...”
-  const m1 = text.match(/Address\s*:\s*(.+)/i);
-  if (m1) return m1[1].trim();
-
-  // og:title meta
-  const m2 = text.match(
-    /<meta[^>]+property\s*=\s*["']og:title["'][^>]+content=["']([^"']+)["']/i
+function extractPostcode(text: string): string | null {
+  // tolerant UK postcode finder
+  const m = String(text || '').toUpperCase().match(
+    /\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b|(?:\b([A-Z]{1,2}\d[A-Z\d]?)\b)/,
   );
-  if (m2) return m2[1].trim();
+  if (!m) return null;
+  if (m[1] && m[2]) return `${m[1]} ${m[2]}`; // full
+  if (m[3]) return m[3]; // outcode-ish
+  return null;
+}
 
-  // a line containing the postcode
-  if (pc) {
-    const needle = pc.toUpperCase().replace(/\s+/g, '');
-    const hay = text.toUpperCase().replace(/\s+/g, ' '); // normalise
-    const idx = hay.indexOf(needle);
-    if (idx >= 0) {
-      const orig = text.replace(/\r/g, '');
-      const lines = orig.split('\n');
-      // find the line with the raw (space/no-space) pc
-      const lc = pc.toLowerCase().replace(/\s+/g, '');
-      const candidate =
-        lines.find((L) => L.toLowerCase().replace(/\s+/g, '').includes(lc)) || lines[0] || '';
-      if (candidate.trim().length > 6) return candidate.trim();
+function extractAddress(text: string, pc?: string | null): string | null {
+  const t = text.replace(/\r/g, '');
+  const lines = t.split('\n').map((s) => s.trim());
+  const idx = lines.findIndex((L) => L.toUpperCase().includes((pc || '').replace(/\s+/g, '')));
+  if (idx > 0) {
+    // take two lines above postcode if they look addressy
+    const chunk = lines.slice(Math.max(0, idx - 2), idx + 1).join(', ');
+    if (chunk.length > 10) return chunk;
+  }
+  // fallback: first longish line
+  const line = lines.find((L) => L.length > 20 && /[A-Z]/i.test(L));
+  return line || null;
+}
+
+/* ======= Age Band helpers (from phrases or inferred from build year) ======= */
+
+function ageBandFromYear(y: number): string {
+  if (y < 1900) return 'pre-1900';
+  if (y <= 1929) return '1900-1929';
+  if (y <= 1949) return '1930-1949';
+  if (y <= 1966) return '1950-1966';
+  if (y <= 1975) return '1967-1975';
+  if (y <= 1982) return '1976-1982';
+  if (y <= 1990) return '1983-1990';
+  if (y <= 1995) return '1991-1995';
+  if (y <= 2002) return '1996-2002';
+  if (y <= 2006) return '2003-2006';
+  if (y <= 2011) return '2007-2011';
+  return '2012-present';
+}
+
+function findLikelyBuildYear(text: string): number | null {
+  const lines = text.replace(/\r/g, '').split('\n');
+  for (const L of lines) {
+    if (/(built|year\s*built|construction|age|approx|circa|c\.)/i.test(L)) {
+      const m = L.match(/\b(17|18|19|20)\d{2}\b/);
+      if (m) {
+        const y = parseInt(m[0], 10);
+        if (y >= 1700 && y <= 2100) return y;
+      }
     }
   }
   return null;
 }
 
-/* ==================================================================== */
-/* UI Component                                                          */
-/* ==================================================================== */
+function ageBandFromText(text: string): string | null {
+  const t = text.toLowerCase();
+  if (/pre[\s-]?1900|before\s*1900|victorian|georgian|edwardian/i.test(t)) return 'pre-1900';
+  if (/(1900|190\d|191\d|192\d)(?!\d)|1900[\s-]*1929|1900s|1910s|1920s/.test(t)) return '1900-1929';
+  if (/(193\d|194\d)(?!\d)|1930[\s-]*1949|1930s|1940s/.test(t)) return '1930-1949';
+  if (/(195\d|196[0-6])(?!\d)|1950[\s-]*1966|1950s|early\s*1960s/.test(t)) return '1950-1966';
+  if (/(196[7-9]|197[0-5])(?!\d)|1967[\s-]*1975|late\s*1960s|early\s*1970s/.test(t)) return '1967-1975';
+  if (/(197[6-9]|198[0-2])(?!\d)|1976[\s-]*1982|late\s*1970s|early\s*1980s/.test(t)) return '1976-1982';
+  if (/(198[3-9]|1990)(?!\d)|1983[\s-]*1990|mid\s*1980s|late\s*1980s/.test(t)) return '1983-1990';
+  if (/(1991|199[2-5])(?!\d)|1991[\s-]*1995|early\s*1990s/.test(t)) return '1991-1995';
+  if (/(199[6-9]|200[0-2])(?!\d)|1996[\s-]*2002|late\s*1990s|early\s*2000s/.test(t)) return '1996-2002';
+  if (/200[3-6](?!\d)|2003[\s-]*2006/.test(t)) return '2003-2006';
+  if (/(2007|2008|2009|2010|2011)(?!\d)|2007[\s-]*2011/.test(t)) return '2007-2011';
+  if (/(201[2-9]|202\d)(?!\d)|2012[\s-]*present|post[-\s]*2011|new\s*build/.test(t)) return '2012-present';
+  return null;
+}
+
+/* ============================== UI ===================================== */
 
 export default function Page(): React.JSX.Element {
   // Property info
@@ -231,7 +242,7 @@ export default function Page(): React.JSX.Element {
   const [altitude, setAltitude] = useState<number | ''>(0);
   const [tex, setTex] = useState<number | ''>(-3);
   const [hdd, setHdd] = useState<number | ''>(2100);
-  const meanAnnual = meanAnnualDefault;
+  const meanAnnual = MEAN_ANNUAL_DEFAULT;
 
   // Details
   const [dwelling, setDwelling] = useState('');
@@ -242,46 +253,43 @@ export default function Page(): React.JSX.Element {
   const [airtight, setAirtight] = useState('Standard Method');
   const [thermalTest, setThermalTest] = useState('No Test Performed');
 
-  // Climate map + status
+  // Status / local
   const [climStatus, setClimStatus] = useState('');
   const [altStatus, setAltStatus] = useState('');
   const [latlonOverride, setLatlonOverride] = useState('');
   const climateRef = useRef<ClimateMap | null>(null);
 
-  // Paste importer state
+  // Import (PropertyChecker) – toggle + text + status
+  const [importOpen, setImportOpen] = useState(false);
   const [pcPaste, setPcPaste] = useState('');
   const [pcImportStatus, setPcImportStatus] = useState('');
 
-  // Load postcode climate map once
+  // Load climate once
   useEffect(() => {
     (async () => {
       setClimStatus('Loading climate table…');
       const map = await loadClimateMap();
       climateRef.current = map;
-      setClimStatus(
-        map.size
-          ? `Climate table loaded (${map.size} keys).`
-          : 'No climate table found (using manual/API).'
-      );
+      setClimStatus(map.size ? `Climate table loaded (${map.size} keys).` : 'No climate table found (using manual values).');
     })();
   }, []);
 
-  // Update design temp/HDD when postcode changes (if we have a table)
+  // Update design temp/HDD from climate map on postcode changes
   useEffect(() => {
     const map = climateRef.current;
     if (!map || !postcode) return;
-
+    const keys = explodeQueryKeys(postcode);
     const hit = lookupDesign(map, postcode);
     if (hit) {
       if (typeof hit.designTemp === 'number') setTex(hit.designTemp);
       if (typeof hit.hdd === 'number') setHdd(hit.hdd);
-      setClimStatus(`Auto climate ✓ matched ${keysFor(postcode).join(' → ')}`);
+      setClimStatus(`Auto climate ✓ matched ${keys.join(' → ')}`);
     } else {
       setClimStatus('Auto climate: no match in table (you can override).');
     }
   }, [postcode]);
 
-  // Altitude button
+  // Altitude lookup
   const onFindAltitude = async () => {
     try {
       setAltStatus('Looking up…');
@@ -294,7 +302,7 @@ export default function Page(): React.JSX.Element {
     }
   };
 
-  // Paste/import action
+  // PropertyChecker paste handler
   async function onParsePropertyCheckerPaste() {
     const text = pcPaste || '';
     if (!text.trim()) {
@@ -320,18 +328,28 @@ export default function Page(): React.JSX.Element {
       any = true;
     }
 
+    let band = ageBandFromText(text);
+    if (!band) {
+      const y = findLikelyBuildYear(text);
+      if (y) band = ageBandFromYear(y);
+    }
+    if (band) {
+      setAgeBand(band);
+      any = true;
+    }
+
     if (any) {
       setPcImportStatus(
-        `Imported${pc ? ` • Postcode ${pc}` : ''}${rrn ? ` • RRN ${rrn}` : ''}${
-          addr ? ' • Address set' : ''
-        }.`
+        `Imported${pc ? ` • Postcode ${pc}` : ''}${rrn ? ` • RRN ${rrn}` : ''}${addr ? ' • Address set' : ''}${
+          band ? ` • Age band: ${band}` : ''
+        }.`,
       );
     } else {
-      setPcImportStatus('Sorry — could not find postcode / address / RRN in the pasted text.');
+      setPcImportStatus('Sorry — could not find usable data in the pasted text.');
     }
   }
 
-  // Save (placeholder)
+  // Save placeholder
   const onSave = () => {
     const payload = {
       reference,
@@ -357,95 +375,43 @@ export default function Page(): React.JSX.Element {
   };
 
   return (
-    <main
-      style={{
-        maxWidth: 1040,
-        margin: '0 auto',
-        padding: 24,
-        fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-      }}
-    >
+    <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Heat Load Calculator (MCS-style)</h1>
-      <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>
-        Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results
-      </div>
+      <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results</div>
 
       <section style={card}>
-        {/* Import bar + paste importer */}
-        <div
-          style={{
-            ...row,
-            justifyContent: 'space-between',
-            marginBottom: 14,
-            padding: 12,
-            borderRadius: 10,
-            background: '#f7f7f7',
-            alignItems: 'flex-start',
-          }}
-        >
-          <div style={{ flex: 1 }}>
-            <strong>Import from </strong>
-            <a href={PROPERTY_CHECKER_URL} target="_blank" rel="noopener noreferrer">
-              PropertyChecker.co.uk
-            </a>
-            <span> (optional)</span>
+        {/* Import strip */}
+        <div style={{ ...row, marginBottom: 14, padding: 12, borderRadius: 10, background: '#f7f7f7', justifyContent: 'space-between' }}>
+          <strong>Import from <a href={PROPERTY_CHECKER_URL} target="_blank" rel="noreferrer">PropertyChecker.co.uk</a></strong>
+          <button onClick={() => setImportOpen((v) => !v)} style={secondaryBtn}>{importOpen ? 'Hide import' : 'Paste from PropertyChecker'}</button>
+        </div>
 
-            <div style={{ marginTop: 10, maxWidth: 720 }}>
-              <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>
-                Open the property on PropertyChecker, <em>copy the page (or section)</em>, paste
-                below, then click <b>Parse &amp; fill</b>.
-              </div>
-              <textarea
-                rows={4}
-                value={pcPaste}
-                onChange={(e) => setPcPaste(e.target.value)}
-                placeholder="Paste page text or HTML from PropertyChecker here…"
-                style={{ width: '100%', ...inputStyle, height: 110, resize: 'vertical' }}
-              />
-              <div style={{ ...row, marginTop: 8 }}>
-                <Button onClick={onParsePropertyCheckerPaste}>Parse &amp; fill</Button>
-                <span style={{ fontSize: 12, color: '#666' }}>{pcImportStatus}</span>
-              </div>
+        {importOpen && (
+          <div style={{ marginBottom: 16 }}>
+            <Label>Paste PropertyChecker page text</Label>
+            <textarea
+              rows={6}
+              value={pcPaste}
+              onChange={(e) => setPcPaste(e.target.value)}
+              placeholder="Paste the page text here…"
+              style={{ ...inputStyle, width: '100%', height: 140, resize: 'vertical' }}
+            />
+            <div style={{ ...row, marginTop: 8 }}>
+              <button onClick={onParsePropertyCheckerPaste} style={primaryBtn}>Parse & Fill</button>
+              <span style={{ fontSize: 12, color: '#666' }}>{pcImportStatus}</span>
             </div>
           </div>
-
-          <a
-            href={PROPERTY_CHECKER_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              borderRadius: 10,
-              padding: '8px 12px',
-              border: '1px solid #ddd',
-              background: '#fff',
-              color: '#111',
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-              marginLeft: 12,
-              alignSelf: 'flex-start',
-            }}
-          >
-            Open ↗
-          </a>
-        </div>
+        )}
 
         {/* Top grid */}
         <div style={grid3}>
           <div>
             <Label>Reference *</Label>
-            <Input
-              placeholder="e.g., Project ABC - v1"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-            />
+            <Input placeholder="e.g., Project ABC - v1" value={reference} onChange={(e) => setReference(e.target.value)} />
           </div>
           <div>
             <Label>Postcode *</Label>
-            <Input
-              placeholder="e.g., SW1A 1AA"
-              value={postcode}
-              onChange={(e) => setPostcode(e.target.value)}
-            />
+            <Input placeholder="e.g., SW1A 1AA" value={postcode} onChange={(e) => setPostcode(e.target.value)} />
           </div>
           <div>
             <Label>Country</Label>
@@ -459,27 +425,15 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Address (editable)</Label>
-            <Input
-              placeholder="e.g., 10 Example Road, Town"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-            />
+            <Input placeholder="e.g., 10 Example Road, Town" value={address} onChange={(e) => setAddress(e.target.value)} />
           </div>
           <div>
             <Label>EPC Number *</Label>
-            <Input
-              placeholder="e.g., 1234-5678-9012-3456-7890"
-              value={epcNo}
-              onChange={(e) => setEpcNo(e.target.value)}
-            />
+            <Input placeholder="e.g., 1234-5678-9012-3456-7890" value={epcNo} onChange={(e) => setEpcNo(e.target.value)} />
           </div>
           <div>
             <Label>UPRN (optional)</Label>
-            <Input
-              placeholder="Unique Property Reference Number"
-              value={uprn}
-              onChange={(e) => setUprn(e.target.value)}
-            />
+            <Input placeholder="Unique Property Reference Number" value={uprn} onChange={(e) => setUprn(e.target.value)} />
           </div>
         </div>
 
@@ -488,27 +442,18 @@ export default function Page(): React.JSX.Element {
         <div style={grid4}>
           <div>
             <Label>Altitude (m)</Label>
-            <Input
-              type="number"
-              value={altitude}
-              onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))}
-            />
+            <Input type="number" value={altitude} onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))} />
             <div style={{ marginTop: 8 }}>
               <details>
                 <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude</summary>
                 <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
-                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can
-                  also enter <em>lat,long</em> override:
+                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can also enter
+                  <em> lat,long </em> override:
                 </div>
               </details>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
                 <Button onClick={onFindAltitude}>Get altitude</Button>
-                <Input
-                  placeholder="(optional) 51.5,-0.12"
-                  value={latlonOverride}
-                  onChange={(e) => setLatlonOverride(e.target.value)}
-                  style={{ maxWidth: 180 }}
-                />
+                <Input placeholder="(optional) 51.5,-0.12" value={latlonOverride} onChange={(e) => setLatlonOverride(e.target.value)} style={{ maxWidth: 180 }} />
                 <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
               </div>
             </div>
@@ -516,11 +461,7 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Design External Air Temp (°C)</Label>
-            <Input
-              type="number"
-              value={tex}
-              onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
-            />
+            <Input type="number" value={tex} onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))} />
           </div>
 
           <div>
@@ -530,11 +471,7 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
-            <Input
-              type="number"
-              value={hdd}
-              onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
-            />
+            <Input type="number" value={hdd} onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))} />
           </div>
         </div>
 
@@ -581,11 +518,7 @@ export default function Page(): React.JSX.Element {
           </div>
           <div>
             <Label>Occupants</Label>
-            <Input
-              type="number"
-              value={occupants}
-              onChange={(e) => setOccupants(Number(e.target.value || 0))}
-            />
+            <Input type="number" value={occupants} onChange={(e) => setOccupants(Number(e.target.value || 0))} />
           </div>
         </div>
 
@@ -616,25 +549,18 @@ export default function Page(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Auto climate status */}
-        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>
-          Auto climate ✓ {climStatus}
-        </div>
+        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>Auto climate ✓ {climStatus}</div>
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-          <button onClick={onSave} style={primaryBtn}>
-            Save
-          </button>
+          <button onClick={onSave} style={primaryBtn}>Save</button>
         </div>
       </section>
     </main>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Small UI bits + styles                                              */
-/* ------------------------------------------------------------------ */
+/* ======================= Tiny UI atoms / styles ======================= */
 
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
@@ -693,5 +619,13 @@ const primaryBtn: React.CSSProperties = {
   border: '1px solid #111',
   padding: '12px 18px',
   borderRadius: 12,
+  cursor: 'pointer',
+};
+const secondaryBtn: React.CSSProperties = {
+  background: '#fff',
+  color: '#111',
+  border: '1px solid #ddd',
+  padding: '10px 14px',
+  borderRadius: 10,
   cursor: 'pointer',
 };
