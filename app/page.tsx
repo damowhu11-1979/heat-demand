@@ -571,7 +571,7 @@ const inputStyle: React.CSSProperties = {
 const primaryBtn: React.CSSProperties = {
   background: '#111',
   color: '#fff',
-  border: '1px solid '#111',
+  border: '1px solid #111',   // <-- fixed here
   padding: '12px 18px',
   borderRadius: 12,
   cursor: 'pointer',
