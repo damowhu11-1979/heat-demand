@@ -7,16 +7,15 @@ const [, , inFileArg, outFileArg] = process.argv;
 const INPUT  = inFileArg  || 'post codes spf data climate.ods';
 const OUTPUT = outFileArg || 'public/climate/postcode_climate.json';
 
-const slug = s => String(s || '').trim().toLowerCase()
-  .replace(/[\s\-_\/]+/g,'')
-  .replace(/[^\w]/g,'');
+// Optional explicit mapping via env (use the exact header text from your sheet)
+const OV_PC  = process.env.ODS_PC;      // e.g. "Postcode"
+const OV_DES = process.env.ODS_DESIGN;  // e.g. "Design temp (°C)"
+const OV_HDD = process.env.ODS_HDD;     // e.g. "HDD (base 15.5C)"
 
-const H_PC  = new Set(['postcode','postcodes','post_code','sector','outcode','district','area','pc','pcode','postcoderegion','postalcodesector']);
-const H_DES = new Set(['design','designtemp','externaldesigntemp','designext','tex','designc','designdegc','designoutside','designexternal','designexttemp']);
-const H_HDD = new Set(['hdd','heatingdegreedays','degreedays','degree_days','hdd15','hdd155','hddb15','hddb155']);
-
+const slug = s => String(s || '').trim().toLowerCase().replace(/[\s\-_\/]+/g,'').replace(/[^\w]/g,'');
 const pcNorm = s => String(s || '').toUpperCase().replace(/\s+/g,'');
 
+// Return likely key set (full, outcode, sector, area)
 function keysFor(code) {
   const clean = pcNorm(code);
   if (!clean) return [];
@@ -34,7 +33,7 @@ function keysFor(code) {
   return Array.from(keys);
 }
 
-// Turn cell text into a number, handling unicode minus and blanks
+// Robust numeric parse: handle unicode minus and blanks
 function toNumber(v) {
   const s = String(v ?? '')
     .trim()
@@ -42,12 +41,90 @@ function toNumber(v) {
     .replace(/[\u2212\u2012-\u2015]/g, '-'); // convert “−”, “–” etc to '-'
   if (s === '') return undefined;
   const n = Number(s);
-  if (!Number.isFinite(n)) return undefined;
+  return Number.isFinite(n) ? n : undefined;
+}
 
-  // If your sheet truly never uses 0 as a valid value, uncomment:
-  // if (n === 0) return undefined;
+// Heuristic: score how much a numeric column looks like a design-temp or HDD
+function scoreColumns(rows, headers) {
+  const stats = {};
+  for (const h of headers) {
+    let nums = [];
+    for (const r of rows) {
+      const n = toNumber(r[h]);
+      if (n !== undefined) nums.push(n);
+      if (nums.length >= 120) break; // sample up to 120 rows
+    }
+    if (!nums.length) continue;
+    nums.sort((a,b)=>a-b);
+    const p = q => nums[Math.min(nums.length-1, Math.max(0, Math.floor(q*(nums.length-1))))];
+    const min = nums[0], max = nums[nums.length-1], med = p(0.5);
 
-  return n;
+    // simple scores
+    const looksDesign = (min >= -30 && max <= 15);             // plausible °C range
+    const looksHdd    = (min >= 300 && max <= 6000 && med>600);// plausible HDD range
+    stats[h] = { min, max, med, count: nums.length, looksDesign, looksHdd };
+  }
+  return stats;
+}
+
+// Try to pick header candidates
+function pickHeaders(rows) {
+  const headers = Object.keys(rows[0] || {});
+  console.log('[ods-to-json] Headers:', headers);
+
+  // If explicit overrides are set, honour them
+  if (OV_PC || OV_DES || OV_HDD) {
+    return {
+      pc:  OV_PC  ?? null,
+      des: OV_DES ?? null,
+      hdd: OV_HDD ?? null,
+    };
+  }
+
+  // 1) postcode-like
+  let pc = null;
+  for (const h of headers) {
+    let score = 0, seen = 0;
+    for (const r of rows.slice(0,200)) {
+      const v = String(r[h] ?? '').trim();
+      if (!v) continue;
+      seen++;
+      const s = pcNorm(v);
+      if (/^[A-Z]{1,2}\d[A-Z\d]?/.test(s)) score++;
+    }
+    if (seen && score/Math.max(1,seen) > 0.5) { pc = h; break; }
+  }
+
+  // 2) try header-name matches
+  const H_PC  = new Set(['postcode','postcodes','post_code','sector','outcode','district','area','pc','pcode','postcoderegion','postalcodesector']);
+  const H_DES = new Set(['design','designtemp','externaldesigntemp','designext','tex','designc','designdegc','designoutside','designexternal','designexttemp']);
+  const H_HDD = new Set(['hdd','heatingdegreedays','degreedays','degree_days','hdd15','hdd155','hddb15','hddb155']);
+
+  let des = null, hdd = null;
+  for (const h of headers) {
+    const s = slug(h);
+    if (!pc  && H_PC.has(s))  pc  = h;
+    if (!des && H_DES.has(s)) des = h;
+    if (!hdd && H_HDD.has(s)) hdd = h;
+  }
+
+  // 3) Heuristics on numeric distributions if still missing
+  const dist = scoreColumns(rows, headers);
+  if (!des) {
+    const candidates = Object.entries(dist)
+      .filter(([,st]) => st.looksDesign)
+      .sort((a,b)=> (b[1].count - a[1].count) || (Math.abs(-3 - b[1].med) - Math.abs(-3 - a[1].med)));
+    if (candidates.length) des = candidates[0][0];
+  }
+  if (!hdd) {
+    const candidates = Object.entries(dist)
+      .filter(([,st]) => st.looksHdd)
+      .sort((a,b)=> (b[1].count - a[1].count) || (b[1].med - a[1].med));
+    if (candidates.length) hdd = candidates[0][0];
+  }
+
+  console.log('[ods-to-json] Using columns -> pc:', pc ?? 'n/a', ', design:', des ?? 'n/a', ', hdd:', hdd ?? 'n/a');
+  return { pc, des, hdd };
 }
 
 (async () => {
@@ -60,41 +137,21 @@ function toNumber(v) {
     process.exit(1);
   }
 
-  // Identify columns
-  const headers = Object.keys(rows[0] || {});
-  let pcCol, desCol, hddCol;
-  for (const h of headers) {
-    const s = slug(h);
-    if (!pcCol  && H_PC.has(s))  pcCol  = h;
-    if (!desCol && H_DES.has(s)) desCol = h;
-    if (!hddCol && H_HDD.has(s)) hddCol = h;
-  }
-  console.log(`[ods-to-json] Using columns -> pc: ${pcCol ?? 'n/a'}, design: ${desCol ?? 'n/a'}, hdd: ${hddCol ?? 'n/a'}`);
+  const { pc, des, hdd } = pickHeaders(rows);
 
   const out = [];
   for (const r of rows) {
-    let code = r?.[pcCol] ?? '';
-
-    // If no single “postcode” column, try composing
-    if (!code) {
-      const area = r['area'] || r['Area'];
-      const outc = r['outcode'] || r['Outcode'] || r['district'];
-      const sect = r['sector'] || r['Sector']  || r['sect'];
-      const unit = r['unit']   || r['Unit'];
-      const combo = [area || outc || '', sect || '', unit || ''].join('');
-      if (combo.trim()) code = combo;
-    }
-
+    const code = r?.[pc] ?? '';
     const keys = keysFor(code);
     if (!keys.length) continue;
 
-    const designTemp = toNumber(desCol ? r[desCol] : undefined);
-    const hdd        = toNumber(hddCol ? r[hddCol] : undefined);
+    const designTemp = des ? toNumber(r[des]) : undefined;
+    const hddVal     = hdd ? toNumber(r[hdd]) : undefined;
 
-    // Skip rows that have no usable data
-    if (designTemp === undefined && hdd === undefined) continue;
+    // Only keep rows that actually carry data
+    if (designTemp === undefined && hddVal === undefined) continue;
 
-    out.push({ keys, designTemp, hdd });
+    out.push({ keys, designTemp, hdd: hddVal });
   }
 
   if (!out.length) {
