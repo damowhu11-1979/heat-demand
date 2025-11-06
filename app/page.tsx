@@ -1,72 +1,73 @@
 // app/page.tsx
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/'; // change if needed
+/* ------------------------------------------------------------------ */
+/* Config                                                              */
+/* ------------------------------------------------------------------ */
 
-/* ----------------------------- Helpers & Types ---------------------------- */
+const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/'; // open in new tab
 
-// Climate data row and lookup map
+/* ------------------------------------------------------------------ */
+/* Types & helpers                                                     */
+/* ------------------------------------------------------------------ */
+
 type ClimateRow = { designTemp?: number; hdd?: number };
 type ClimateMap = Map<string, ClimateRow>;
-
-// Geocoding
 type LatLon = { lat: number; lon: number };
 
-// Normalise a postcode-ish string to uppercase with no spaces
+const meanAnnualDefault = 10.2;
+
+/** Normalise any postcode-ish string to uppercase + no spaces */
 function normPC(s: string): string {
   return String(s || '').toUpperCase().replace(/\s+/g, '');
 }
 
-/** Build the set of keys we’ll try for a given raw postcode:
- *  - FULL (no space), e.g. "SW1A1AA"
- *  - OUTCODE, e.g. "SW1A"
- *  - SECTOR, e.g. "SW1A1"
- *  - AREA, e.g. "SW"
+/** Build the set of keys we’ll try for a given raw postcode
+ *  FULL -> OUTCODE -> SECTOR -> AREA
+ *  Works for partials too (CO, CO1, CO11AH, etc.)
  */
-function explodeQueryKeys(pc?: string): string[] {
-  const raw = normPC(pc || '');
-  if (!raw) return [];
+function keysFor(raw: string): string[] {
+  const clean = normPC(raw);
+  if (!clean) return [];
+  const keys = new Set<string>([clean]); // FULL (no space)
 
-  // Typical UK PC shapes; tolerate partials
-  const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d?)([A-Z]{0,2})?$/);
+  // OUTCODE (letters + first digit sequence)
+  const m = clean.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})?$/); // SW1A1AA or SW1A
+  const out = m?.[1] ?? '';
+  if (out) keys.add(out);
 
-  const keys = new Set<string>([raw]);
-  if (m) {
-    const out = m[1];                      // OUTCODE (e.g. SW1A)
-    const sectorDigit = m[2];              // '1'
-    const area = out.replace(/\d.*/, '');  // 'SW'
+  // SECTOR (outcode + first digit of inward)
+  const inward = clean.slice(out.length);
+  const firstDigit = inward.match(/\d/);
+  if (firstDigit) keys.add(`${out}${firstDigit[0]}`);
 
-    keys.add(out);
-    if (sectorDigit) keys.add(`${out}${sectorDigit}`); // SECTOR (e.g. SW1A1)
-    if (area) keys.add(area);
-  }
+  // AREA (letters until first digit)
+  const area = out.replace(/\d.*/, '');
+  if (area) keys.add(area);
+
   return Array.from(keys);
 }
 
-/** Lookup best match from climate map for a given postcode */
+/** Lookup best match in the climate map */
 function lookupDesign(map: ClimateMap, postcode: string): ClimateRow | undefined {
-  for (const k of explodeQueryKeys(postcode)) {
+  for (const k of keysFor(postcode)) {
     const hit = map.get(k);
     if (hit) return hit;
   }
   return undefined;
 }
 
-/** SSR-safe climate loader that works locally and on GitHub Pages */
+/** Load climate table from public paths (works locally & on GitHub Pages) */
 async function loadClimateMap(): Promise<ClimateMap> {
   const isBrowser = typeof window !== 'undefined';
-  const pathname = isBrowser && (window as any).location
-    ? (window as any).location.pathname
-    : '/';
+  const pathname = isBrowser && window.location ? window.location.pathname : '/';
 
-  // e.g. '/heat-demand/' when deployed under a repo on GH Pages
-  const curDir = pathname.replace(/[^/]*$/, '');     // strip trailing filename
+  const curDir = pathname.replace(/[^/]*$/, ''); // strip trailing filename
   const seg = pathname.split('/').filter(Boolean);
   const repoRoot = seg.length ? `/${seg[0]}/` : '/';
 
-  // Try several candidates
   const candidates = Array.from(
     new Set([
       `${curDir}climate/postcode_climate.json`,
@@ -85,13 +86,12 @@ async function loadClimateMap(): Promise<ClimateMap> {
         break;
       }
     } catch {
-      // ignore and try the next candidate
+      /* try next */
     }
   }
-  if (!Array.isArray(feed)) return new Map();
 
-  // Build in-memory map (keys stored w/out spaces)
   const map: ClimateMap = new Map();
+  if (!Array.isArray(feed)) return map;
   for (const row of feed) {
     const { keys = [], designTemp, hdd } = row || {};
     for (const k of keys) {
@@ -102,7 +102,8 @@ async function loadClimateMap(): Promise<ClimateMap> {
   return map;
 }
 
-// Lat/Lon parsing
+/* ----------------------------- Geocoding ----------------------------- */
+
 function parseLatLon(s: string): LatLon | null {
   const m = String(s || '')
     .trim()
@@ -114,7 +115,6 @@ function parseLatLon(s: string): LatLon | null {
   return { lat, lon };
 }
 
-// PC/address → geocode
 async function geoByPostcodeOrAddress(
   postcode: string,
   address: string,
@@ -131,7 +131,9 @@ async function geoByPostcodeOrAddress(
       });
       if (r.ok) {
         const j = await r.json();
-        if (j?.result) return { lat: j.result.latitude, lon: j.result.longitude };
+        if (j?.result?.latitude && j?.result?.longitude) {
+          return { lat: j.result.latitude, lon: j.result.longitude };
+        }
       }
     } catch {
       /* fall through */
@@ -139,7 +141,6 @@ async function geoByPostcodeOrAddress(
   }
   const q = (postcode || address || '').trim();
   if (q.length < 3) throw new Error('Enter postcode or address');
-
   const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
     q
   )}`;
@@ -150,11 +151,7 @@ async function geoByPostcodeOrAddress(
   return { lat: +a[0].lat, lon: +a[0].lon };
 }
 
-// Elevation from two free providers
-async function elevation(
-  lat: number,
-  lon: number
-): Promise<{ metres: number; provider: string }> {
+async function elevation(lat: number, lon: number): Promise<{ metres: number; provider: string }> {
   try {
     const u = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`;
     const r = await fetch(u, { cache: 'no-store' });
@@ -174,9 +171,52 @@ async function elevation(
   }
 }
 
-/* ---------------------------------- UI ---------------------------------- */
+/* ------------------------- Import/paste helpers ---------------------- */
 
-const MEAN_ANNUAL_DEFAULT = 10.2;
+function extractPostcode(text: string): string | null {
+  // tolerant UK postcode finder (handles missing space)
+  const m = text.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[ A-Z]{2})\b/i);
+  if (!m) return null;
+  return `${m[1].toUpperCase()} ${m[2].toUpperCase().replace(/\s+/g, '')}`;
+}
+
+function extractRRN(text: string): string | null {
+  const m = text.match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
+  return m ? m[1] : null;
+}
+
+function extractAddress(text: string, pc: string | null): string | null {
+  // “Address: ...”
+  const m1 = text.match(/Address\s*:\s*(.+)/i);
+  if (m1) return m1[1].trim();
+
+  // og:title meta
+  const m2 = text.match(
+    /<meta[^>]+property\s*=\s*["']og:title["'][^>]+content=["']([^"']+)["']/i
+  );
+  if (m2) return m2[1].trim();
+
+  // a line containing the postcode
+  if (pc) {
+    const needle = pc.toUpperCase().replace(/\s+/g, '');
+    const hay = text.toUpperCase().replace(/\s+/g, ' '); // normalise
+    const idx = hay.indexOf(needle);
+    if (idx >= 0) {
+      const orig = text.replace(/\r/g, '');
+      const lines = orig.split('\n');
+      // find the line with the raw (space/no-space) pc
+      const lc = pc.toLowerCase().replace(/\s+/g, '');
+      const candidate =
+        lines.find((L) => L.toLowerCase().replace(/\s+/g, '').includes(lc)) || lines[0] || '';
+      if (candidate.trim().length > 6) return candidate.trim();
+    }
+  }
+  return null;
+}
+
+/* ==================================================================== */
+/* UI Component                                                          */
+/* ==================================================================== */
 
 export default function Page(): React.JSX.Element {
   // Property info
@@ -191,7 +231,7 @@ export default function Page(): React.JSX.Element {
   const [altitude, setAltitude] = useState<number | ''>(0);
   const [tex, setTex] = useState<number | ''>(-3);
   const [hdd, setHdd] = useState<number | ''>(2100);
-  const meanAnnual = MEAN_ANNUAL_DEFAULT;
+  const meanAnnual = meanAnnualDefault;
 
   // Details
   const [dwelling, setDwelling] = useState('');
@@ -202,11 +242,15 @@ export default function Page(): React.JSX.Element {
   const [airtight, setAirtight] = useState('Standard Method');
   const [thermalTest, setThermalTest] = useState('No Test Performed');
 
-  // Status / local
+  // Climate map + status
   const [climStatus, setClimStatus] = useState('');
   const [altStatus, setAltStatus] = useState('');
   const [latlonOverride, setLatlonOverride] = useState('');
   const climateRef = useRef<ClimateMap | null>(null);
+
+  // Paste importer state
+  const [pcPaste, setPcPaste] = useState('');
+  const [pcImportStatus, setPcImportStatus] = useState('');
 
   // Load postcode climate map once
   useEffect(() => {
@@ -215,12 +259,14 @@ export default function Page(): React.JSX.Element {
       const map = await loadClimateMap();
       climateRef.current = map;
       setClimStatus(
-        map.size ? `Climate table loaded (${map.size} keys).` : 'No climate table found (manual/API only).'
+        map.size
+          ? `Climate table loaded (${map.size} keys).`
+          : 'No climate table found (using manual/API).'
       );
     })();
   }, []);
 
-  // Update design temp/HDD when postcode changes
+  // Update design temp/HDD when postcode changes (if we have a table)
   useEffect(() => {
     const map = climateRef.current;
     if (!map || !postcode) return;
@@ -229,7 +275,7 @@ export default function Page(): React.JSX.Element {
     if (hit) {
       if (typeof hit.designTemp === 'number') setTex(hit.designTemp);
       if (typeof hit.hdd === 'number') setHdd(hit.hdd);
-      setClimStatus(`Auto climate ✓ matched: ${explodeQueryKeys(postcode).join(' → ')}`);
+      setClimStatus(`Auto climate ✓ matched ${keysFor(postcode).join(' → ')}`);
     } else {
       setClimStatus('Auto climate: no match in table (you can override).');
     }
@@ -247,6 +293,43 @@ export default function Page(): React.JSX.Element {
       setAltStatus(`Failed: ${e?.message || String(e)}`);
     }
   };
+
+  // Paste/import action
+  async function onParsePropertyCheckerPaste() {
+    const text = pcPaste || '';
+    if (!text.trim()) {
+      setPcImportStatus('Paste page text first.');
+      return;
+    }
+
+    let any = false;
+
+    const pc = extractPostcode(text);
+    if (pc) {
+      setPostcode(pc);
+      any = true;
+    }
+    const rrn = extractRRN(text);
+    if (rrn) {
+      setEpcNo(rrn);
+      any = true;
+    }
+    const addr = extractAddress(text, pc);
+    if (addr) {
+      setAddress(addr);
+      any = true;
+    }
+
+    if (any) {
+      setPcImportStatus(
+        `Imported${pc ? ` • Postcode ${pc}` : ''}${rrn ? ` • RRN ${rrn}` : ''}${
+          addr ? ' • Address set' : ''
+        }.`
+      );
+    } else {
+      setPcImportStatus('Sorry — could not find postcode / address / RRN in the pasted text.');
+    }
+  }
 
   // Save (placeholder)
   const onSave = () => {
@@ -288,19 +371,81 @@ export default function Page(): React.JSX.Element {
       </div>
 
       <section style={card}>
-        <div style={{ ...row, marginBottom: 14, padding: 12, borderRadius: 10, background: '#f7f7f7' }}>
-          <strong>Import from PropertyChecker.co.uk</strong> <span>(optional)</span>
+        {/* Import bar + paste importer */}
+        <div
+          style={{
+            ...row,
+            justifyContent: 'space-between',
+            marginBottom: 14,
+            padding: 12,
+            borderRadius: 10,
+            background: '#f7f7f7',
+            alignItems: 'flex-start',
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <strong>Import from </strong>
+            <a href={PROPERTY_CHECKER_URL} target="_blank" rel="noopener noreferrer">
+              PropertyChecker.co.uk
+            </a>
+            <span> (optional)</span>
+
+            <div style={{ marginTop: 10, maxWidth: 720 }}>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>
+                Open the property on PropertyChecker, <em>copy the page (or section)</em>, paste
+                below, then click <b>Parse &amp; fill</b>.
+              </div>
+              <textarea
+                rows={4}
+                value={pcPaste}
+                onChange={(e) => setPcPaste(e.target.value)}
+                placeholder="Paste page text or HTML from PropertyChecker here…"
+                style={{ width: '100%', ...inputStyle, height: 110, resize: 'vertical' }}
+              />
+              <div style={{ ...row, marginTop: 8 }}>
+                <Button onClick={onParsePropertyCheckerPaste}>Parse &amp; fill</Button>
+                <span style={{ fontSize: 12, color: '#666' }}>{pcImportStatus}</span>
+              </div>
+            </div>
+          </div>
+
+          <a
+            href={PROPERTY_CHECKER_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              borderRadius: 10,
+              padding: '8px 12px',
+              border: '1px solid #ddd',
+              background: '#fff',
+              color: '#111',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              marginLeft: 12,
+              alignSelf: 'flex-start',
+            }}
+          >
+            Open ↗
+          </a>
         </div>
 
         {/* Top grid */}
         <div style={grid3}>
           <div>
             <Label>Reference *</Label>
-            <Input placeholder="e.g., Project ABC - v1" value={reference} onChange={(e) => setReference(e.target.value)} />
+            <Input
+              placeholder="e.g., Project ABC - v1"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+            />
           </div>
           <div>
             <Label>Postcode *</Label>
-            <Input placeholder="e.g., SW1A 1AA" value={postcode} onChange={(e) => setPostcode(e.target.value)} />
+            <Input
+              placeholder="e.g., SW1A 1AA"
+              value={postcode}
+              onChange={(e) => setPostcode(e.target.value)}
+            />
           </div>
           <div>
             <Label>Country</Label>
@@ -314,15 +459,27 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Address (editable)</Label>
-            <Input placeholder="e.g., 10 Example Road, Town" value={address} onChange={(e) => setAddress(e.target.value)} />
+            <Input
+              placeholder="e.g., 10 Example Road, Town"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
           </div>
           <div>
             <Label>EPC Number *</Label>
-            <Input placeholder="e.g., 1234-5678-9012-3456-7890" value={epcNo} onChange={(e) => setEpcNo(e.target.value)} />
+            <Input
+              placeholder="e.g., 1234-5678-9012-3456-7890"
+              value={epcNo}
+              onChange={(e) => setEpcNo(e.target.value)}
+            />
           </div>
           <div>
             <Label>UPRN (optional)</Label>
-            <Input placeholder="Unique Property Reference Number" value={uprn} onChange={(e) => setUprn(e.target.value)} />
+            <Input
+              placeholder="Unique Property Reference Number"
+              value={uprn}
+              onChange={(e) => setUprn(e.target.value)}
+            />
           </div>
         </div>
 
@@ -340,8 +497,8 @@ export default function Page(): React.JSX.Element {
               <details>
                 <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude</summary>
                 <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
-                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can also enter
-                  <em> lat,long </em> override:
+                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can
+                  also enter <em>lat,long</em> override:
                 </div>
               </details>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
@@ -359,7 +516,11 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Design External Air Temp (°C)</Label>
-            <Input type="number" value={tex} onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Input
+              type="number"
+              value={tex}
+              onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
+            />
           </div>
 
           <div>
@@ -369,7 +530,11 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
-            <Input type="number" value={hdd} onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))} />
+            <Input
+              type="number"
+              value={hdd}
+              onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
+            />
           </div>
         </div>
 
@@ -416,7 +581,11 @@ export default function Page(): React.JSX.Element {
           </div>
           <div>
             <Label>Occupants</Label>
-            <Input type="number" value={occupants} onChange={(e) => setOccupants(Number(e.target.value || 0))} />
+            <Input
+              type="number"
+              value={occupants}
+              onChange={(e) => setOccupants(Number(e.target.value || 0))}
+            />
           </div>
         </div>
 
@@ -448,7 +617,9 @@ export default function Page(): React.JSX.Element {
         </div>
 
         {/* Auto climate status */}
-        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>Auto climate • {climStatus}</div>
+        <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>
+          Auto climate ✓ {climStatus}
+        </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
@@ -461,20 +632,19 @@ export default function Page(): React.JSX.Element {
   );
 }
 
-/* ------------------------------ Small UI bits ----------------------------- */
+/* ------------------------------------------------------------------ */
+/* Small UI bits + styles                                              */
+/* ------------------------------------------------------------------ */
 
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
-
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
-
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
-
 function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -491,8 +661,6 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
     />
   );
 }
-
-/* --------------------------------- Styles -------------------------------- */
 
 const card: React.CSSProperties = {
   background: '#fff',
