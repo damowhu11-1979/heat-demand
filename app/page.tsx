@@ -531,7 +531,7 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
       style={{
         borderRadius: 10,
         padding: '10px 14px',
-        border: '1px solid '#ddd',
+        border: '1px solid #ddd',          // ✅ fixed line
         background: props.disabled ? '#eee' : '#111',
         color: props.disabled ? '#888' : '#fff',
         cursor: props.disabled ? 'not-allowed' : 'pointer',
