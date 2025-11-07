@@ -643,3 +643,11 @@ const secondaryBtn: React.CSSProperties = {
   borderRadius: 10,
   cursor: 'pointer',
 };
+import Link from 'next/link';
+
+// …inside your JSX…
+<p style={{ marginTop: 16 }}>
+  <Link href="ventilation" style={{ textDecoration: 'underline' }}>
+    Go to Ventilation
+  </Link>
+</p>
