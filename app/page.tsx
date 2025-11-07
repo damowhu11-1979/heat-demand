@@ -7,6 +7,36 @@ import Link from 'next/link';
 const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
 
 /* --------------------------- Helpers & Types ------------------------ */
+// ---- EPC links (GOV.UK) ----
+const EPC_BASE = 'https://find-energy-certificate.service.gov.uk';
+
+/** Normalise / validate EPC RRN (5 groups of 4 digits) and return compact form or null */
+function normaliseEpcRrn(rrn: string): string | null {
+  const m = String(rrn || '').trim().match(/^(\d{4})-(\d{4})-(\d{4})-(\d{4})-(\d{4})$/);
+  if (!m) return null;
+  // GOV.UK certificate URLs accept the dashed form
+  return `${m[1]}-${m[2]}-${m[3]}-${m[4]}-${m[5]}`;
+}
+
+function openEpcCertificate(rrn: string) {
+  const clean = normaliseEpcRrn(rrn);
+  if (!clean) return alert('Please enter a valid EPC number (e.g. 1234-5678-9012-3456-7890).');
+  const url = `${EPC_BASE}/energy-certificate/${encodeURIComponent(clean)}`;
+  window.open(url, '_blank', 'noopener');
+}
+
+function openEpcSearchByPostcode(pc: string) {
+  if (!pc.trim()) return alert('Please enter a postcode to search.');
+  const url = `${EPC_BASE}/search?postcode=${encodeURIComponent(pc.trim())}`;
+  window.open(url, '_blank', 'noopener');
+}
+
+function openEpcSearchByAddress(addr: string) {
+  if (!addr.trim()) return alert('Please enter an address to search.');
+  const url = `${EPC_BASE}/search?address=${encodeURIComponent(addr.trim())}`;
+  window.open(url, '_blank', 'noopener');
+}
+
 type ClimateRow = { designTemp?: number; hdd?: number };
 type ClimateMap = Map<string, ClimateRow>;
 type LatLon = { lat: number; lon: number };
