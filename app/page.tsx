@@ -200,7 +200,7 @@ function parsePropertyChecker(text: string): {
   } = {};
   const t = String(text || '');
 
-  // EPC number like 1234-5678-9012-3456-7890
+  //  like 1234-5678-9012-3456-7890
   const mEpc = t.match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
   if (mEpc) out.epc = mEpc[1];
 
@@ -382,7 +382,7 @@ export default function Page(): React.JSX.Element {
               Parse
             </button>
             <span style={{ color: '#666', fontSize: 12 }}>
-              Will fill EPC number, UPRN, occupants, age band, address and postcode.
+              Will fill , UPRN, occupants, age band, address and postcode.
             </span>
           </div>
         </div>
@@ -437,17 +437,16 @@ export default function Page(): React.JSX.Element {
     onChange={(e) => setEpcNo(e.target.value)}
   />
 
-  {/* Links below the EPC input */}
+  {/* EPC helpers */}
   <div
     style={{
+      marginTop: 6,
       display: 'flex',
-      gap: 8,
+      gap: 10,
       alignItems: 'center',
-      marginTop: 8,
       flexWrap: 'wrap',
     }}
   >
-    {/* Always open the official GOV.UK EPC entry page */}
     <a
       href="https://www.gov.uk/find-energy-certificate"
       target="_blank"
@@ -465,7 +464,6 @@ export default function Page(): React.JSX.Element {
       Get EPC certificate
     </a>
 
-    {/* Optional: quick search by the postcode typed above */}
     <a
       href={`https://www.gov.uk/find-energy-certificate/search?postcode=${encodeURIComponent(
         postcode || ''
