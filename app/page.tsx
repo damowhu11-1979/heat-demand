@@ -1,24 +1,12 @@
 'use client';
-import { useRouter } from 'next/navigation';
+
 import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 
 /* ------------------------------ Config ------------------------------ */
 const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
 
 /* --------------------------- Helpers & Types ------------------------ */
-// Validate UK EPC number: 1234-5678-9012-3456-7890
-const EPC_ID_RE = /^\d{4}-\d{4}-\d{4}-\d{4}-\d{4}$/;
-
-function epcHref(country: string, epcId: string): string | '' {
-  const id = (epcId || '').trim();
-  if (!EPC_ID_RE.test(id)) return '';
-  // England / Wales / NI use the GOV.UK EPC service:
-  if (country !== 'Scotland') {
-    return `https://find-energy-certificate.service.gov.uk/energy-certificate/${id}`;
-  }
-  // Scotland has its own register:
-  return `https://www.scottishepcregister.org.uk/Certificate/Download/${id}`;
-}
 type ClimateRow = { designTemp?: number; hdd?: number };
 type ClimateMap = Map<string, ClimateRow>;
 type LatLon = { lat: number; lon: number };
@@ -39,12 +27,12 @@ function explodeQueryKeys(pc?: string): string[] {
   // Typical UK postcode shapes; tolerate partials
   const m = raw.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d?)([A-Z]{0,2})?$/);
   if (m) {
-    const out = m[1]; // OUTCODE e.g. SW1A
-    const sector = m[2]; // e.g. "1"
+    const out = m[1];                 // OUTCODE e.g. SW1A
+    const sector = m[2];              // e.g. "1"
     const area = out.replace(/\d.*/, ''); // e.g. "SW"
     keys.add(out);
     if (sector) keys.add(`${out}${sector}`); // e.g. SW1A1
-    if (area) keys.add(area); // e.g. SW
+    if (area) keys.add(area);               // e.g. SW
   }
   return Array.from(keys);
 }
@@ -71,7 +59,7 @@ async function loadClimateMap(): Promise<ClimateMap> {
       `${repoRoot}climate/postcode_climate.json`,
       `/climate/postcode_climate.json`,
       `/postcode_climate.json`,
-    ]),
+    ])
   );
 
   let feed: any[] | null = null;
@@ -83,7 +71,7 @@ async function loadClimateMap(): Promise<ClimateMap> {
         break;
       }
     } catch {
-      // try next
+      /* try next */
     }
   }
   if (!Array.isArray(feed)) return new Map();
@@ -112,7 +100,7 @@ function parseLatLon(s: string): LatLon | null {
 async function geoByPostcodeOrAddress(
   postcode: string,
   address: string,
-  latlonOverride?: string,
+  latlonOverride?: string
 ): Promise<LatLon> {
   const direct = latlonOverride ? parseLatLon(latlonOverride) : null;
   if (direct) return direct;
@@ -120,9 +108,7 @@ async function geoByPostcodeOrAddress(
   const pc = normPC(postcode);
   if (pc) {
     try {
-      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIhandlers(pc)}`, {
-        cache: 'no-store',
-      });
+      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         if ((j?.status as number) === 200 && j?.result) {
@@ -141,12 +127,6 @@ async function geoByPostcodeOrAddress(
   const a = await r2.json();
   if (!a?.length) throw new Error('Address not found');
   return { lat: +a[0].lat, lon: +a[0].lon };
-}
-const router = useRouter();
-
-function onNext() {
-  // You can change the route name to whatever you prefer
-  router.push('/rooms');
 }
 
 /** Elevation from Open-Elevation (fallback OpenTopoData) */
@@ -171,10 +151,7 @@ async function elevation(lat: number, lon: number): Promise<{ metres: number; pr
 }
 
 /* -------------------- PropertyChecker paste parser ------------------- */
-/**
- * Extract EPC, UPRN, occupants, age band, postcode, and address from
- * a pasted PropertyChecker page. Designed to be forgiving about labels.
- */
+/** Extract EPC, UPRN, occupants, age band, postcode, address */
 function parsePropertyChecker(text: string): {
   epc?: string;
   uprn?: string;
@@ -197,45 +174,32 @@ function parsePropertyChecker(text: string): {
   const mEpc = t.match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
   if (mEpc) out.epc = mEpc[1];
 
-  // UPRN: usually 8–13 digits
+  // UPRN (8–13 digits)
   const mUprn =
     t.match(/\bUPRN\s*[:=]?\s*(\d{8,13})\b/i) ||
     t.match(/\bUnique\s+Property\s+Reference\s+Number\s*[:=]?\s*(\d{8,13})\b/i);
   if (mUprn) out.uprn = mUprn[1];
 
-  // Occupants
+  // Occupants: "Occupants: 3", "No. occupants 3"
   const mOcc = t.match(/(?:\bno\.?\s*of\s*)?occupants?\s*[:=]?\s*(\d{1,2})/i);
   if (mOcc) out.occupants = Number(mOcc[1]);
 
-  // Age band (matches our canonical options)
+  // Age band
   const ageBandOptions = [
-    'pre-1900',
-    '1900-1929',
-    '1930-1949',
-    '1950-1966',
-    '1967-1975',
-    '1976-1982',
-    '1983-1990',
-    '1991-1995',
-    '1996-2002',
-    '2003-2006',
-    '2007-2011',
-    '2012-present',
+    'pre-1900','1900-1929','1930-1949','1950-1966','1967-1975','1976-1982',
+    '1983-1990','1991-1995','1996-2002','2003-2006','2007-2011','2012-present',
   ];
   for (const ab of ageBandOptions) {
     const re = new RegExp(`\\b${ab.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-    if (re.test(t)) {
-      out.ageBand = ab;
-      break;
-    }
+    if (re.test(t)) { out.ageBand = ab; break; }
   }
 
-  // UK postcode (typical shapes)
+  // UK postcode (with or without space)
   const pcRe = /\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i;
   const mPc = t.match(pcRe);
   if (mPc) out.postcode = mPc[1].toUpperCase().replace(/\s+/, ' ');
 
-  // Address:
+  // Address
   let addr: string | undefined;
   const mAddrLabel = t.match(/^\s*address\s*[:\-]\s*(.+)$/im);
   if (mAddrLabel) {
@@ -250,28 +214,7 @@ function parsePropertyChecker(text: string): {
   return out;
 }
 
-/* ---------------------- EPC link (gov.uk) ---------------------------- */
-/**
- * Always link to the official service:
- * - Full number → direct certificate page
- * - Otherwise  → search-by-reference with the user entry
- */
-function epcLink(epcNo: string): string | null {
-  const raw = String(epcNo || '').trim();
-  if (!raw) return null;
-  const cleaned = raw.replace(/\s+/g, '');
-  const pretty = cleaned.toUpperCase();
-  const isFull = /^\d{4}-?\d{4}-?\d{4}-?\d{4}-?\d{4}$/.test(pretty);
-  if (isFull) {
-    const canonical = pretty.replace(/-/g, '');
-    return `https://find-energy-certificate.service.gov.uk/energy-certificate/${canonical}`;
-  }
-  return `https://find-energy-certificate.service.gov.uk/find-a-certificate/search-by-reference-number?reference-number=${encodeURIComponent(
-    cleaned,
-  )}`;
-}
-
-/* -------------------------------- UI --------------------------------- */
+/* ---------------------------------- UI ---------------------------------- */
 export default function Page(): React.JSX.Element {
   // Property info
   const [reference, setReference] = useState('');
@@ -289,7 +232,7 @@ export default function Page(): React.JSX.Element {
 
   // Property details
   const [dwelling, setDwelling] = useState('');
-  const [subtype, setSubtype] = useState(''); // only for Terraced
+  const [subtype, setSubtype] = useState('');
   const [ageBand, setAgeBand] = useState('');
   const [occupants, setOccupants] = useState(2);
   const [mode, setMode] = useState('Net Internal');
@@ -309,11 +252,7 @@ export default function Page(): React.JSX.Element {
       setClimStatus('Loading climate table…');
       const map = await loadClimateMap();
       climateRef.current = map;
-      setClimStatus(
-        map.size
-          ? `Climate table loaded (${map.size} keys).`
-          : 'No climate table found (using manual/API).',
-      );
+      setClimStatus(map.size ? `Climate table loaded (${map.size} keys).` : 'No climate table found (using manual/API).');
     })();
   }, []);
 
@@ -327,7 +266,7 @@ export default function Page(): React.JSX.Element {
     if (hit) {
       if (typeof hit.designTemp === 'number') setTex(hit.designTemp);
       if (typeof hit.hdd === 'number') setHdd(hit.hdd);
-      setClimStatus(`Auto climate ✓ matched ${explodeQueryKeys(postcode).join(' → ')}`);
+      setClimStatus(`Auto climate matched ${explodeQueryKeys(postcode).join(' → ')}`);
     } else {
       setClimStatus('Auto climate: no match in table (you can override).');
     }
@@ -361,7 +300,18 @@ export default function Page(): React.JSX.Element {
     if (res.postcode) setPostcode(res.postcode);
     if (res.address) setAddress(res.address);
     alert('Saved locally (console).');
-    console.log('Parsed from PropertyChecker:', res);
+    console.log('Parsed PropertyChecker:', res);
+  };
+
+  // Save (placeholder)
+  const onSave = () => {
+    const payload = {
+      reference, postcode, country, address, epcNo, uprn,
+      altitude, tex, meanAnnual, hdd,
+      dwelling, subtype, ageBand, occupants, mode, airtight, thermalTest,
+    };
+    console.log('SAVE', payload);
+    alert('Saved locally (console).');
   };
 
   return (
@@ -402,7 +352,7 @@ export default function Page(): React.JSX.Element {
               Parse
             </button>
             <span style={{ color: '#666', fontSize: 12 }}>
-              Fills EPC number, UPRN, occupants, age band, address and postcode.
+              Will fill EPC number, UPRN, occupants, age band, address and postcode.
             </span>
           </div>
         </div>
@@ -449,39 +399,56 @@ export default function Page(): React.JSX.Element {
             />
           </div>
 
-         <div>
-  <Label>EPC Number *</Label>
-  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-    <Input
-      placeholder="e.g., 1234-5678-9012-3456-7890"
-      value={epcNo}
-      onChange={(e) => setEpcNo(e.target.value)}
-      style={{ flex: 1 }}
-    />
-    <a
-      href={epcHref(country, epcNo) || undefined}
-      target="_blank"
-      rel="noreferrer"
-      onClick={(e) => {
-        // Block click if EPC invalid (so it behaves like disabled)
-        if (!epcHref(country, epcNo)) e.preventDefault();
-      }}
-      style={{
-        ...secondaryBtn,
-        textDecoration: 'none',
-        opacity: epcHref(country, epcNo) ? 1 : 0.5,
-        pointerEvents: epcHref(country, epcNo) ? 'auto' : 'none',
-        whiteSpace: 'nowrap',
-      }}
-      aria-disabled={!epcHref(country, epcNo)}
-    >
-      Get EPC
-    </a>
-  </div>
-  <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
-    Opens the official EPC site in a new tab.
-  </div>
-</div>
+          <div>
+            <Label>EPC Number *</Label>
+            <Input
+              placeholder="e.g., 1234-5678-9012-3456-7890"
+              value={epcNo}
+              onChange={(e) => setEpcNo(e.target.value)}
+            />
+
+            {/* EPC helpers */}
+            <div style={{ marginTop: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <a
+                href={`https://find-energy-certificate.service.gov.uk/energy-certificate/${encodeURIComponent(epcNo)}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <button
+                  type="button"
+                  style={secondaryBtn}
+                  disabled={!/^\d{4}-\d{4}-\d{4}-\d{4}-\d{4}$/.test(epcNo)}
+                  title={
+                    /^\d{4}-\d{4}-\d{4}-\d{4}-\d{4}$/.test(epcNo)
+                      ? 'Open EPC certificate'
+                      : 'Enter a full EPC number first'
+                  }
+                >
+                  Get EPC certificate
+                </button>
+              </a>
+
+              <a
+                href={`https://epc.opendatacommunities.org/domestic/search?postcode=${encodeURIComponent(postcode)}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: 12, color: '#06c' }}
+                title="Open the EPC register’s postcode search"
+              >
+                Search EPCs by postcode
+              </a>
+            </div>
+          </div>
+
+          <div>
+            <Label>UPRN (optional)</Label>
+            <Input
+              placeholder="Unique Property Reference Number"
+              value={uprn}
+              onChange={(e) => setUprn(e.target.value)}
+            />
+          </div>
+        </div>
 
         {/* Location Data */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
@@ -629,34 +596,18 @@ export default function Page(): React.JSX.Element {
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-          <button
-            onClick={() => {
-              const payload = {
-                reference,
-                postcode,
-                country,
-                address,
-                epcNo,
-                uprn,
-                altitude,
-                tex,
-                meanAnnual,
-                hdd,
-                dwelling,
-                subtype,
-                ageBand,
-                occupants,
-                mode,
-                airtight,
-                thermalTest,
-              };
-              console.log('SAVE', payload);
-              alert('Saved locally (console).');
+          <Link
+            href="/rooms"
+            style={{
+              ...primaryBtn,
+              textDecoration: 'none',
+              display: 'inline-block',
+              lineHeight: '20px',
             }}
-            style={primaryBtn}
           >
-            Save
-          </button>
+            Next: Rooms →
+          </Link>
+          <button onClick={onSave} style={primaryBtn}>Save</button>
         </div>
       </section>
     </main>
@@ -665,9 +616,7 @@ export default function Page(): React.JSX.Element {
 
 /* ------------------------------- UI bits ------------------------------ */
 function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>
-  );
+  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
@@ -699,7 +648,6 @@ const card: React.CSSProperties = {
   borderRadius: 14,
   padding: 16,
 };
-
 const grid3: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(3, 1fr)',
@@ -710,7 +658,6 @@ const grid4: React.CSSProperties = {
   gridTemplateColumns: 'repeat(4, 1fr)',
   gap: 12,
 };
-
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
@@ -719,7 +666,6 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
   boxSizing: 'border-box',
 };
-
 const primaryBtn: React.CSSProperties = {
   background: '#111',
   color: '#fff',
