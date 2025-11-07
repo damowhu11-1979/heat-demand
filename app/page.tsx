@@ -435,6 +435,35 @@ export default function Page(): React.JSX.Element {
               placeholder="e.g., 1234-5678-9012-3456-7890"
               value={epcNo}
               onChange={(e) => setEpcNo(e.target.value)}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+  {/* Always open the official GOV.UK EPC entry page */}
+  <a
+    href="https://www.gov.uk/find-energy-certificate"
+    target="_blank"
+    rel="noreferrer noopener"
+    style={{
+      background: '#111',
+      color: '#fff',
+      border: '1px solid #111',
+      padding: '10px 14px',
+      borderRadius: 10,
+      textDecoration: 'none',
+      display: 'inline-block',
+    }}
+  >
+    Get EPC certificate
+  </a>
+
+  {/* Optional: keep a helper link that searches EPCs by the postcode you typed */}
+  <a
+    href={`https://www.gov.uk/find-energy-certificate/search?postcode=${encodeURIComponent(postcode || '')}`}
+    target="_blank"
+    rel="noreferrer noopener"
+    style={{ fontSize: 12, color: '#3366cc', textDecoration: 'underline' }}
+  >
+    Search EPCs by postcode
+  </a>
+</div>
             />
 
             {/* EPC helpers */}
