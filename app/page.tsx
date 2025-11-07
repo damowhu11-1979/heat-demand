@@ -58,7 +58,7 @@ async function loadClimateMap(): Promise<ClimateMap> {
       `${repoRoot}climate/postcode_climate.json`,
       `/climate/postcode_climate.json`,
       `/postcode_climate.json`,
-    ])
+    ]),
   );
 
   let feed: any[] | null = null;
@@ -90,8 +90,7 @@ async function loadClimateMap(): Promise<ClimateMap> {
 function parseLatLon(s: string): LatLon | null {
   const m = String(s || '').trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (!m) return null;
-  const lat = +m[1],
-    lon = +m[2];
+  const lat = +m[1], lon = +m[2];
   if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   return { lat, lon };
 }
@@ -100,7 +99,7 @@ function parseLatLon(s: string): LatLon | null {
 async function geoByPostcodeOrAddress(
   postcode: string,
   address: string,
-  latlonOverride?: string
+  latlonOverride?: string,
 ): Promise<LatLon> {
   const direct = latlonOverride ? parseLatLon(latlonOverride) : null;
   if (direct) return direct;
@@ -123,9 +122,7 @@ async function geoByPostcodeOrAddress(
   }
   const q = (postcode || address || '').trim();
   if (q.length < 3) throw new Error('Enter postcode or address');
-  const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
-    q
-  )}`;
+  const u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
   const r2 = await fetch(u, { headers: { 'Accept-Language': 'en-GB' }, cache: 'no-store' });
   if (!r2.ok) throw new Error('Address lookup failed');
   const a = await r2.json();
@@ -181,7 +178,7 @@ function parsePropertyChecker(text: string): {
   const mEpc = t.match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
   if (mEpc) out.epc = mEpc[1];
 
-  // UPRN
+  // UPRN: usually 8–13 digits
   const mUprn =
     t.match(/\bUPRN\s*[:=]?\s*(\d{8,13})\b/i) ||
     t.match(/\bUnique\s+Property\s+Reference\s+Number\s*[:=]?\s*(\d{8,13})\b/i);
@@ -191,7 +188,7 @@ function parsePropertyChecker(text: string): {
   const mOcc = t.match(/(?:\bno\.?\s*of\s*)?occupants?\s*[:=]?\s*(\d{1,2})/i);
   if (mOcc) out.occupants = Number(mOcc[1]);
 
-  // Age band
+  // Age band (matches our canonical options)
   const ageBandOptions = [
     'pre-1900',
     '1900-1929',
@@ -214,12 +211,12 @@ function parsePropertyChecker(text: string): {
     }
   }
 
-  // UK postcode
+  // UK postcode (typical shapes)
   const pcRe = /\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i;
   const mPc = t.match(pcRe);
   if (mPc) out.postcode = mPc[1].toUpperCase().replace(/\s+/, ' ');
 
-  // Address
+  // Address:
   let addr: string | undefined;
   const mAddrLabel = t.match(/^\s*address\s*[:\-]\s*(.+)$/im);
   if (mAddrLabel) {
@@ -234,7 +231,28 @@ function parsePropertyChecker(text: string): {
   return out;
 }
 
-/* ------------------------------- UI ---------------------------------- */
+/* ---------------------- EPC link (gov.uk) ---------------------------- */
+/**
+ * Always link to the official service:
+ * - Full number → direct certificate page
+ * - Otherwise  → search-by-reference with the user entry
+ */
+function epcLink(epcNo: string): string | null {
+  const raw = String(epcNo || '').trim();
+  if (!raw) return null;
+  const cleaned = raw.replace(/\s+/g, '');
+  const pretty = cleaned.toUpperCase();
+  const isFull = /^\d{4}-?\d{4}-?\d{4}-?\d{4}-?\d{4}$/.test(pretty);
+  if (isFull) {
+    const canonical = pretty.replace(/-/g, '');
+    return `https://find-energy-certificate.service.gov.uk/energy-certificate/${canonical}`;
+  }
+  return `https://find-energy-certificate.service.gov.uk/find-a-certificate/search-by-reference-number?reference-number=${encodeURIComponent(
+    cleaned,
+  )}`;
+}
+
+/* -------------------------------- UI --------------------------------- */
 export default function Page(): React.JSX.Element {
   // Property info
   const [reference, setReference] = useState('');
@@ -266,33 +284,6 @@ export default function Page(): React.JSX.Element {
   const [pcPaste, setPcPaste] = useState('');
   const climateRef = useRef<ClimateMap | null>(null);
 
-  /* ---------- Load previous session from localStorage (if present) --------- */
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('heatload:last');
-      if (!raw) return;
-      const p = JSON.parse(raw);
-
-      setReference(p.reference ?? '');
-      setPostcode(p.postcode ?? '');
-      setCountry(p.country ?? 'England');
-      setAddress(p.address ?? '');
-      setEpcNo(p.epcNo ?? '');
-      setUprn(p.uprn ?? '');
-      setAltitude(p.altitude ?? 0);
-      setTex(p.tex ?? -3);
-      // meanAnnual is fixed
-      setHdd(p.hdd ?? 2100);
-      setDwelling(p.dwelling ?? '');
-      setSubtype(p.subtype ?? '');
-      setAgeBand(p.ageBand ?? '');
-      setOccupants(p.occupants ?? 2);
-      setMode(p.mode ?? 'Net Internal');
-      setAirtight(p.airtight ?? 'Standard Method');
-      setThermalTest(p.thermalTest ?? 'No Test Performed');
-    } catch {}
-  }, []);
-
   // Load postcode climate map once
   useEffect(() => {
     (async () => {
@@ -302,7 +293,7 @@ export default function Page(): React.JSX.Element {
       setClimStatus(
         map.size
           ? `Climate table loaded (${map.size} keys).`
-          : 'No climate table found (using manual/API).'
+          : 'No climate table found (using manual/API).',
       );
     })();
   }, []);
@@ -322,6 +313,11 @@ export default function Page(): React.JSX.Element {
       setClimStatus('Auto climate: no match in table (you can override).');
     }
   }, [postcode]);
+
+  // Only show subtype when terraced
+  useEffect(() => {
+    if (dwelling !== 'Terraced') setSubtype('');
+  }, [dwelling]);
 
   // Get altitude button
   const onFindAltitude = async () => {
@@ -345,57 +341,9 @@ export default function Page(): React.JSX.Element {
     if (res.ageBand) setAgeBand(res.ageBand);
     if (res.postcode) setPostcode(res.postcode);
     if (res.address) setAddress(res.address);
+    alert('Saved locally (console).');
+    console.log('Parsed from PropertyChecker:', res);
   };
-
-  // Only show subtype when terraced
-  useEffect(() => {
-    if (dwelling !== 'Terraced') setSubtype('');
-  }, [dwelling]);
-
-  /* --------------------------- Save / Download --------------------------- */
-  const collectPayload = () => ({
-    reference,
-    postcode,
-    country,
-    address,
-    epcNo,
-    uprn,
-    altitude,
-    tex,
-    meanAnnual,
-    hdd,
-    dwelling,
-    subtype,
-    ageBand,
-    occupants,
-    mode,
-    airtight,
-    thermalTest,
-  });
-
-  const onSave = () => {
-    const payload = collectPayload();
-    localStorage.setItem('heatload:last', JSON.stringify(payload));
-    alert('Saved to this browser (localStorage).');
-  };
-
-  const onDownload = () => {
-    const payload = collectPayload();
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `heatload_${(reference || postcode || 'project').replace(/\s+/g, '_')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // EPC deep link
-  const epcHref = epcNo
-    ? `https://find-energy-certificate.service.gov.uk/energy-certificate/${encodeURIComponent(
-        epcNo
-      )}`
-    : null;
 
   return (
     <main
@@ -426,18 +374,18 @@ export default function Page(): React.JSX.Element {
           <textarea
             rows={4}
             value={pcPaste}
-            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPcPaste(e.target.value)}
+            onChange={(e) => setPcPaste(e.target.value)}
             placeholder="Paste the PropertyChecker property page (or details section) here, then click Parse"
             style={{ width: '100%', ...inputStyle, height: 120, resize: 'vertical' }}
           />
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-              <button onClick={onParsePropertyChecker} style={secondaryBtn}>
-                Parse
-              </button>
-              <span style={{ color: '#666', fontSize: 12 }}>
-                Fills EPC number, UPRN, occupants, age band, address and postcode.
-              </span>
-            </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+            <button onClick={onParsePropertyChecker} style={secondaryBtn}>
+              Parse
+            </button>
+            <span style={{ color: '#666', fontSize: 12 }}>
+              Fills EPC number, UPRN, occupants, age band, address and postcode.
+            </span>
+          </div>
         </div>
       </section>
 
@@ -450,20 +398,22 @@ export default function Page(): React.JSX.Element {
             <Input
               placeholder="e.g., Project ABC - v1"
               value={reference}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReference(e.target.value)}
+              onChange={(e) => setReference(e.target.value)}
             />
           </div>
+
           <div>
             <Label>Postcode *</Label>
             <Input
               placeholder="e.g., SW1A 1AA"
               value={postcode}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPostcode(e.target.value)}
+              onChange={(e) => setPostcode(e.target.value)}
             />
           </div>
+
           <div>
             <Label>Country</Label>
-            <Select value={country} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCountry(e.target.value)}>
+            <Select value={country} onChange={(e) => setCountry(e.target.value)}>
               <option>England</option>
               <option>Wales</option>
               <option>Scotland</option>
@@ -476,30 +426,32 @@ export default function Page(): React.JSX.Element {
             <Input
               placeholder="e.g., 10 Example Road, Town"
               value={address}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAddress(e.target.value)}
+              onChange={(e) => setAddress(e.target.value)}
             />
           </div>
+
           <div>
             <Label>EPC Number *</Label>
             <Input
               placeholder="e.g., 1234-5678-9012-3456-7890"
               value={epcNo}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEpcNo(e.target.value)}
+              onChange={(e) => setEpcNo(e.target.value)}
             />
-            {epcHref && (
+            {epcLink(epcNo) && (
               <div style={{ marginTop: 6 }}>
-                <a href={epcHref} target="_blank" rel="noreferrer">
-                  Open EPC certificate ↗
+                <a href={epcLink(epcNo)!} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                  View EPC certificate ↗
                 </a>
               </div>
             )}
           </div>
+
           <div>
             <Label>UPRN (optional)</Label>
             <Input
               placeholder="Unique Property Reference Number"
               value={uprn}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUprn(e.target.value)}
+              onChange={(e) => setUprn(e.target.value)}
             />
           </div>
         </div>
@@ -512,9 +464,7 @@ export default function Page(): React.JSX.Element {
             <Input
               type="number"
               value={altitude}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setAltitude(e.target.value === '' ? '' : Number(e.target.value))
-              }
+              onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))}
             />
             <div style={{ marginTop: 8 }}>
               <details>
@@ -529,7 +479,7 @@ export default function Page(): React.JSX.Element {
                 <Input
                   placeholder="(optional) 51.5,-0.12"
                   value={latlonOverride}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLatlonOverride(e.target.value)}
+                  onChange={(e) => setLatlonOverride(e.target.value)}
                   style={{ maxWidth: 180 }}
                 />
                 <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
@@ -542,9 +492,7 @@ export default function Page(): React.JSX.Element {
             <Input
               type="number"
               value={tex}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setTex(e.target.value === '' ? '' : Number(e.target.value))
-              }
+              onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
             />
           </div>
 
@@ -558,9 +506,7 @@ export default function Page(): React.JSX.Element {
             <Input
               type="number"
               value={hdd}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setHdd(e.target.value === '' ? '' : Number(e.target.value))
-              }
+              onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
             />
           </div>
         </div>
@@ -570,7 +516,7 @@ export default function Page(): React.JSX.Element {
         <div style={grid4}>
           <div>
             <Label>Dwelling Type</Label>
-            <Select value={dwelling} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setDwelling(e.target.value)}>
+            <Select value={dwelling} onChange={(e) => setDwelling(e.target.value)}>
               <option value="">Select</option>
               <option>Detached</option>
               <option>Semi-detached</option>
@@ -584,7 +530,7 @@ export default function Page(): React.JSX.Element {
             <Label>Terrace / Dwelling subtype</Label>
             <Select
               value={subtype}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSubtype(e.target.value)}
+              onChange={(e) => setSubtype(e.target.value)}
               disabled={dwelling !== 'Terraced'}
               title={dwelling !== 'Terraced' ? 'Only applies when dwelling type = Terraced' : ''}
             >
@@ -597,7 +543,7 @@ export default function Page(): React.JSX.Element {
 
           <div>
             <Label>Age Band</Label>
-            <Select value={ageBand} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAgeBand(e.target.value)}>
+            <Select value={ageBand} onChange={(e) => setAgeBand(e.target.value)}>
               <option value="">Select age band</option>
               <option>pre-1900</option>
               <option>1900-1929</option>
@@ -619,7 +565,7 @@ export default function Page(): React.JSX.Element {
             <Input
               type="number"
               value={occupants}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOccupants(Number(e.target.value || 0))}
+              onChange={(e) => setOccupants(Number(e.target.value || 0))}
             />
           </div>
         </div>
@@ -629,21 +575,21 @@ export default function Page(): React.JSX.Element {
         <div style={grid3}>
           <div>
             <Label>Mode</Label>
-            <Select value={mode} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setMode(e.target.value)}>
+            <Select value={mode} onChange={(e) => setMode(e.target.value)}>
               <option>Net Internal</option>
               <option>Gross Internal</option>
             </Select>
           </div>
           <div>
             <Label>Airtightness Method</Label>
-            <Select value={airtight} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAirtight(e.target.value)}>
+            <Select value={airtight} onChange={(e) => setAirtight(e.target.value)}>
               <option>Standard Method</option>
               <option>Measured n50</option>
             </Select>
           </div>
           <div>
             <Label>Thermal Performance Test</Label>
-            <Select value={thermalTest} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setThermalTest(e.target.value)}>
+            <Select value={thermalTest} onChange={(e) => setThermalTest(e.target.value)}>
               <option>No Test Performed</option>
               <option>Thermal Imaging</option>
               <option>Co-heating</option>
@@ -655,11 +601,33 @@ export default function Page(): React.JSX.Element {
         <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>{climStatus}</div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, flexWrap: 'wrap' }}>
-          <button onClick={onDownload} style={secondaryBtn}>
-            Download JSON
-          </button>
-          <button onClick={onSave} style={primaryBtn}>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+          <button
+            onClick={() => {
+              const payload = {
+                reference,
+                postcode,
+                country,
+                address,
+                epcNo,
+                uprn,
+                altitude,
+                tex,
+                meanAnnual,
+                hdd,
+                dwelling,
+                subtype,
+                ageBand,
+                occupants,
+                mode,
+                airtight,
+                thermalTest,
+              };
+              console.log('SAVE', payload);
+              alert('Saved locally (console).');
+            }}
+            style={primaryBtn}
+          >
             Save
           </button>
         </div>
@@ -720,7 +688,7 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
   borderRadius: 10,
-  border: '1px solid #ddd',
+  border: '1px solid '#ddd' as unknown as string, // ensure string typing
   outline: 'none',
   boxSizing: 'border-box',
 };
