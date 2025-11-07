@@ -1,11 +1,24 @@
 'use client';
-
+import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
 
 /* ------------------------------ Config ------------------------------ */
 const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
 
 /* --------------------------- Helpers & Types ------------------------ */
+// Validate UK EPC number: 1234-5678-9012-3456-7890
+const EPC_ID_RE = /^\d{4}-\d{4}-\d{4}-\d{4}-\d{4}$/;
+
+function epcHref(country: string, epcId: string): string | '' {
+  const id = (epcId || '').trim();
+  if (!EPC_ID_RE.test(id)) return '';
+  // England / Wales / NI use the GOV.UK EPC service:
+  if (country !== 'Scotland') {
+    return `https://find-energy-certificate.service.gov.uk/energy-certificate/${id}`;
+  }
+  // Scotland has its own register:
+  return `https://www.scottishepcregister.org.uk/Certificate/Download/${id}`;
+}
 type ClimateRow = { designTemp?: number; hdd?: number };
 type ClimateMap = Map<string, ClimateRow>;
 type LatLon = { lat: number; lon: number };
@@ -107,7 +120,7 @@ async function geoByPostcodeOrAddress(
   const pc = normPC(postcode);
   if (pc) {
     try {
-      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, {
+      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIhandlers(pc)}`, {
         cache: 'no-store',
       });
       if (r.ok) {
@@ -128,6 +141,12 @@ async function geoByPostcodeOrAddress(
   const a = await r2.json();
   if (!a?.length) throw new Error('Address not found');
   return { lat: +a[0].lat, lon: +a[0].lon };
+}
+const router = useRouter();
+
+function onNext() {
+  // You can change the route name to whatever you prefer
+  router.push('/rooms');
 }
 
 /** Elevation from Open-Elevation (fallback OpenTopoData) */
@@ -430,31 +449,39 @@ export default function Page(): React.JSX.Element {
             />
           </div>
 
-          <div>
-            <Label>EPC Number *</Label>
-            <Input
-              placeholder="e.g., 1234-5678-9012-3456-7890"
-              value={epcNo}
-              onChange={(e) => setEpcNo(e.target.value)}
-            />
-            {epcLink(epcNo) && (
-              <div style={{ marginTop: 6 }}>
-                <a href={epcLink(epcNo)!} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
-                  View EPC certificate ↗
-                </a>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <Label>UPRN (optional)</Label>
-            <Input
-              placeholder="Unique Property Reference Number"
-              value={uprn}
-              onChange={(e) => setUprn(e.target.value)}
-            />
-          </div>
-        </div>
+         <div>
+  <Label>EPC Number *</Label>
+  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+    <Input
+      placeholder="e.g., 1234-5678-9012-3456-7890"
+      value={epcNo}
+      onChange={(e) => setEpcNo(e.target.value)}
+      style={{ flex: 1 }}
+    />
+    <a
+      href={epcHref(country, epcNo) || undefined}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => {
+        // Block click if EPC invalid (so it behaves like disabled)
+        if (!epcHref(country, epcNo)) e.preventDefault();
+      }}
+      style={{
+        ...secondaryBtn,
+        textDecoration: 'none',
+        opacity: epcHref(country, epcNo) ? 1 : 0.5,
+        pointerEvents: epcHref(country, epcNo) ? 'auto' : 'none',
+        whiteSpace: 'nowrap',
+      }}
+      aria-disabled={!epcHref(country, epcNo)}
+    >
+      Get EPC
+    </a>
+  </div>
+  <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
+    Opens the official EPC site in a new tab.
+  </div>
+</div>
 
         {/* Location Data */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
