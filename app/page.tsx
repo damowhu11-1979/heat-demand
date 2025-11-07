@@ -688,7 +688,7 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
   borderRadius: 10,
-  border: '1px solid '#ddd' as unknown as string, // ensure string typing
+  border: '1px solid #ddd',
   outline: 'none',
   boxSizing: 'border-box',
 };
