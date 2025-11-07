@@ -136,8 +136,8 @@ async function elevation(lat: number, lon: number): Promise<{ metres: number; pr
   }
 }
 
-/* -------------------- PropertyChecker paste parser ------------------- */
-function parsePropertyChecker(text: string): {
+/* -------------------- Checker paste parser ------------------- */
+function parseChecker(text: string): {
   epc?: string;
   uprn?: string;
   occupants?: number;
@@ -166,32 +166,135 @@ function parsePropertyChecker(text: string): {
   const mOcc = t.match(/(?:\bno\.?\s*of\s*)?occupants?\s*[:=]?\s*(\d{1,2})/i);
   if (mOcc) out.occupants = Number(mOcc[1]);
 
-  const ageBandOptions = [
-    'pre-1900',
-    '1900-1929',
-    '1930-1949',
-    '1950-1966',
-    '1967-1975',
-    '1976-1982',
-    '1983-1990',
-    '1991-1995',
-    '1996-2002',
-    '2003-2006',
-    '2007-2011',
-    '2012-present',
-  ];
-  for (const ab of ageBandOptions) {
-    const re = new RegExp(`\\b${ab.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`, 'i');
-    if (re.test(t)) {
-      out.ageBand = ab;
-      break;
-    }
+const AGE_BANDS = [
+  { label: 'pre-1900',  from: -Infinity, to: 1899 },
+  { label: '1900-1929', from: 1900,      to: 1929 },
+  { label: '1930-1949', from: 1930,      to: 1949 },
+  { label: '1950-1966', from: 1950,      to: 1966 },
+  { label: '1967-1975', from: 1967,      to: 1975 },
+  { label: '1976-1982', from: 1976,      to: 1982 },
+  { label: '1983-1990', from: 1983,      to: 1990 },
+  { label: '1991-1995', from: 1991,      to: 1995 },
+  { label: '1996-2002', from: 1996,      to: 2002 },
+  { label: '2003-2006', from: 2003,      to: 2006 },
+  { label: '2007-2011', from: 2007,      to: 2011 },
+  { label: '2012-present', from: 2012,   to: Infinity },
+] as const;
+
+function bandForYear(y: number): string | undefined {
+  for (const b of AGE_BANDS) if (y >= b.from && y <= b.to) return b.label;
+  return undefined;
+}
+
+function normaliseText(s: string) {
+  return s
+    .replace(/\u2013|\u2014/g, '-')   // en/em dashes -> hyphen
+    .replace(/\s+/g, ' ')             // collapse whitespace
+    .trim();
+}
+
+/** Try hard to read an age band from free text */
+function extractAgeBand(text: string): string | undefined {
+  const t = normaliseText(text.toLowerCase());
+
+  // 1) Direct label matches (fast path)
+  for (const b of AGE_BANDS) {
+    const label = b.label.toLowerCase().replace(/\s+/g, '');
+    const re = new RegExp(`\\b${label.replace('-', '')}\\b|\\b${label}\\b`,'i');
+    if (re.test(t)) return b.label;
+  }
+  // Also tolerate "pre 1900", "pre1900"
+  if (/\bpre[-\s]?1900\b/i.test(t)) return 'pre-1900';
+
+  // Common headings: “construction age band: 1930-1949”, “age band 1967–1975” etc.
+  const mDirectBand = t.match(/\bage\s*band\b[:\s-]*([0-9]{4})\s*[-–]\s*([0-9]{2,4})/i)
+                    || t.match(/\bconstruction\s+age\s+band\b[:\s-]*([0-9]{4})\s*[-–]\s*([0-9]{2,4})/i);
+  if (mDirectBand) {
+    const start = parseInt(mDirectBand[1], 10);
+    const endRaw = mDirectBand[2];
+    const end = endRaw.length === 2 ? parseInt(String(start).slice(0,2) + endRaw, 10) : parseInt(endRaw, 10);
+    const mid = Math.round((start + end) / 2);
+    const band = bandForYear(mid);
+    if (band) return band;
   }
 
+  // 2) Plain numeric year(s)
+  // Examples: “built in 1978”, “construction year: 1935”, “year of build 2016”
+  const yearHits = [...t.matchAll(/\b(18\d{2}|19\d{2}|20\d{2})\b/g)]
+      .map(m => parseInt(m[1], 10))
+      .filter(y => y >= 1800 && y <= 2100);
+
+  if (yearHits.length) {
+    // Prefer the first “build-ish” year if it’s near words like built/constructed/age
+    const buildish = [...t.matchAll(/\b(built|build|constructed?|construction|year\s*of\s*build|approx(?:\.|imate)?\s*build)\b.{0,20}?(18\d{2}|19\d{2}|20\d{2})/gi)]
+      .map(m => parseInt(m[2], 10))
+      .filter(y => y >= 1800 && y <= 2100);
+
+    const y = (buildish[0] ?? yearHits[0]);
+    const band = bandForYear(y);
+    if (band) return band;
+  }
+
+  // 3) Ranges written loosely, e.g. “1930-49”, “67–75”
+  const mLooseRange = t.match(/\b(18\d{2}|19\d{2}|20\d{2})\s*[-–]\s*(\d{2,4})\b/);
+  if (mLooseRange) {
+    const start = parseInt(mLooseRange[1], 10);
+    const endRaw = mLooseRange[2];
+    const end = endRaw.length === 2 ? parseInt(String(start).slice(0,2) + endRaw, 10) : parseInt(endRaw, 10);
+    const mid = Math.round((start + end) / 2);
+    const band = bandForYear(mid);
+    if (band) return band;
+  }
+
+  return undefined;
+}
+
+/**
+ * Extract EPC, UPRN, occupants, age band, postcode, and address
+ * from a pasted PropertyChecker page.
+ */
+function parsePropertyChecker(text: string): {
+  epc?: string;
+  uprn?: string;
+  occupants?: number;
+  ageBand?: string;
+  postcode?: string;
+  address?: string;
+} {
+  const out: {
+    epc?: string;
+    uprn?: string;
+    occupants?: number;
+    ageBand?: string;
+    postcode?: string;
+    address?: string;
+  } = {};
+  const t = String(text || '');
+
+  // EPC number like 1234-5678-9012-3456-7890
+  const mEpc = t.match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
+  if (mEpc) out.epc = mEpc[1];
+
+  // UPRN
+  const mUprn =
+    t.match(/\bUPRN\s*[:=]?\s*(\d{8,13})\b/i) ||
+    t.match(/\bUnique\s+Property\s+Reference\s+Number\s*[:=]?\s*(\d{8,13})\b/i);
+  if (mUprn) out.uprn = mUprn[1];
+
+  // Occupants
+  const mOcc = t.match(/(?:\bno\.?\s*of\s*)?occupants?\s*[:=]?\s*(\d{1,2})/i);
+  if (mOcc) out.occupants = Number(mOcc[1]);
+
+  // Age band (robust)
+  const band = extractAgeBand(t);
+  if (band) out.ageBand = band;
+
+  // Postcode
   const pcRe = /\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i;
   const mPc = t.match(pcRe);
   if (mPc) out.postcode = mPc[1].toUpperCase().replace(/\s+/, ' ');
 
+  // Address
   let addr: string | undefined;
   const mAddrLabel = t.match(/^\s*address\s*[:\-]\s*(.+)$/im);
   if (mAddrLabel) {
