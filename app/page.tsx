@@ -665,17 +665,12 @@ export default function Page(): React.JSX.Element {
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-          <Link
-            href="/rooms"
-            style={{
-              ...primaryBtn,
-              textDecoration: 'none',
-              display: 'inline-block',
-              lineHeight: '20px',
-            }}
-          >
-            Next: Rooms →
-          </Link>
+      <Link
+  href="/ventilation"  // was "/rooms" or similar
+  style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}
+>
+  Next: Ventilation →
+</Link>
           <button onClick={onSave} style={primaryBtn}>Save</button>
         </div>
       </section>
