@@ -403,4 +403,3 @@ const modal: React.CSSProperties = {
   boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
   padding: 18,
 };
-
