@@ -429,7 +429,6 @@ export default function Page(): React.JSX.Element {
             />
           </div>
 {/* EPC Number */}
-{/* EPC Number */}
 <div>
   <Label>EPC Number *</Label>
   <Input
@@ -448,6 +447,7 @@ export default function Page(): React.JSX.Element {
       flexWrap: 'wrap',
     }}
   >
+    {/* Official GOV.UK entry page */}
     <a
       href="https://www.gov.uk/find-energy-certificate"
       target="_blank"
@@ -465,63 +465,105 @@ export default function Page(): React.JSX.Element {
       Get EPC certificate
     </a>
 
+    {/* Deep link directly to this RRN if the format is valid */}
     <a
-      href={`https://www.gov.uk/find-energy-certificate/search?postcode=${encodeURIComponent(
+      href={`https://find-energy-certificate.service.gov.uk/energy-certificate/${encodeURIComponent(
+        epcNo,
+      )}`}
+      target="_blank"
+      rel="noreferrer noopener"
+      style={{
+        ...secondaryBtn,
+        textDecoration: 'none',
+        display: /^\d{4}-\d{4}-\d{4}-\d{4}-\d{4}$/.test(epcNo) ? 'inline-block' : 'none',
+      }}
+      title="Open EPC certificate (requires full RRN)"
+    >
+      Open this certificate
+    </a>
+
+    {/* Search register by postcode */}
+    <a
+      href={`https://find-energy-certificate.service.gov.uk/search?postcode=${encodeURIComponent(
         postcode || '',
       )}`}
       target="_blank"
       rel="noreferrer noopener"
       style={{ fontSize: 12, color: '#3366cc', textDecoration: 'underline' }}
+      title="Search EPCs by postcode"
     >
       Search EPCs by postcode
     </a>
   </div>
 </div>
 
-
-            {/* EPC helpers */}
-            <div style={{ marginTop: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <a
-                href={`https://find-energy-certificate.service.gov.uk/energy-certificate/${encodeURIComponent(epcNo)}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <button
-                  type="button"
-                  style={secondaryBtn}
-                  disabled={!/^\d{4}-\d{4}-\d{4}-\d{4}-\d{4}$/.test(epcNo)}
-                  title={
-                    /^\d{4}-\d{4}-\d{4}-\d{4}-\d{4}$/.test(epcNo)
-                      ? 'Open EPC certificate'
-                      : 'Enter a full EPC number first'
-                  }
-                >
-                  Get EPC certificate
-                </button>
-              </a>
-
-              <a
-                href={`https://epc.opendatacommunities.org/domestic/search?postcode=${encodeURIComponent(postcode)}`}
-                target="_blank"
-                rel="noreferrer"
-                style={{ fontSize: 12, color: '#06c' }}
-                title="Open the EPC register’s postcode search"
-              >
-                Search EPCs by postcode
-              </a>
-            </div>
-          </div>
-
-                  <div>
-            <Label>UPRN (optional)</Label>
-            <Input
-              placeholder="Unique Property Reference Number"
-              value={uprn}
-              onChange={(e) => setUprn(e.target.value)}
-            />
-         </div>
-{/* end UPRN column */}
+{/* UPRN */}
+<div>
+  <Label>UPRN (optional)</Label>
+  <Input
+    placeholder="Unique Property Reference Number"
+    value={uprn}
+    onChange={(e) => setUprn(e.target.value)}
+  />
 </div>
+{/* end top grid */}
+</div>
+
+{/* Location Data */}
+<h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
+<div style={grid4}>
+  <div>
+    <Label>Altitude (m)</Label>
+    <Input
+      type="number"
+      value={altitude}
+      onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))}
+    />
+    <div style={{ marginTop: 8 }}>
+      <details>
+        <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude</summary>
+        <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
+          Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData).
+          You can also enter <em>lat,long</em> override:
+        </div>
+      </details>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+        <Button onClick={onFindAltitude}>Get altitude</Button>
+        <Input
+          placeholder="(optional) 51.5,-0.12"
+          value={latlonOverride}
+          onChange={(e) => setLatlonOverride(e.target.value)}
+          style={{ maxWidth: 180 }}
+        />
+        <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <Label>Design External Air Temp (°C)</Label>
+    <Input
+      type="number"
+      value={tex}
+      onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
+    />
+  </div>
+
+  <div>
+    <Label>Mean Annual External Air Temp (°C)</Label>
+    <Input type="number" value={meanAnnual} readOnly />
+  </div>
+
+  <div>
+    <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
+    <Input
+      type="number"
+      value={hdd}
+      onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
+    />
+  </div>
+</div>
+
 {/* end top grid that contains Ref/Postcode/Country/Address/EPC/UPRN */}
 {/* Location Data */}
 <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
