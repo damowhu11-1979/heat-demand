@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -17,8 +17,9 @@ type Room = {
 type Zone = { name: string; rooms: Room[] };
 
 /* ------------------------------ page ------------------------------- */
-const router = useRouter();
 export default function RoomsPage(): React.JSX.Element {
+  const router = useRouter();
+
   // zones & rooms
   const [zones, setZones] = useState<Zone[]>([
     { name: 'Zone 1', rooms: [] },
@@ -101,7 +102,13 @@ export default function RoomsPage(): React.JSX.Element {
       {/* zones & rooms */}
       <section style={card}>
         {zones.map((zone, zi) => (
-          <div key={zi} style={{ borderTop: zi ? '1px solid #eee' : undefined, paddingTop: zi ? 12 : 0 }}>
+          <div
+            key={zi}
+            style={{
+              borderTop: zi ? '1px solid #eee' : undefined,
+              paddingTop: zi ? 12 : 0,
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <button
                 onClick={() => setExpanded((e) => ({ ...e, [zi]: !e[zi] }))}
@@ -125,17 +132,25 @@ export default function RoomsPage(): React.JSX.Element {
                 {/* rooms */}
                 {zone.rooms.map((r, i) => (
                   <div key={i} style={row}>
-                    <div style={{ flex: 2 }}>{r.name || <em style={muted}>Unnamed</em>}</div>
-                    <div style={{ width: 140, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
+                    <div style={{ flex: 2 }}>
+                      {r.name || <em style={muted}>Unnamed</em>}
+                    </div>
+                    <div style={{ width: 140, textAlign: 'right' }}>
+                      {r.maxCeiling.toFixed(2)}
+                    </div>
                     <div style={{ width: 80, textAlign: 'right' }}>
-                      <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>Remove</button>
+                      <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>
+                        Remove
+                      </button>
                     </div>
                   </div>
                 ))}
 
                 {/* empty state */}
                 {!zone.rooms.length && (
-                  <div style={{ ...muted, padding: '10px 4px' }}>No rooms in this zone yet.</div>
+                  <div style={{ ...muted, padding: '10px 4px' }}>
+                    No rooms in this zone yet.
+                  </div>
                 )}
               </div>
             )}
@@ -148,30 +163,31 @@ export default function RoomsPage(): React.JSX.Element {
         </div>
       </section>
 
-   {/* nav */}
-<div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-  <button
-    type="button"
-    onClick={() => router.back()}
-    style={{ ...secondaryBtn, textDecoration: 'none' }}
-  >
-    ← Back
-  </button>
+      {/* nav */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
+        <button
+          type="button"
+          onClick={() => router.back()}
+          style={{ ...secondaryBtn, textDecoration: 'none' }}
+        >
+          ← Back
+        </button>
 
-  <Link href="/elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
-    Next: Building Elements →
-  </Link>
-</div>
+        <Link href="/elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
+          Next: Building Elements →
+        </Link>
+      </div>
 
       {/* add-room modal */}
       {showModal && (
         <div style={modalBackdrop} onClick={() => setShowModal(false)}>
           <div style={modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={{ margin: '0 0 10px' }}>Add Room</h2>
-           <p style={{ margin: '6px 0 12px', color: '#555' }}>
-  Enter information about this room.
-</p>
-            {/* Ventilation Zone */}
+            <p style={{ margin: '6px 0 12px', color: '#555' }}>
+              Enter information about this room.
+            </p>
+
+            {/* Ventilation Zone + Room Type */}
             <div style={grid2}>
               <div>
                 <Label>Ventilation Zone *</Label>
@@ -185,7 +201,6 @@ export default function RoomsPage(): React.JSX.Element {
                 </Select>
               </div>
 
-              {/* Room Type */}
               <div>
                 <Label>Room Type *</Label>
                 <Select
@@ -218,7 +233,9 @@ export default function RoomsPage(): React.JSX.Element {
                   type="number"
                   step="0.01"
                   value={form.maxCeiling}
-                  onChange={(e) => setForm({ ...form, maxCeiling: Number(e.target.value || 0) })}
+                  onChange={(e) =>
+                    setForm({ ...form, maxCeiling: Number(e.target.value || 0) })
+                  }
                   style={{ maxWidth: 160 }}
                 />
                 <span style={{ ...muted, minWidth: 14 }}>m</span>
@@ -278,8 +295,12 @@ export default function RoomsPage(): React.JSX.Element {
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
-              <button onClick={() => setShowModal(false)} style={secondaryBtn}>Cancel</button>
-              <button onClick={onSaveRoom} style={primaryBtn}>Save room</button>
+              <button onClick={() => setShowModal(false)} style={secondaryBtn}>
+                Cancel
+              </button>
+              <button onClick={onSaveRoom} style={primaryBtn}>
+                Save room
+              </button>
             </div>
           </div>
         </div>
@@ -290,7 +311,11 @@ export default function RoomsPage(): React.JSX.Element {
 
 /* ------------------------------ UI bits ------------------------------ */
 function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 12, color: '#555', margin: '12px 0 6px' }}>{children}</label>;
+  return (
+    <label style={{ display: 'block', fontSize: 12, color: '#555', margin: '12px 0 6px' }}>
+      {children}
+    </label>
+  );
 }
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ ...input, ...(props.style || {}) }} />;
@@ -301,7 +326,9 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 
 /* ------------------------------ styles ------------------------------- */
 const wrap: React.CSSProperties = {
-  maxWidth: 1040, margin: '0 auto', padding: 24,
+  maxWidth: 1040,
+  margin: '0 auto',
+  padding: 24,
   fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
 };
 const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 8px' };
@@ -310,48 +337,88 @@ const subtle: React.CSSProperties = { color: '#666', fontSize: 13, lineHeight: 1
 const hint: React.CSSProperties = { color: '#777', fontSize: 12, marginTop: 4, lineHeight: 1.4 };
 
 const card: React.CSSProperties = {
-  background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16,
+  background: '#fff',
+  border: '1px solid #e6e6e6',
+  borderRadius: 14,
+  padding: 16,
 };
 
 const rowHeader: React.CSSProperties = {
-  display: 'flex', gap: 8, padding: '8px 4px', color: '#555', fontSize: 12, borderBottom: '1px solid #eee',
+  display: 'flex',
+  gap: 8,
+  padding: '8px 4px',
+  color: '#555',
+  fontSize: 12,
+  borderBottom: '1px solid #eee',
 };
 const row: React.CSSProperties = {
-  display: 'flex', gap: 8, padding: '10px 4px', alignItems: 'center', borderBottom: '1px solid #f2f2f2',
+  display: 'flex',
+  gap: 8,
+  padding: '10px 4px',
+  alignItems: 'center',
+  borderBottom: '1px solid #f2f2f2',
 };
 
 const input: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd',
-  outline: 'none', boxSizing: 'border-box',
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #ddd',
+  outline: 'none',
+  boxSizing: 'border-box',
 };
 
 const primaryBtn: React.CSSProperties = {
-  background: '#111', color: '#fff', border: '1px solid #111',
-  padding: '10px 16px', borderRadius: 12, cursor: 'pointer',
+  background: '#111',
+  color: '#fff',
+  border: '1px solid #111',
+  padding: '10px 16px',
+  borderRadius: 12,
+  cursor: 'pointer',
 };
 const secondaryBtn: React.CSSProperties = {
-  background: '#fff', color: '#111', border: '1px solid #ddd',
-  padding: '10px 16px', borderRadius: 12, cursor: 'pointer',
+  background: '#fff',
+  color: '#111',
+  border: '1px solid #ddd',
+  padding: '10px 16px',
+  borderRadius: 12,
+  cursor: 'pointer',
 };
-const linkDanger: React.CSSProperties = { color: '#b00020', textDecoration: 'underline', background: 'none', border: 0, cursor: 'pointer' };
-const iconBtn: React.CSSProperties = { background: '#f6f6f6', border: '1px solid #e1e1e1', borderRadius: 8, padding: '4px 8px', cursor: 'pointer' };
+const linkDanger: React.CSSProperties = {
+  color: '#b00020',
+  textDecoration: 'underline',
+  background: 'none',
+  border: 0,
+  cursor: 'pointer',
+};
+const iconBtn: React.CSSProperties = {
+  background: '#f6f6f6',
+  border: '1px solid #e1e1e1',
+  borderRadius: 8,
+  padding: '4px 8px',
+  cursor: 'pointer',
+};
 
-const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 };
+const grid2: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, 1fr)',
+  gap: 12,
+};
 
 const modalBackdrop: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)', display: 'grid', placeItems: 'center', zIndex: 30,
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(0,0,0,0.32)',
+  display: 'grid',
+  placeItems: 'center',
+  zIndex: 30,
 };
 const modal: React.CSSProperties = {
-  width: 'min(720px, 92vw)', background: '#fff', borderRadius: 16, border: '1px solid #e6e6e6',
-  boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 18,
+  width: 'min(720px, 92vw)',
+  background: '#fff',
+  borderRadius: 16,
+  border: '1px solid #e6e6e6',
+  boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+  padding: 18,
 };
-{/* Page footer navigation */}
-<div
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    justifyContent: 'space-between',
-    marginTop: 22,
-  }}
-</div>
+
