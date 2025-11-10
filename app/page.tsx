@@ -518,11 +518,11 @@ export default function Page(): React.JSX.Element {
               placeholder="Unique Property Reference Number"
               value={uprn}
               onChange={(e) => setUprn(e.target.value)}
-            />
+          
           </div>
         </div>
 
-        {/* Location Data */}
+        /* Location Data */
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
         <div style={grid4}>
           <div>
