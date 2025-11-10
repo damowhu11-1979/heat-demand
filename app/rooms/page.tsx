@@ -334,3 +334,43 @@ const modal: React.CSSProperties = {
   width: 'min(720px, 92vw)', background: '#fff', borderRadius: 16, border: '1px solid #e6e6e6',
   boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 18,
 };
+{/* Page footer navigation */}
+<div
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    justifyContent: 'space-between',
+    marginTop: 22,
+  }}
+>
+  <Link
+    href="/ventilation"
+    style={{
+      textDecoration: 'none',
+      background: '#fff',
+      color: '#111',
+      border: '1px solid #ddd',
+      padding: '10px 16px',
+      borderRadius: 10,
+      display: 'inline-block',
+    }}
+  >
+    ← Back: Ventilation
+  </Link>
+
+  <Link
+    href="/elements"
+    style={{
+      textDecoration: 'none',
+      background: '#111',
+      color: '#fff',
+      border: '1px solid #111',
+      padding: '12px 18px',
+      borderRadius: 12,
+      display: 'inline-block',
+    }}
+  >
+    Next: Building Elements →
+  </Link>
+</div>
