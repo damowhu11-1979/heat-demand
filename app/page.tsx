@@ -521,10 +521,8 @@ export default function Page(): React.JSX.Element {
             />
          </div>
 {/* end UPRN column */}
-
 </div>
 {/* end top grid that contains Ref/Postcode/Country/Address/EPC/UPRN */}
-
 {/* Location Data */}
 <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
 <div style={grid4}>
@@ -540,7 +538,6 @@ export default function Page(): React.JSX.Element {
             />
             {/* ... altitude helper UI ... */}
           </div>
-
           <div>
             <Label>Design External Air Temp (°C)</Label>
             <Input
