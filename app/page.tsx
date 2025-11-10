@@ -512,17 +512,18 @@ export default function Page(): React.JSX.Element {
             </div>
           </div>
 
-          <div>
+                  <div>
             <Label>UPRN (optional)</Label>
             <Input
               placeholder="Unique Property Reference Number"
               value={uprn}
               onChange={(e) => setUprn(e.target.value)}
-          
-          </div>
-        </div>
+            />
+          </div> {/* end UPRN column */}
 
-        /* Location Data */
+        </div> {/* end top grid */}
+
+        {/* Location Data */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
         <div style={grid4}>
           <div>
@@ -530,8 +531,37 @@ export default function Page(): React.JSX.Element {
             <Input
               type="number"
               value={altitude}
-              onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))}
+              onChange={(e) =>
+                setAltitude(e.target.value === '' ? '' : Number(e.target.value))
+              }
             />
+            {/* ... altitude helper UI ... */}
+          </div>
+
+          <div>
+            <Label>Design External Air Temp (°C)</Label>
+            <Input
+              type="number"
+              value={tex}
+              onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
+            />
+          </div>
+
+          <div>
+            <Label>Mean Annual External Air Temp (°C)</Label>
+            <Input type="number" value={meanAnnual} readOnly />
+          </div>
+
+          <div>
+            <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
+            <Input
+              type="number"
+              value={hdd}
+              onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
+            />
+          </div>
+        </div>
+
             <div style={{ marginTop: 8 }}>
               <details>
                 <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude</summary>
