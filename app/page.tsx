@@ -519,14 +519,15 @@ export default function Page(): React.JSX.Element {
               value={uprn}
               onChange={(e) => setUprn(e.target.value)}
             />
-          </div>
+         </div>
 {/* end UPRN column */}
-</div>  {/* <- this closes only the UPRN column */}
 
-{/* end top grid */}
-</div>  {/* <- this closes the whole top grid that contains Ref/Postcode/Country/Address/EPC/UPRN */}
+</div>
+{/* end top grid that contains Ref/Postcode/Country/Address/EPC/UPRN */}
 
 {/* Location Data */}
+<h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
+<div style={grid4}>
 <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
 <div style={grid4}>
   {/* Altitude / Design temp / Mean annual / HDD go here */}
