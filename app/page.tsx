@@ -429,6 +429,7 @@ export default function Page(): React.JSX.Element {
             />
           </div>
 {/* EPC Number */}
+{/* EPC Number */}
 <div>
   <Label>EPC Number *</Label>
   <Input
@@ -466,7 +467,7 @@ export default function Page(): React.JSX.Element {
 
     <a
       href={`https://www.gov.uk/find-energy-certificate/search?postcode=${encodeURIComponent(
-        postcode || ''
+        postcode || '',
       )}`}
       target="_blank"
       rel="noreferrer noopener"
@@ -476,7 +477,7 @@ export default function Page(): React.JSX.Element {
     </a>
   </div>
 </div>
-            />
+
 
             {/* EPC helpers */}
             <div style={{ marginTop: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
