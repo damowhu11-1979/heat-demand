@@ -5,7 +5,11 @@ import Link from 'next/link';
 
 /** small UI bits kept consistent with your page.tsx */
 function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
+  return (
+    <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>
+      {children}
+    </label>
+  );
 }
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
@@ -26,6 +30,7 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
     />
   );
 }
+
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
@@ -102,6 +107,8 @@ function Stepper({
   );
 }
 
+type VentType = 'natural' | 'mev' | 'mv' | 'mvhr' | 'piv' | '';
+
 export default function VentilationPage(): React.JSX.Element {
   // top-of-page: number of ventilation zones
   const [zones, setZones] = useState<number>(1);
@@ -112,7 +119,6 @@ export default function VentilationPage(): React.JSX.Element {
   const [sheltered, setSheltered] = useState<number>(0);
 
   // ventilation type
-  type VentType = 'natural' | 'mev' | 'mv' | 'mvhr' | 'piv' | '';
   const [vtype, setVtype] = useState<VentType>('');
 
   const canContinue = useMemo(() => {
@@ -124,7 +130,6 @@ export default function VentilationPage(): React.JSX.Element {
     // wire up to your data store if needed
     const payload = { zones, zone1: { storeys, facades, sheltered, vtype } };
     console.log('VENTILATION SAVE', payload);
-    // simple client-side nav: handled by Link below
   };
 
   return (
@@ -170,16 +175,8 @@ export default function VentilationPage(): React.JSX.Element {
 
           <div>
             <Label>How many of these facades are sheltered from the wind? *</Label>
-            <Stepper
-              value={sheltered}
-              setValue={setSheltered}
-              min={0}
-              max={facades}
-              ariaLabel="sheltered facades"
-            />
-            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
-              Must be ≤ number of external facades.
-            </div>
+            <Stepper value={sheltered} setValue={setSheltered} min={0} max={facades} ariaLabel="sheltered facades" />
+            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>Must be ≤ number of external facades.</div>
           </div>
         </div>
       </section>
@@ -187,9 +184,7 @@ export default function VentilationPage(): React.JSX.Element {
       {/* Ventilation Type */}
       <section style={{ ...card, marginTop: 16 }}>
         <h2 style={{ fontSize: 18, margin: 0, letterSpacing: 1.5 }}>VENTILATION TYPE</h2>
-        <p style={{ color: '#666', marginTop: 8 }}>
-          Select the type of ventilation system that this zone uses.
-        </p>
+        <p style={{ color: '#666', marginTop: 8 }}>Select the type of ventilation system that this zone uses.</p>
 
         <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
           <RadioRow
@@ -234,7 +229,7 @@ export default function VentilationPage(): React.JSX.Element {
           />
         </div>
 
-        {/* Actions */}
+        {/* Footer actions */}
         <div
           style={{
             display: 'flex',
@@ -243,8 +238,9 @@ export default function VentilationPage(): React.JSX.Element {
             marginTop: 18,
           }}
         >
+          {/* Back goes to Page 1 */}
           <Link
-            href="/rooms"
+            href="/"
             style={{
               border: '1px solid #ddd',
               borderRadius: 10,
@@ -257,8 +253,9 @@ export default function VentilationPage(): React.JSX.Element {
             ← Back
           </Link>
 
+          {/* Next goes to Rooms */}
           <Link
-            href={canContinue ? '/results' : '#'}
+            href={canContinue ? '/rooms' : '#'}
             onClick={(e) => {
               if (!canContinue) e.preventDefault();
               else saveAndContinue();
@@ -273,7 +270,7 @@ export default function VentilationPage(): React.JSX.Element {
               pointerEvents: canContinue ? 'auto' : 'none',
             }}
           >
-            Save & Continue →
+            Save &amp; Continue →
           </Link>
         </div>
       </section>
@@ -319,45 +316,3 @@ function RadioRow({
     </label>
   );
 }
-{/* ---- Page footer nav ---- */}
-<div
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-    marginTop: 16,
-  }}
->
-  {/* Back to page 1 */}
-  <Link
-    href="/"
-    style={{
-      textDecoration: 'none',
-      background: '#fff',
-      color: '#111',
-      border: '1px solid #ddd',
-      padding: '10px 16px',
-      borderRadius: 10,
-      display: 'inline-block',
-    }}
-  >
-    ← Back
-  </Link>
-
-  {/* Next -> Rooms (page 3) */}
-  <Link
-    href="/rooms"
-    style={{
-      textDecoration: 'none',
-      background: '#111',
-      color: '#fff',
-      border: '1px solid #111',
-      padding: '12px 18px',
-      borderRadius: 12,
-      display: 'inline-block',
-    }}
-  >
-    Save &amp; Continue →
-  </Link>
-</div>
