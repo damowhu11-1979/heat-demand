@@ -293,6 +293,7 @@ const wrap: React.CSSProperties = {
   fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
 };
 const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 8px' };
+const muted: React.CSSProperties = { color: '#777', fontStyle: 'normal' };
 const subtle: React.CSSProperties = { color: '#666', fontSize: 13, lineHeight: 1.45 };
 const hint: React.CSSProperties = { color: '#777', fontSize: 12, marginTop: 4, lineHeight: 1.4 };
 
