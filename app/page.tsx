@@ -521,15 +521,14 @@ export default function Page(): React.JSX.Element {
             />
           </div>
 {/* end UPRN column */}
-        </div>
+        </div>  {/* close UPRN column */}
 
-        {/* end top grid */}
-      </div>
+      </div>    {/* end top grid */}
 
       {/* Location Data */}
       <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
       <div style={grid4}>
-        {/* ... the four Location Data fields ... */}
+        {/* ...the 4 “Location Data” inputs live here... */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
         <div style={grid4}>
           <div>
