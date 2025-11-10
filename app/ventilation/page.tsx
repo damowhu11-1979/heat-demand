@@ -319,3 +319,45 @@ function RadioRow({
     </label>
   );
 }
+{/* ---- Page footer nav ---- */}
+<div
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 16,
+  }}
+>
+  {/* Back to page 1 */}
+  <Link
+    href="/"
+    style={{
+      textDecoration: 'none',
+      background: '#fff',
+      color: '#111',
+      border: '1px solid #ddd',
+      padding: '10px 16px',
+      borderRadius: 10,
+      display: 'inline-block',
+    }}
+  >
+    ← Back
+  </Link>
+
+  {/* Next -> Rooms (page 3) */}
+  <Link
+    href="/rooms"
+    style={{
+      textDecoration: 'none',
+      background: '#111',
+      color: '#fff',
+      border: '1px solid #111',
+      padding: '12px 18px',
+      borderRadius: 12,
+      display: 'inline-block',
+    }}
+  >
+    Save &amp; Continue →
+  </Link>
+</div>
