@@ -519,11 +519,17 @@ export default function Page(): React.JSX.Element {
               value={uprn}
               onChange={(e) => setUprn(e.target.value)}
             />
-          </div> {/* end UPRN column */}
+          </div>
+{/* end UPRN column */}
+        </div>
 
-        </div> {/* end top grid */}
+        {/* end top grid */}
+      </div>
 
-        {/* Location Data */}
+      {/* Location Data */}
+      <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
+      <div style={grid4}>
+        {/* ... the four Location Data fields ... */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
         <div style={grid4}>
           <div>
