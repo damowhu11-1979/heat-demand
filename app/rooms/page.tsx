@@ -2,7 +2,6 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
 /* ------------------------------ types ------------------------------ */
 type Room = {
@@ -18,12 +17,8 @@ type Zone = { name: string; rooms: Room[] };
 
 /* ------------------------------ page ------------------------------- */
 export default function RoomsPage(): React.JSX.Element {
-  const router = useRouter();
-
   // zones & rooms
-  const [zones, setZones] = useState<Zone[]>([
-    { name: 'Zone 1', rooms: [] },
-  ]);
+  const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', rooms: [] }]);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
 
   // add-room modal
@@ -71,10 +66,7 @@ export default function RoomsPage(): React.JSX.Element {
       return;
     }
     const z = [...zones];
-    z[form.zone] = {
-      ...z[form.zone],
-      rooms: [...z[form.zone].rooms, { ...form }],
-    };
+    z[form.zone] = { ...z[form.zone], rooms: [...z[form.zone].rooms, { ...form }] };
     setZones(z);
     setExpanded((e) => ({ ...e, [form.zone]: true }));
     setShowModal(false);
@@ -95,19 +87,14 @@ export default function RoomsPage(): React.JSX.Element {
   return (
     <main style={wrap}>
       <h1 style={h1}>Heated Rooms</h1>
-      <p style={subtle}>
-        List the heated rooms and ceiling heights for each zone of the property.
-      </p>
+      <p style={subtle}>List the heated rooms and ceiling heights for each zone of the property.</p>
 
       {/* zones & rooms */}
       <section style={card}>
         {zones.map((zone, zi) => (
           <div
             key={zi}
-            style={{
-              borderTop: zi ? '1px solid #eee' : undefined,
-              paddingTop: zi ? 12 : 0,
-            }}
+            style={{ borderTop: zi ? '1px solid #eee' : undefined, paddingTop: zi ? 12 : 0 }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <button
@@ -132,12 +119,8 @@ export default function RoomsPage(): React.JSX.Element {
                 {/* rooms */}
                 {zone.rooms.map((r, i) => (
                   <div key={i} style={row}>
-                    <div style={{ flex: 2 }}>
-                      {r.name || <em style={muted}>Unnamed</em>}
-                    </div>
-                    <div style={{ width: 140, textAlign: 'right' }}>
-                      {r.maxCeiling.toFixed(2)}
-                    </div>
+                    <div style={{ flex: 2 }}>{r.name || <em style={muted}>Unnamed</em>}</div>
+                    <div style={{ width: 140, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
                     <div style={{ width: 80, textAlign: 'right' }}>
                       <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>
                         Remove
@@ -148,9 +131,7 @@ export default function RoomsPage(): React.JSX.Element {
 
                 {/* empty state */}
                 {!zone.rooms.length && (
-                  <div style={{ ...muted, padding: '10px 4px' }}>
-                    No rooms in this zone yet.
-                  </div>
+                  <div style={{ ...muted, padding: '10px 4px' }}>No rooms in this zone yet.</div>
                 )}
               </div>
             )}
@@ -158,21 +139,20 @@ export default function RoomsPage(): React.JSX.Element {
         ))}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button onClick={onOpenAddRoom} style={primaryBtn}>Add Room</button>
-          <button onClick={onAddZone} style={secondaryBtn}>Add Zone</button>
+          <button onClick={onOpenAddRoom} style={primaryBtn}>
+            Add Room
+          </button>
+          <button onClick={onAddZone} style={secondaryBtn}>
+            Add Zone
+          </button>
         </div>
       </section>
 
       {/* nav */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-        <button
-          type="button"
-          onClick={() => router.back()}
-          style={{ ...secondaryBtn, textDecoration: 'none' }}
-        >
-          ← Back
-        </button>
-
+        <Link href="/ventilation" style={{ ...secondaryBtn, textDecoration: 'none' }}>
+          ← Back: Ventilation
+        </Link>
         <Link href="/elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
           Next: Building Elements →
         </Link>
@@ -183,9 +163,7 @@ export default function RoomsPage(): React.JSX.Element {
         <div style={modalBackdrop} onClick={() => setShowModal(false)}>
           <div style={modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={{ margin: '0 0 10px' }}>Add Room</h2>
-            <p style={{ margin: '6px 0 12px', color: '#555' }}>
-              Enter information about this room.
-            </p>
+            <p style={{ margin: '6px 0 12px', color: '#555' }}>Enter information about this room.</p>
 
             {/* Ventilation Zone + Room Type */}
             <div style={grid2}>
@@ -196,7 +174,9 @@ export default function RoomsPage(): React.JSX.Element {
                   onChange={(e) => setForm({ ...form, zone: Number(e.target.value) })}
                 >
                   {zones.map((z, i) => (
-                    <option key={i} value={i}>{z.name}</option>
+                    <option key={i} value={i}>
+                      {z.name}
+                    </option>
                   ))}
                 </Select>
               </div>
@@ -209,7 +189,9 @@ export default function RoomsPage(): React.JSX.Element {
                 >
                   <option value="">Select room type</option>
                   {roomTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
                   ))}
                 </Select>
               </div>
