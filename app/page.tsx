@@ -512,12 +512,15 @@ export default function Page(): React.JSX.Element {
 {/* Location Data */}
 <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
 <div style={grid4}>
+  {/* Altitude */}
   <div>
     <Label>Altitude (m)</Label>
     <Input
       type="number"
       value={altitude}
-      onChange={(e) => setAltitude(e.target.value === '' ? '' : Number(e.target.value))}
+      onChange={(e) =>
+        setAltitude(e.target.value === '' ? '' : Number(e.target.value))
+      }
     />
     <div style={{ marginTop: 8 }}>
       <details>
@@ -540,114 +543,36 @@ export default function Page(): React.JSX.Element {
     </div>
   </div>
 
+  {/* Design external air temp */}
   <div>
     <Label>Design External Air Temp (°C)</Label>
     <Input
       type="number"
       value={tex}
-      onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
+      onChange={(e) =>
+        setTex(e.target.value === '' ? '' : Number(e.target.value))
+      }
     />
   </div>
 
+  {/* Mean annual */}
   <div>
     <Label>Mean Annual External Air Temp (°C)</Label>
     <Input type="number" value={meanAnnual} readOnly />
   </div>
 
+  {/* HDD */}
   <div>
     <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
     <Input
       type="number"
       value={hdd}
-      onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
+      onChange={(e) =>
+        setHdd(e.target.value === '' ? '' : Number(e.target.value))
+      }
     />
   </div>
 </div>
-
-{/* end top grid that contains Ref/Postcode/Country/Address/EPC/UPRN */}
-{/* Location Data */}
-<h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
-<div style={grid4}>
-<h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
-<div style={grid4}>
-  {/* Altitude / Design temp / Mean annual / HDD go here */}
-            <Input
-              type="number"
-              value={altitude}
-              onChange={(e) =>
-                setAltitude(e.target.value === '' ? '' : Number(e.target.value))
-              }
-            />
-            {/* ... altitude helper UI ... */}
-          </div>
-          <div>
-            <Label>Design External Air Temp (°C)</Label>
-            <Input
-              type="number"
-              value={tex}
-              onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <Label>Mean Annual External Air Temp (°C)</Label>
-            <Input type="number" value={meanAnnual} readOnly />
-          </div>
-
-          <div>
-            <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
-            <Input
-              type="number"
-              value={hdd}
-              onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
-            />
-          </div>
-        </div>
-
-            <div style={{ marginTop: 8 }}>
-              <details>
-                <summary style={{ cursor: 'pointer', color: '#333' }}>Get altitude</summary>
-                <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
-                  Uses postcodes.io / Nominatim and Open-Elevation (fallback OpenTopoData). You can
-                  also enter <em>lat,long</em> override:
-                </div>
-              </details>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-                <Button onClick={onFindAltitude}>Get altitude</Button>
-                <Input
-                  placeholder="(optional) 51.5,-0.12"
-                  value={latlonOverride}
-                  onChange={(e) => setLatlonOverride(e.target.value)}
-                  style={{ maxWidth: 180 }}
-                />
-                <span style={{ color: '#666', fontSize: 12 }}>{altStatus}</span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <Label>Design External Air Temp (°C)</Label>
-            <Input
-              type="number"
-              value={tex}
-              onChange={(e) => setTex(e.target.value === '' ? '' : Number(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <Label>Mean Annual External Air Temp (°C)</Label>
-            <Input type="number" value={meanAnnual} readOnly />
-          </div>
-
-          <div>
-            <Label>Heating Degree Days (HDD, base 15.5°C)</Label>
-            <Input
-              type="number"
-              value={hdd}
-              onChange={(e) => setHdd(e.target.value === '' ? '' : Number(e.target.value))}
-            />
-          </div>
-        </div>
 
         {/* Property details */}
         <h3 style={{ marginTop: 18, marginBottom: 8 }}>Property Details</h3>
