@@ -521,18 +521,15 @@ export default function Page(): React.JSX.Element {
             />
           </div>
 {/* end UPRN column */}
-        </div>  {/* close UPRN column */}
+</div>  {/* <- this closes only the UPRN column */}
 
-      </div>    {/* end top grid */}
+{/* end top grid */}
+</div>  {/* <- this closes the whole top grid that contains Ref/Postcode/Country/Address/EPC/UPRN */}
 
-      {/* Location Data */}
-      <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
-      <div style={grid4}>
-        {/* ...the 4 “Location Data” inputs live here... */}
-        <h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
-        <div style={grid4}>
-          <div>
-            <Label>Altitude (m)</Label>
+{/* Location Data */}
+<h3 style={{ marginTop: 18, marginBottom: 8 }}>Location Data</h3>
+<div style={grid4}>
+  {/* Altitude / Design temp / Mean annual / HDD go here */}
             <Input
               type="number"
               value={altitude}
