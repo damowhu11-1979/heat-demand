@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 /* ------------------------------ types ------------------------------ */
 type Room = {
@@ -16,6 +17,7 @@ type Room = {
 type Zone = { name: string; rooms: Room[] };
 
 /* ------------------------------ page ------------------------------- */
+const router = useRouter();
 export default function RoomsPage(): React.JSX.Element {
   // zones & rooms
   const [zones, setZones] = useState<Zone[]>([
@@ -146,11 +148,20 @@ export default function RoomsPage(): React.JSX.Element {
         </div>
       </section>
 
-      {/* nav */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-        <Link href="/ventilation" style={{ ...secondaryBtn, textDecoration: 'none' }}>← Back</Link>
-        <Link href="/elements" style={{ ...primaryBtn, textDecoration: 'none' }}>Next: Building Elements →</Link>
-      </div>
+   {/* nav */}
+<div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
+  <button
+    type="button"
+    onClick={() => router.back()}
+    style={{ ...secondaryBtn, textDecoration: 'none' }}
+  >
+    ← Back
+  </button>
+
+  <Link href="/elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
+    Next: Building Elements →
+  </Link>
+</div>
 
       {/* add-room modal */}
       {showModal && (
@@ -343,34 +354,4 @@ const modal: React.CSSProperties = {
     justifyContent: 'space-between',
     marginTop: 22,
   }}
->
-  <Link
-    href="/ventilation"
-    style={{
-      textDecoration: 'none',
-      background: '#fff',
-      color: '#111',
-      border: '1px solid #ddd',
-      padding: '10px 16px',
-      borderRadius: 10,
-      display: 'inline-block',
-    }}
-  >
-    ← Back: Ventilation
-  </Link>
-
-  <Link
-    href="/elements"
-    style={{
-      textDecoration: 'none',
-      background: '#111',
-      color: '#fff',
-      border: '1px solid #111',
-      padding: '12px 18px',
-      borderRadius: 12,
-      display: 'inline-block',
-    }}
-  >
-    Next: Building Elements →
-  </Link>
 </div>
