@@ -43,6 +43,8 @@ export default function RoomsPage(): React.JSX.Element {
       'Hallway',
       'Dining Room',
       'Study',
+      'Garage',
+      'Porch',
       'Other',
     ],
     []
@@ -155,7 +157,7 @@ export default function RoomsPage(): React.JSX.Element {
         <div style={modalBackdrop} onClick={() => setShowModal(false)}>
           <div style={modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={{ margin: '0 0 10px' }}>Add Room</h2>
-            <p style={subtle}>Enter information about this room.</p>
+            <p style={}>Enter information about this room.</p>
 
             {/* Ventilation Zone */}
             <div style={grid2}>
