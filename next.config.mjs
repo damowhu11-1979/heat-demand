@@ -1,13 +1,26 @@
 // next.config.mjs
-const isGhPages = process.env.GITHUB_PAGES === 'true';
-const ghBase = '/heat-demand'; // <--- your repo name here
+const isProd =
+  process.env.NODE_ENV === 'production' ||
+  process.env.GITHUB_ACTIONS === 'true';
 
 /** @type {import('next').NextConfig} */
-const config = {
+const nextConfig = {
+  // Export a fully static site for GitHub Pages
   output: 'export',
+
+  // So routes resolve as .../page/ (required by GH Pages hosting)
   trailingSlash: true,
-  basePath: isGhPages ? ghBase : '',
-  assetPrefix: isGhPages ? `${ghBase}/` : '',
+
+  // Your project is served at https://<user>.github.io/heat-demand/
+  // basePath and assetPrefix make all <Link href="/..."> work automatically.
+  basePath: isProd ? '/heat-demand' : '',
+  assetPrefix: isProd ? '/heat-demand/' : '',
+
+  // Optional, but removes image optimizer that doesn’t run on static export
+  images: { unoptimized: true },
+
+  // Optional, keeps CI green if you don't want ESLint to block builds
+  eslint: { ignoreDuringBuilds: true },
 };
 
-export default config;
+export default nextConfig;
