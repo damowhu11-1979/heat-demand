@@ -1,26 +1,48 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-
-/* ---------- base-path (works on GitHub Pages / static export) ---------- */
-function repoBase(): string {
-  if (typeof window === 'undefined') return '/';
-  const seg = window.location.pathname.split('/').filter(Boolean);
-  // e.g. /heat-demand/ when hosted at username.github.io/heat-demand
-  return seg.length ? `/${seg[0]}/` : '/';
-}
-function toPath(p: string): string {
-  const base = repoBase();
-  // ensure paths like "rooms/" end with trailing slash for static export
-  const cleaned = p.replace(/^\/+/, '');
-  return `${base}${cleaned}`;
-}
+import Link from 'next/link';
 
 /* ---------- small UI bits ---------- */
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
+const card: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #e6e6e6',
+  borderRadius: 14,
+  padding: 16,
+};
+const btnBox: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 10,
+  background: '#fff',
+  cursor: 'pointer',
+};
+const valBox: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 10,
+  display: 'grid',
+  placeItems: 'center',
+  fontSize: 18,
+  fontWeight: 600,
+};
+const primaryBtn: React.CSSProperties = {
+  border: '1px solid #111',
+  borderRadius: 10,
+  padding: '12px 18px',
+  background: '#111',
+  color: '#fff',
+  textDecoration: 'none',
+};
+const secondaryBtn: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 10,
+  padding: '10px 16px',
+  background: '#fff',
+  color: '#111',
+  textDecoration: 'none',
+};
 
 /* ---------- stepper ---------- */
 function Stepper({
@@ -38,8 +60,6 @@ function Stepper({
     </div>
   );
 }
-const btnBox: React.CSSProperties = { border: '1px solid #ddd', borderRadius: 10, background: '#fff', cursor: 'pointer' };
-const valBox: React.CSSProperties = { border: '1px solid #ddd', borderRadius: 10, display: 'grid', placeItems: 'center', fontSize: 18, fontWeight: 600 };
 
 /* ---------- page ---------- */
 export default function VentilationPage(): React.JSX.Element {
@@ -56,8 +76,8 @@ export default function VentilationPage(): React.JSX.Element {
   const [vtype, setVtype] = useState<VentType>('');
 
   const canContinue = useMemo(() => {
-    const okCounts = zones >= 1 && storeys >= 1 && facades >= 1 && sheltered >= 0 && sheltered <= facades;
-    return okCounts && !!vtype;
+    const validCounts = zones >= 1 && storeys >= 1 && facades >= 1 && sheltered >= 0 && sheltered <= facades;
+    return validCounts && !!vtype;
   }, [zones, storeys, facades, sheltered, vtype]);
 
   const saveDraft = () => {
@@ -66,7 +86,14 @@ export default function VentilationPage(): React.JSX.Element {
   };
 
   return (
-    <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
+    <main
+      style={{
+        maxWidth: 1040,
+        margin: '0 auto',
+        padding: 24,
+        fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+      }}
+    >
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Ventilation</h1>
 
       {/* Zones */}
@@ -91,10 +118,12 @@ export default function VentilationPage(): React.JSX.Element {
             <Label>Number of Storeys *</Label>
             <Stepper value={storeys} setValue={setStoreys} min={1} ariaLabel="number of storeys" />
           </div>
+
           <div>
             <Label>Number of External Facades *</Label>
             <Stepper value={facades} setValue={setFacades} min={1} ariaLabel="number of external facades" />
           </div>
+
           <div>
             <Label>How many facades are sheltered from the wind? *</Label>
             <Stepper value={sheltered} setValue={setSheltered} min={0} max={facades} ariaLabel="sheltered facades" />
@@ -109,59 +138,34 @@ export default function VentilationPage(): React.JSX.Element {
         <p style={{ color: '#666', marginTop: 8 }}>Select the ventilation system this zone uses.</p>
 
         <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-          <RadioRow id="v-natural" name="vent-type" checked={vtype === 'natural'} onChange={() => setVtype('natural')}
-            title="Natural Ventilation" subtitle="Natural ventilation; may include extract fans in wet rooms." />
-          <RadioRow id="v-mev" name="vent-type" checked={vtype === 'mev'} onChange={() => setVtype('mev')}
-            title="Mechanical Extract Ventilation (MEV)" subtitle="Fan-assisted extract-only, unbalanced." />
-          <RadioRow id="v-mv" name="vent-type" checked={vtype === 'mv'} onChange={() => setVtype('mv')}
-            title="Mechanical Ventilation (MV)" subtitle="Supply + extract, balanced." />
-          <RadioRow id="v-mvhr" name="vent-type" checked={vtype === 'mvhr'} onChange={() => setVtype('mvhr')}
-            title="Mechanical Ventilation with Heat Recovery (MVHR)" subtitle="Whole-house HRV; efficiency required." />
-          <RadioRow id="v-piv" name="vent-type" checked={vtype === 'piv'} onChange={() => setVtype('piv')}
-            title="Positive Input Ventilation (PIV)" subtitle="Supply-only positive pressure." />
+          <RadioRow id="v-natural" name="vent-type" checked={vtype === 'natural'} onChange={() => setVtype('natural')} title="Natural Ventilation" subtitle="Natural ventilation; may include extract fans in wet rooms." />
+          <RadioRow id="v-mev"     name="vent-type" checked={vtype === 'mev'}     onChange={() => setVtype('mev')}     title="Mechanical Extract Ventilation (MEV)" subtitle="Fan-assisted extract-only, unbalanced." />
+          <RadioRow id="v-mv"      name="vent-type" checked={vtype === 'mv'}      onChange={() => setVtype('mv')}      title="Mechanical Ventilation (MV)" subtitle="Supply + extract, balanced." />
+          <RadioRow id="v-mvhr"    name="vent-type" checked={vtype === 'mvhr'}    onChange={() => setVtype('mvhr')}    title="Mechanical Ventilation with Heat Recovery (MVHR)" subtitle="Whole-house HRV; efficiency required." />
+          <RadioRow id="v-piv"     name="vent-type" checked={vtype === 'piv'}     onChange={() => setVtype('piv')}     title="Positive Input Ventilation (PIV)" subtitle="Supply-only positive pressure." />
         </div>
 
-        {/* Footer nav – Back + Next (as plain anchors for static hosting) */}
+        {/* Footer nav – INSIDE the component */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18 }}>
-          {/* Back → page 1 (root) */}
-          <a
-            href={toPath('')}
-            style={{
-              border: '1px solid #ddd',
-              borderRadius: 10,
-              padding: '10px 16px',
-              textDecoration: 'none',
-              color: '#111',
-              background: '#fff',
-              display: 'inline-block',
-            }}
-          >
+          {/* Back to property (page 1). Relative path works on GH Pages */}
+          <Link href="../" style={secondaryBtn}>
             ← Back
-          </a>
+          </Link>
 
-          {/* Next → Rooms (page 3). We prevent when invalid, otherwise save then let the link navigate */}
-          <a
-            href={toPath('rooms/')}
-            onClick={(e) => {
-              if (!canContinue) {
-                e.preventDefault();
-              } else {
-                saveDraft();
-              }
-            }}
+          {/* Next to Rooms. Disabled look if not ready */}
+          <Link
+            href={canContinue ? '../rooms/' : '#'}
+            onClick={(e) => { if (!canContinue) e.preventDefault(); else saveDraft(); }}
             style={{
-              border: '1px solid #111',
-              borderRadius: 12,
-              padding: '12px 18px',
-              textDecoration: 'none',
+              ...primaryBtn,
+              background: canContinue ? '#111' : '#eee',
               color: canContinue ? '#fff' : '#888',
-              background: canContinue ? '#111' : '#aaa',
+              borderColor: '#111',
               pointerEvents: canContinue ? 'auto' : 'none',
-              display: 'inline-block',
             }}
           >
             Next: Rooms →
-          </a>
+          </Link>
         </div>
       </section>
     </main>
@@ -196,8 +200,3 @@ function RadioRow({
     </label>
   );
 }
-// app/ventilation/page.tsx  (footer)
-import Link from 'next/link';
-
-<Link href="/">← Back</Link>
-<Link href="/rooms/">Next: Rooms →</Link>
