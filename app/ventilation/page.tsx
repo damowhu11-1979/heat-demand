@@ -11,7 +11,9 @@ function repoBase(): string {
 }
 function toPath(p: string): string {
   const base = repoBase();
-  return `${base}${p.replace(/^\/+/, '')}`;
+  // ensure paths like "rooms/" end with trailing slash for static export
+  const cleaned = p.replace(/^\/+/, '');
+  return `${base}${cleaned}`;
 }
 
 /* ---------- small UI bits ---------- */
@@ -19,21 +21,17 @@ function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
-const primaryBtn: React.CSSProperties = {
-  border: '1px solid #111', background: '#111', color: '#fff', padding: '12px 18px', borderRadius: 12
-};
-const secondaryBtn: React.CSSProperties = {
-  border: '1px solid #ddd', background: '#fff', color: '#111', padding: '10px 16px', borderRadius: 10
-};
 
 /* ---------- stepper ---------- */
 function Stepper({
   value, setValue, min = 0, max = 999, ariaLabel,
-}: { value: number; setValue: (n: number) => void; min?: number; max?: number; ariaLabel?: string }) {
+}: {
+  value: number; setValue: (n: number) => void; min?: number; max?: number; ariaLabel?: string;
+}) {
   const dec = () => setValue(Math.max(min, value - 1));
   const inc = () => setValue(Math.min(max, value + 1));
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 48px', gap: 0 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 48px', gap: 0, alignItems: 'stretch' }}>
       <button type="button" onClick={dec} aria-label={`decrease ${ariaLabel || 'value'}`} style={btnBox}>–</button>
       <div style={valBox} aria-live="polite">{value}</div>
       <button type="button" onClick={inc} aria-label={`increase ${ariaLabel || 'value'}`} style={btnBox}>+</button>
@@ -45,11 +43,15 @@ const valBox: React.CSSProperties = { border: '1px solid #ddd', borderRadius: 10
 
 /* ---------- page ---------- */
 export default function VentilationPage(): React.JSX.Element {
+  // zones
   const [zones, setZones] = useState<number>(1);
+
+  // zone 1 numbers
   const [storeys, setStoreys] = useState<number>(2);
   const [facades, setFacades] = useState<number>(4);
   const [sheltered, setSheltered] = useState<number>(0);
 
+  // ventilation type
   type VentType = 'natural' | 'mev' | 'mv' | 'mvhr' | 'piv' | '';
   const [vtype, setVtype] = useState<VentType>('');
 
@@ -63,18 +65,6 @@ export default function VentilationPage(): React.JSX.Element {
     console.log('VENTILATION SAVE', payload);
   };
 
-  const goBack = () => {
-    // Go to page 1 (root) robustly for static hosting
-    window.location.href = toPath('');
-  };
-
-  const goNext = () => {
-    if (!canContinue) return;
-    saveDraft();
-    // Go to Rooms page
-    window.location.href = toPath('rooms/');
-  };
-
   return (
     <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Ventilation</h1>
@@ -82,7 +72,9 @@ export default function VentilationPage(): React.JSX.Element {
       {/* Zones */}
       <section style={card}>
         <h2 style={{ fontSize: 18, margin: 0, letterSpacing: 1.5 }}>VENTILATION ZONES</h2>
-        <p style={{ color: '#666', marginTop: 8 }}>Enter the total number of distinct ventilation zones in the property.</p>
+        <p style={{ color: '#666', marginTop: 8 }}>
+          Enter the total number of distinct ventilation zones in the property.
+        </p>
         <div style={{ marginTop: 12 }}>
           <Label>Number of Ventilation Zones *</Label>
           <Stepper value={zones} setValue={setZones} min={1} ariaLabel="number of ventilation zones" />
@@ -129,22 +121,47 @@ export default function VentilationPage(): React.JSX.Element {
             title="Positive Input Ventilation (PIV)" subtitle="Supply-only positive pressure." />
         </div>
 
-        {/* Footer nav */}
+        {/* Footer nav – Back + Next (as plain anchors for static hosting) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18 }}>
-          <button type="button" onClick={goBack} style={secondaryBtn}>← Back</button>
-          <button
-            type="button"
-            onClick={goNext}
-            disabled={!canContinue}
+          {/* Back → page 1 (root) */}
+          <a
+            href={toPath('')}
             style={{
-              ...primaryBtn,
+              border: '1px solid #ddd',
+              borderRadius: 10,
+              padding: '10px 16px',
+              textDecoration: 'none',
+              color: '#111',
+              background: '#fff',
+              display: 'inline-block',
+            }}
+          >
+            ← Back
+          </a>
+
+          {/* Next → Rooms (page 3). We prevent when invalid, otherwise save then let the link navigate */}
+          <a
+            href={toPath('rooms/')}
+            onClick={(e) => {
+              if (!canContinue) {
+                e.preventDefault();
+              } else {
+                saveDraft();
+              }
+            }}
+            style={{
+              border: '1px solid #111',
+              borderRadius: 12,
+              padding: '12px 18px',
+              textDecoration: 'none',
+              color: canContinue ? '#fff' : '#888',
               background: canContinue ? '#111' : '#aaa',
-              borderColor: canContinue ? '#111' : '#aaa',
-              cursor: canContinue ? 'pointer' : 'not-allowed',
+              pointerEvents: canContinue ? 'auto' : 'none',
+              display: 'inline-block',
             }}
           >
             Next: Rooms →
-          </button>
+          </a>
         </div>
       </section>
     </main>
@@ -154,12 +171,23 @@ export default function VentilationPage(): React.JSX.Element {
 /* ---------- radio row ---------- */
 function RadioRow({
   id, name, checked, onChange, title, subtitle,
-}: { id: string; name: string; checked: boolean; onChange: () => void; title: string; subtitle: string }) {
+}: {
+  id: string; name: string; checked: boolean; onChange: () => void; title: string; subtitle: string;
+}) {
   return (
-    <label htmlFor={id} style={{
-      border: '1px solid #e6e6e6', borderRadius: 12, padding: 14,
-      display: 'grid', gridTemplateColumns: '28px 1fr', gap: 12, alignItems: 'start', cursor: 'pointer',
-    }}>
+    <label
+      htmlFor={id}
+      style={{
+        border: '1px solid #e6e6e6',
+        borderRadius: 12,
+        padding: 14,
+        display: 'grid',
+        gridTemplateColumns: '28px 1fr',
+        gap: 12,
+        alignItems: 'start',
+        cursor: 'pointer',
+      }}
+    >
       <input id={id} name={name} type="radio" checked={checked} onChange={onChange} />
       <div>
         <div style={{ fontWeight: 600 }}>{title}</div>
