@@ -3,16 +3,9 @@
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 
-/** small UI bits kept consistent with your page.tsx */
+/* ---------- small UI bits ---------- */
 function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>
-      {children}
-    </label>
-  );
-}
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
+  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
 function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
@@ -30,7 +23,6 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
     />
   );
 }
-
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
@@ -46,7 +38,7 @@ const card: React.CSSProperties = {
   padding: 16,
 };
 
-/** simple stepper control */
+/* ---------- stepper ---------- */
 function Stepper({
   value,
   setValue,
@@ -64,61 +56,39 @@ function Stepper({
   const inc = () => setValue(Math.min(max, value + 1));
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 48px', gap: 0, alignItems: 'stretch' }}>
-      <button
-        type="button"
-        onClick={dec}
-        aria-label={`decrease ${ariaLabel || 'value'}`}
-        style={{
-          border: '1px solid #ddd',
-          borderRadius: 10,
-          background: '#fff',
-          cursor: 'pointer',
-        }}
-      >
-        –
-      </button>
-      <div
-        style={{
-          border: '1px solid #ddd',
-          borderRadius: 10,
-          display: 'grid',
-          placeItems: 'center',
-          fontSize: 18,
-          fontWeight: 600,
-        }}
-        aria-live="polite"
-      >
-        {value}
-      </div>
-      <button
-        type="button"
-        onClick={inc}
-        aria-label={`increase ${ariaLabel || 'value'}`}
-        style={{
-          border: '1px solid #ddd',
-          borderRadius: 10,
-          background: '#fff',
-          cursor: 'pointer',
-        }}
-      >
-        +
-      </button>
+      <button type="button" onClick={dec} aria-label={`decrease ${ariaLabel || 'value'}`} style={btnBox}>–</button>
+      <div style={valBox} aria-live="polite">{value}</div>
+      <button type="button" onClick={inc} aria-label={`increase ${ariaLabel || 'value'}`} style={btnBox}>+</button>
     </div>
   );
 }
+const btnBox: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 10,
+  background: '#fff',
+  cursor: 'pointer',
+};
+const valBox: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 10,
+  display: 'grid',
+  placeItems: 'center',
+  fontSize: 18,
+  fontWeight: 600,
+};
 
-type VentType = 'natural' | 'mev' | 'mv' | 'mvhr' | 'piv' | '';
-
+/* ---------- page ---------- */
 export default function VentilationPage(): React.JSX.Element {
-  // top-of-page: number of ventilation zones
+  // zones
   const [zones, setZones] = useState<number>(1);
 
-  // zone 1 fields
+  // zone 1 numbers
   const [storeys, setStoreys] = useState<number>(2);
   const [facades, setFacades] = useState<number>(4);
   const [sheltered, setSheltered] = useState<number>(0);
 
   // ventilation type
+  type VentType = 'natural' | 'mev' | 'mv' | 'mvhr' | 'piv' | '';
   const [vtype, setVtype] = useState<VentType>('');
 
   const canContinue = useMemo(() => {
@@ -126,8 +96,7 @@ export default function VentilationPage(): React.JSX.Element {
     return validCounts && !!vtype;
   }, [zones, storeys, facades, sheltered, vtype]);
 
-  const saveAndContinue = () => {
-    // wire up to your data store if needed
+  const saveDraft = () => {
     const payload = { zones, zone1: { storeys, facades, sheltered, vtype } };
     console.log('VENTILATION SAVE', payload);
   };
@@ -143,14 +112,12 @@ export default function VentilationPage(): React.JSX.Element {
     >
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Ventilation</h1>
 
-      {/* Ventilation Zones */}
+      {/* Zones */}
       <section style={card}>
         <h2 style={{ fontSize: 18, margin: 0, letterSpacing: 1.5 }}>VENTILATION ZONES</h2>
         <p style={{ color: '#666', marginTop: 8 }}>
-          Enter the total number of distinct ventilation zones in the property. Rooms that share the same
-          ventilation system form a single zone.
+          Enter the total number of distinct ventilation zones in the property.
         </p>
-
         <div style={{ marginTop: 12 }}>
           <Label>Number of Ventilation Zones *</Label>
           <Stepper value={zones} setValue={setZones} min={1} ariaLabel="number of ventilation zones" />
@@ -174,71 +141,29 @@ export default function VentilationPage(): React.JSX.Element {
           </div>
 
           <div>
-            <Label>How many of these facades are sheltered from the wind? *</Label>
+            <Label>How many facades are sheltered from the wind? *</Label>
             <Stepper value={sheltered} setValue={setSheltered} min={0} max={facades} ariaLabel="sheltered facades" />
             <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>Must be ≤ number of external facades.</div>
           </div>
         </div>
       </section>
 
-      {/* Ventilation Type */}
+      {/* Vent type */}
       <section style={{ ...card, marginTop: 16 }}>
         <h2 style={{ fontSize: 18, margin: 0, letterSpacing: 1.5 }}>VENTILATION TYPE</h2>
-        <p style={{ color: '#666', marginTop: 8 }}>Select the type of ventilation system that this zone uses.</p>
+        <p style={{ color: '#666', marginTop: 8 }}>Select the ventilation system this zone uses.</p>
 
         <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-          <RadioRow
-            id="v-natural"
-            name="vent-type"
-            checked={vtype === 'natural'}
-            onChange={() => setVtype('natural')}
-            title="Natural Ventilation"
-            subtitle="Natural ventilation only that may include extract fans in wet rooms."
-          />
-          <RadioRow
-            id="v-mev"
-            name="vent-type"
-            checked={vtype === 'mev'}
-            onChange={() => setVtype('mev')}
-            title="Mechanical Extract Ventilation (MEV)"
-            subtitle="Fan-assisted mechanical ventilation (extract-only) that is unbalanced."
-          />
-          <RadioRow
-            id="v-mv"
-            name="vent-type"
-            checked={vtype === 'mv'}
-            onChange={() => setVtype('mv')}
-            title="Mechanical Ventilation (MV)"
-            subtitle="Fan-assisted mechanical ventilation (supply and extract) that is balanced."
-          />
-          <RadioRow
-            id="v-mvhr"
-            name="vent-type"
-            checked={vtype === 'mvhr'}
-            onChange={() => setVtype('mvhr')}
-            title="Mechanical Ventilation with Heat Recovery (MVHR)"
-            subtitle="Whole-house heat recovery ventilation. System efficiency required."
-          />
-          <RadioRow
-            id="v-piv"
-            name="vent-type"
-            checked={vtype === 'piv'}
-            onChange={() => setVtype('piv')}
-            title="Positive Input Ventilation (PIV)"
-            subtitle="Supply-only ventilation that creates a positive pressure within the house."
-          />
+          <RadioRow id="v-natural" name="vent-type" checked={vtype === 'natural'} onChange={() => setVtype('natural')} title="Natural Ventilation" subtitle="Natural ventilation; may include extract fans in wet rooms." />
+          <RadioRow id="v-mev"     name="vent-type" checked={vtype === 'mev'}     onChange={() => setVtype('mev')}     title="Mechanical Extract Ventilation (MEV)" subtitle="Fan-assisted extract-only, unbalanced." />
+          <RadioRow id="v-mv"      name="vent-type" checked={vtype === 'mv'}      onChange={() => setVtype('mv')}      title="Mechanical Ventilation (MV)" subtitle="Supply + extract, balanced." />
+          <RadioRow id="v-mvhr"    name="vent-type" checked={vtype === 'mvhr'}    onChange={() => setVtype('mvhr')}    title="Mechanical Ventilation with Heat Recovery (MVHR)" subtitle="Whole-house HRV; efficiency required." />
+          <RadioRow id="v-piv"     name="vent-type" checked={vtype === 'piv'}     onChange={() => setVtype('piv')}     title="Positive Input Ventilation (PIV)" subtitle="Supply-only positive pressure." />
         </div>
 
-        {/* Footer actions */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginTop: 18,
-          }}
-        >
-          {/* Back goes to Page 1 */}
+        {/* Footer nav – Back + Next */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18 }}>
+          {/* Back goes to page 1 */}
           <Link
             href="/"
             style={{
@@ -253,12 +178,12 @@ export default function VentilationPage(): React.JSX.Element {
             ← Back
           </Link>
 
-          {/* Next goes to Rooms */}
+          {/* Next goes to Rooms (page 3). Disabled until valid. */}
           <Link
             href={canContinue ? '/rooms' : '#'}
             onClick={(e) => {
               if (!canContinue) e.preventDefault();
-              else saveAndContinue();
+              else saveDraft();
             }}
             style={{
               border: '1px solid #111',
@@ -278,7 +203,7 @@ export default function VentilationPage(): React.JSX.Element {
   );
 }
 
-/** radio row helper */
+/* ---------- radio row ---------- */
 function RadioRow({
   id,
   name,
