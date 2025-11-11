@@ -2,26 +2,11 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 /* ---------- small UI bits ---------- */
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
-}
-function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...props}
-      style={{
-        borderRadius: 10,
-        padding: '10px 16px',
-        border: '1px solid #ddd',
-        background: props.disabled ? '#eee' : '#111',
-        color: props.disabled ? '#888' : '#fff',
-        cursor: props.disabled ? 'not-allowed' : 'pointer',
-        ...(props.style as any),
-      }}
-    />
-  );
 }
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -40,17 +25,9 @@ const card: React.CSSProperties = {
 
 /* ---------- stepper ---------- */
 function Stepper({
-  value,
-  setValue,
-  min = 0,
-  max = 999,
-  ariaLabel,
+  value, setValue, min = 0, max = 999, ariaLabel,
 }: {
-  value: number;
-  setValue: (n: number) => void;
-  min?: number;
-  max?: number;
-  ariaLabel?: string;
+  value: number; setValue: (n: number) => void; min?: number; max?: number; ariaLabel?: string;
 }) {
   const dec = () => setValue(Math.max(min, value - 1));
   const inc = () => setValue(Math.min(max, value + 1));
@@ -79,6 +56,8 @@ const valBox: React.CSSProperties = {
 
 /* ---------- page ---------- */
 export default function VentilationPage(): React.JSX.Element {
+  const router = useRouter();
+
   // zones
   const [zones, setZones] = useState<number>(1);
 
@@ -99,6 +78,12 @@ export default function VentilationPage(): React.JSX.Element {
   const saveDraft = () => {
     const payload = { zones, zone1: { storeys, facades, sheltered, vtype } };
     console.log('VENTILATION SAVE', payload);
+  };
+
+  const goNext = () => {
+    if (!canContinue) return;
+    saveDraft();
+    router.push('/rooms');
   };
 
   return (
@@ -178,25 +163,22 @@ export default function VentilationPage(): React.JSX.Element {
             ← Back
           </Link>
 
-          {/* Next goes to Rooms (page 3). Disabled until valid. */}
-          <Link
-            href={canContinue ? '/rooms' : '#'}
-            onClick={(e) => {
-              if (!canContinue) e.preventDefault();
-              else saveDraft();
-            }}
+          {/* Next → Rooms (page 3) */}
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={!canContinue}
             style={{
-              border: '1px solid #111',
               borderRadius: 10,
               padding: '12px 18px',
-              textDecoration: 'none',
-              color: canContinue ? '#fff' : '#888',
+              border: '1px solid #111',
               background: canContinue ? '#111' : '#eee',
-              pointerEvents: canContinue ? 'auto' : 'none',
+              color: canContinue ? '#fff' : '#888',
+              cursor: canContinue ? 'pointer' : 'not-allowed',
             }}
           >
             Save &amp; Continue →
-          </Link>
+          </button>
         </div>
       </section>
     </main>
@@ -205,19 +187,9 @@ export default function VentilationPage(): React.JSX.Element {
 
 /* ---------- radio row ---------- */
 function RadioRow({
-  id,
-  name,
-  checked,
-  onChange,
-  title,
-  subtitle,
+  id, name, checked, onChange, title, subtitle,
 }: {
-  id: string;
-  name: string;
-  checked: boolean;
-  onChange: () => void;
-  title: string;
-  subtitle: string;
+  id: string; name: string; checked: boolean; onChange: () => void; title: string; subtitle: string;
 }) {
   return (
     <label
