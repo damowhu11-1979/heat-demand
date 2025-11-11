@@ -220,3 +220,6 @@ function RadioRow({
     </label>
   );
 }
+// app/rooms/page.tsx (footer)
+<Link href="/ventilation/">← Back: Ventilation</Link>
+<Link href="/elements/">Next: Building Elements →</Link>
