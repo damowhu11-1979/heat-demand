@@ -196,3 +196,8 @@ function RadioRow({
     </label>
   );
 }
+// app/ventilation/page.tsx  (footer)
+import Link from 'next/link';
+
+<Link href="/">← Back</Link>
+<Link href="/rooms/">Next: Rooms →</Link>
