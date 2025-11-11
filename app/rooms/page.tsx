@@ -1,225 +1,254 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import Link from 'next/link';
 
-/* ---------- base-path helpers (GH Pages / static export safe) ---------- */
-function repoBase(): string {
-  if (typeof window === 'undefined') return '/';
-  const seg = window.location.pathname.split('/').filter(Boolean);
-  // e.g. /heat-demand/ when hosted at username.github.io/heat-demand
-  return seg.length ? `/${seg[0]}/` : '/';
-}
-function toPath(p: string): string {
-  const base = repoBase();
-  const cleaned = p.replace(/^\/+/, '');
-  return `${base}${cleaned}`;
-}
+/* ------------------------------ types ------------------------------ */
+type Room = {
+  zone: number;
+  type: string;
+  name: string;
+  maxCeiling: number;
+  intermittentPct?: number;
+  heatGainsW?: number;
+};
+type Zone = { name: string; rooms: Room[] };
 
-/* ---------- small UI bits ---------- */
+/* ------------------------------ UI bits ------------------------------ */
 function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
+  return <label style={{ display: 'block', fontSize: 12, color: '#555', margin: '12px 0 6px' }}>{children}</label>;
 }
-const card: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #e6e6e6',
-  borderRadius: 14,
-  padding: 16,
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} style={{ ...input, ...(props.style || {}) }} />;
+}
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={{ ...input, ...(props.style || {}) }} />;
+}
+
+const wrap: React.CSSProperties = {
+  maxWidth: 1040,
+  margin: '0 auto',
+  padding: 24,
+  fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
 };
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #ddd',
-  outline: 'none',
-  boxSizing: 'border-box',
+const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 8px' };
+const muted: React.CSSProperties = { color: '#777', fontStyle: 'normal' };
+const subtle: React.CSSProperties = { color: '#666', fontSize: 13, lineHeight: 1.45 };
+const hint: React.CSSProperties = { color: '#777', fontSize: 12, marginTop: 4, lineHeight: 1.4 };
+
+const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
+const rowHeader: React.CSSProperties = {
+  display: 'flex', gap: 8, padding: '8px 4px', color: '#555', fontSize: 12, borderBottom: '1px solid #eee',
+};
+const row: React.CSSProperties = {
+  display: 'flex', gap: 8, padding: '10px 4px', alignItems: 'center', borderBottom: '1px solid #f2f2f2',
+};
+const input: React.CSSProperties = {
+  width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box',
+};
+const primaryBtn: React.CSSProperties = {
+  background: '#111', color: '#fff', border: '1px solid #111', padding: '10px 16px', borderRadius: 12, cursor: 'pointer', textDecoration: 'none',
+};
+const secondaryBtn: React.CSSProperties = {
+  background: '#fff', color: '#111', border: '1px solid #ddd', padding: '10px 16px', borderRadius: 12, cursor: 'pointer', textDecoration: 'none',
+};
+const linkDanger: React.CSSProperties = { color: '#b00020', textDecoration: 'underline', background: 'none', border: 0, cursor: 'pointer' };
+const iconBtn: React.CSSProperties = { background: '#f6f6f6', border: '1px solid #e1e1e1', borderRadius: 8, padding: '4px 8px', cursor: 'pointer' };
+const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 };
+const modalBackdrop: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)', display: 'grid', placeItems: 'center', zIndex: 30 };
+const modal: React.CSSProperties = {
+  width: 'min(720px, 92vw)', background: '#fff', borderRadius: 16, border: '1px solid #e6e6e6', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 18,
 };
 
-/* ---------- stepper ---------- */
-function Stepper({
-  value, setValue, min = 0, max = 999, ariaLabel,
-}: {
-  value: number; setValue: (n: number) => void; min?: number; max?: number; ariaLabel?: string;
-}) {
-  const dec = () => setValue(Math.max(min, value - 1));
-  const inc = () => setValue(Math.min(max, value + 1));
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 48px', gap: 0, alignItems: 'stretch' }}>
-      <button type="button" onClick={dec} aria-label={`decrease ${ariaLabel || 'value'}`} style={btnBox}>–</button>
-      <div style={valBox} aria-live="polite">{value}</div>
-      <button type="button" onClick={inc} aria-label={`increase ${ariaLabel || 'value'}`} style={btnBox}>+</button>
-    </div>
+/* ------------------------------ page ------------------------------- */
+export default function RoomsPage(): React.JSX.Element {
+  const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', rooms: [] }]);
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
+
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState<Room>({
+    zone: 0, type: '', name: '', maxCeiling: 2.4, intermittentPct: undefined, heatGainsW: undefined,
+  });
+
+  const roomTypes = useMemo(
+    () => ['Bedroom', 'Living Room', 'Kitchen', 'Bathroom', 'Hallway', 'Dining Room', 'Study', 'Garage', 'Porch', 'Other'],
+    []
   );
-}
-const btnBox: React.CSSProperties = {
-  border: '1px solid #ddd',
-  borderRadius: 10,
-  background: '#fff',
-  cursor: 'pointer',
-};
-const valBox: React.CSSProperties = {
-  border: '1px solid #ddd',
-  borderRadius: 10,
-  display: 'grid',
-  placeItems: 'center',
-  fontSize: 18,
-  fontWeight: 600,
-};
 
-/* ---------- page ---------- */
-export default function VentilationPage(): React.JSX.Element {
-  // zones
-  const [zones, setZones] = useState<number>(1);
+  const onOpenAddRoom = () => {
+    setForm({ zone: 0, type: '', name: '', maxCeiling: 2.4, intermittentPct: undefined, heatGainsW: undefined });
+    setShowModal(true);
+  };
 
-  // zone 1 numbers
-  const [storeys, setStoreys] = useState<number>(2);
-  const [facades, setFacades] = useState<number>(4);
-  const [sheltered, setSheltered] = useState<number>(0);
+  const onSaveRoom = () => {
+    if (!form.name.trim()) { alert('Please enter a Room Name.'); return; }
+    const z = [...zones];
+    z[form.zone] = { ...z[form.zone], rooms: [...z[form.zone].rooms, { ...form }] };
+    setZones(z);
+    setExpanded((e) => ({ ...e, [form.zone]: true }));
+    setShowModal(false);
+  };
 
-  // ventilation type
-  type VentType = 'natural' | 'mev' | 'mv' | 'mvhr' | 'piv' | '';
-  const [vtype, setVtype] = useState<VentType>('');
+  const onAddZone = () => {
+    const n = zones.length + 1;
+    setZones([...zones, { name: `Zone ${n}`, rooms: [] }]);
+    setExpanded((e) => ({ ...e, [zones.length]: true }));
+  };
 
-  const canContinue = useMemo(() => {
-    const validCounts = zones >= 1 && storeys >= 1 && facades >= 1 && sheltered >= 0 && sheltered <= facades;
-    return validCounts && !!vtype;
-  }, [zones, storeys, facades, sheltered, vtype]);
-
-  const saveDraft = () => {
-    // put this in localStorage or your store if you wish
-    const payload = { zones, zone1: { storeys, facades, sheltered, vtype } };
-    console.log('VENTILATION SAVE', payload);
+  const onRemoveRoom = (zoneIdx: number, idx: number) => {
+    const z = [...zones];
+    z[zoneIdx] = { ...z[zoneIdx], rooms: z[zoneIdx].rooms.filter((_, i) => i !== idx) };
+    setZones(z);
   };
 
   return (
-    <main
-      style={{
-        maxWidth: 1040,
-        margin: '0 auto',
-        padding: 24,
-        fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-      }}
-    >
-      <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Ventilation</h1>
+    <main style={wrap}>
+      <h1 style={h1}>Heated Rooms</h1>
+      <p style={subtle}>List the heated rooms and ceiling heights for each zone of the property.</p>
 
-      {/* Zones */}
+      {/* zones & rooms */}
       <section style={card}>
-        <h2 style={{ fontSize: 18, margin: 0, letterSpacing: 1.5 }}>VENTILATION ZONES</h2>
-        <p style={{ color: '#666', marginTop: 8 }}>
-          Enter the total number of distinct ventilation zones in the property.
-        </p>
-        <div style={{ marginTop: 12 }}>
-          <Label>Number of Ventilation Zones *</Label>
-          <Stepper value={zones} setValue={setZones} min={1} ariaLabel="number of ventilation zones" />
+        {zones.map((zone, zi) => (
+          <div key={zi} style={{ borderTop: zi ? '1px solid #eee' : undefined, paddingTop: zi ? 12 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <button onClick={() => setExpanded((e) => ({ ...e, [zi]: !e[zi] }))} style={iconBtn} aria-label="Toggle zone">
+                {expanded[zi] ? '▾' : '▸'}
+              </button>
+              <strong>{zone.name}</strong>
+            </div>
+
+            {expanded[zi] && (
+              <div>
+                {/* header row */}
+                <div style={rowHeader}>
+                  <div style={{ flex: 2 }}>Room Name</div>
+                  <div style={{ width: 140, textAlign: 'right' }}>Ceiling Height (m)</div>
+                  <div style={{ width: 80 }} />
+                </div>
+
+                {/* rooms */}
+                {zone.rooms.map((r, i) => (
+                  <div key={i} style={row}>
+                    <div style={{ flex: 2 }}>{r.name || <em style={muted}>Unnamed</em>}</div>
+                    <div style={{ width: 140, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
+                    <div style={{ width: 80, textAlign: 'right' }}>
+                      <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>Remove</button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* empty state */}
+                {!zone.rooms.length && <div style={{ ...muted, padding: '10px 4px' }}>No rooms in this zone yet.</div>}
+              </div>
+            )}
+          </div>
+        ))}
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+          <button onClick={onOpenAddRoom} style={primaryBtn as React.CSSProperties}>Add Room</button>
+          <button onClick={onAddZone} style={secondaryBtn as React.CSSProperties}>Add Zone</button>
         </div>
       </section>
 
-      {/* Zone 1 */}
-      <section style={{ ...card, marginTop: 16 }}>
-        <h2 style={{ fontSize: 18, margin: 0, letterSpacing: 1.5 }}>ZONE 1</h2>
-        <p style={{ color: '#666', marginTop: 8 }}>Enter information about this ventilation zone.</p>
+      {/* footer nav (INSIDE component) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
+        {/* Back to Ventilation (relative path for GH Pages) */}
+        <Link href="../ventilation/" style={secondaryBtn}>← Back: Ventilation</Link>
+        {/* Forward to Elements */}
+        <Link href="../elements/" style={primaryBtn}>Next: Building Elements →</Link>
+      </div>
 
-        <div style={{ display: 'grid', gap: 16, marginTop: 6 }}>
-          <div>
-            <Label>Number of Storeys *</Label>
-            <Stepper value={storeys} setValue={setStoreys} min={1} ariaLabel="number of storeys" />
-          </div>
+      {/* add-room modal */}
+      {showModal && (
+        <div style={modalBackdrop} onClick={() => setShowModal(false)}>
+          <div style={modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ margin: '0 0 10px' }}>Add Room</h2>
+            <p style={{ margin: '6px 0 12px', color: '#555' }}>Enter information about this room.</p>
 
-          <div>
-            <Label>Number of External Facades *</Label>
-            <Stepper value={facades} setValue={setFacades} min={1} ariaLabel="number of external facades" />
-          </div>
+            {/* Ventilation Zone + Room Type */}
+            <div style={grid2}>
+              <div>
+                <Label>Ventilation Zone *</Label>
+                <Select value={form.zone} onChange={(e) => setForm({ ...form, zone: Number(e.target.value) })}>
+                  {zones.map((z, i) => (
+                    <option key={i} value={i}>{z.name}</option>
+                  ))}
+                </Select>
+              </div>
 
-          <div>
-            <Label>How many facades are sheltered from the wind? *</Label>
-            <Stepper value={sheltered} setValue={setSheltered} min={0} max={facades} ariaLabel="sheltered facades" />
-            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>Must be ≤ number of external facades.</div>
+              <div>
+                <Label>Room Type *</Label>
+                <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                  <option value="">Select room type</option>
+                  {['Bedroom','Living Room','Kitchen','Bathroom','Hallway','Dining Room','Study','Garage','Porch','Other'].map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            {/* Room Name */}
+            <div>
+              <Label>Room Name *</Label>
+              <Input placeholder="e.g., Bedroom 1" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+
+            {/* Max Ceiling Height (m) */}
+            <div>
+              <Label>Max Ceiling Height</Label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.maxCeiling}
+                  onChange={(e) => setForm({ ...form, maxCeiling: Number(e.target.value || 0) })}
+                  style={{ maxWidth: 160 }}
+                />
+                <span style={{ ...muted, minWidth: 14 }}>m</span>
+              </div>
+            </div>
+
+            <h3 style={{ margin: '12px 0 6px' }}>Advanced usage</h3>
+
+            {/* Intermittent Heating (%) */}
+            <div>
+              <Label>Intermittent Heating</Label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Input
+                  type="number"
+                  placeholder="Optional"
+                  value={form.intermittentPct ?? ''}
+                  onChange={(e) => setForm({ ...form, intermittentPct: e.target.value === '' ? undefined : Number(e.target.value) })}
+                  style={{ maxWidth: 160 }}
+                />
+                <span style={{ ...muted, minWidth: 14 }}>%</span>
+              </div>
+              <p style={hint}>Adds an allowance for heat-up, as a % of fabric heat loss.</p>
+            </div>
+
+            {/* Heat Gains (W) */}
+            <div>
+              <Label>Heat Gains</Label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Input
+                  type="number"
+                  placeholder="Optional"
+                  value={form.heatGainsW ?? ''}
+                  onChange={(e) => setForm({ ...form, heatGainsW: e.target.value === '' ? undefined : Number(e.target.value) })}
+                  style={{ maxWidth: 160 }}
+                />
+                <span style={{ ...muted, minWidth: 14 }}>W</span>
+              </div>
+              <p style={hint}>Add gains from high occupancy, machinery, or solar.</p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+              <button onClick={() => setShowModal(false)} style={secondaryBtn as React.CSSProperties}>Cancel</button>
+              <button onClick={onSaveRoom} style={primaryBtn as React.CSSProperties}>Save room</button>
+            </div>
           </div>
         </div>
-      </section>
-
-      {/* Vent type */}
-      <section style={{ ...card, marginTop: 16 }}>
-        <h2 style={{ fontSize: 18, margin: 0, letterSpacing: 1.5 }}>VENTILATION TYPE</h2>
-        <p style={{ color: '#666', marginTop: 8 }}>Select the ventilation system this zone uses.</p>
-
-        <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-          <RadioRow id="v-natural" name="vent-type" checked={vtype === 'natural'} onChange={() => setVtype('natural')} title="Natural Ventilation" subtitle="Natural ventilation; may include extract fans in wet rooms." />
-          <RadioRow id="v-mev"     name="vent-type" checked={vtype === 'mev'}     onChange={() => setVtype('mev')}     title="Mechanical Extract Ventilation (MEV)" subtitle="Fan-assisted extract-only, unbalanced." />
-          <RadioRow id="v-mv"      name="vent-type" checked={vtype === 'mv'}      onChange={() => setVtype('mv')}      title="Mechanical Ventilation (MV)" subtitle="Supply + extract, balanced." />
-          <RadioRow id="v-mvhr"    name="vent-type" checked={vtype === 'mvhr'}    onChange={() => setVtype('mvhr')}    title="Mechanical Ventilation with Heat Recovery (MVHR)" subtitle="Whole-house HRV; efficiency required." />
-          <RadioRow id="v-piv"     name="vent-type" checked={vtype === 'piv'}     onChange={() => setVtype('piv')}     title="Positive Input Ventilation (PIV)" subtitle="Supply-only positive pressure." />
-        </div>
-
-        {/* Footer nav – Back + Next (rooms) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18 }}>
-          {/* Back to property (page 1) */}
-          <a
-            href={toPath('')}
-            style={{
-              border: '1px solid #ddd',
-              borderRadius: 10,
-              padding: '10px 16px',
-              textDecoration: 'none',
-              color: '#111',
-              background: '#fff',
-            }}
-          >
-            ← Back
-          </a>
-
-          {/* Next to Rooms with trailing slash; blocked until valid */}
-          <a
-            href={canContinue ? toPath('rooms/') : '#'}
-            onClick={(e) => {
-              if (!canContinue) { e.preventDefault(); return; }
-              saveDraft();
-            }}
-            style={{
-              border: '1px solid #111',
-              borderRadius: 10,
-              padding: '12px 18px',
-              textDecoration: 'none',
-              color: canContinue ? '#fff' : '#888',
-              background: canContinue ? '#111' : '#eee',
-              pointerEvents: canContinue ? 'auto' : 'none',
-            }}
-          >
-            Next: Rooms →
-          </a>
-        </div>
-      </section>
+      )}
     </main>
   );
 }
-
-/* ---------- radio row ---------- */
-function RadioRow({
-  id, name, checked, onChange, title, subtitle,
-}: {
-  id: string; name: string; checked: boolean; onChange: () => void; title: string; subtitle: string;
-}) {
-  return (
-    <label
-      htmlFor={id}
-      style={{
-        border: '1px solid #e6e6e6',
-        borderRadius: 12,
-        padding: 14,
-        display: 'grid',
-        gridTemplateColumns: '28px 1fr',
-        gap: 12,
-        alignItems: 'start',
-        cursor: 'pointer',
-      }}
-    >
-      <input id={id} name={name} type="radio" checked={checked} onChange={onChange} />
-      <div>
-        <div style={{ fontWeight: 600 }}>{title}</div>
-        <div style={{ color: '#666', fontSize: 13, marginTop: 2 }}>{subtitle}</div>
-      </div>
-    </label>
-  );
-}
-// app/rooms/page.tsx (footer)
-<Link href="/ventilation/">← Back: Ventilation</Link>
-<Link href="/elements/">Next: Building Elements →</Link>
