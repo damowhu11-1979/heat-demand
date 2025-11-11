@@ -1,14 +1,11 @@
 // next.config.mjs
 const isGhPages = process.env.GITHUB_PAGES === 'true';
-
-// If you publish at https://<user>.github.io/heat-demand
-// basePath/assetPrefix must be '/heat-demand'.
-const ghBase = '/heat-demand';
+const ghBase = '/heat-demand'; // <--- your repo name here
 
 /** @type {import('next').NextConfig} */
 const config = {
-  output: 'export',          // static export -> out/
-  trailingSlash: true,       // ensures /rooms/ -> rooms/index.html
+  output: 'export',
+  trailingSlash: true,
   basePath: isGhPages ? ghBase : '',
   assetPrefix: isGhPages ? `${ghBase}/` : '',
 };
