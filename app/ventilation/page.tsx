@@ -2,19 +2,6 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-
-/* ---------- base-path helpers (GH Pages / static export safe) ---------- */
-function repoBase(): string {
-  // e.g. /heat-demand/ when hosted at user.github.io/heat-demand
-  if (typeof window === 'undefined') return '/';
-  const seg = window.location.pathname.split('/').filter(Boolean);
-  return seg.length ? `/${seg[0]}/` : '/';
-}
-function toPath(p: string): string {
-  const base = repoBase();
-  return `${base}${p.replace(/^\/+/, '')}`;
-}
 
 /* ---------- small UI bits ---------- */
 function Label({ children }: { children: React.ReactNode }) {
@@ -25,6 +12,24 @@ const card: React.CSSProperties = {
   border: '1px solid #e6e6e6',
   borderRadius: 14,
   padding: 16,
+};
+const primaryBtn: React.CSSProperties = {
+  border: '1px solid #111',
+  background: '#111',
+  color: '#fff',
+  padding: '12px 18px',
+  borderRadius: 12,
+  textDecoration: 'none',
+  display: 'inline-block',
+};
+const secondaryBtn: React.CSSProperties = {
+  border: '1px solid #ddd',
+  background: '#fff',
+  color: '#111',
+  padding: '10px 16px',
+  borderRadius: 10,
+  textDecoration: 'none',
+  display: 'inline-block',
 };
 
 /* ---------- stepper ---------- */
@@ -60,8 +65,6 @@ const valBox: React.CSSProperties = {
 
 /* ---------- page ---------- */
 export default function VentilationPage(): React.JSX.Element {
-  const router = useRouter();
-
   // zones
   const [zones, setZones] = useState<number>(1);
 
@@ -75,20 +78,18 @@ export default function VentilationPage(): React.JSX.Element {
   const [vtype, setVtype] = useState<VentType>('');
 
   const canContinue = useMemo(() => {
-    const validCounts = zones >= 1 && storeys >= 1 && facades >= 1 && sheltered >= 0 && sheltered <= facades;
+    const validCounts =
+      zones >= 1 &&
+      storeys >= 1 &&
+      facades >= 1 &&
+      sheltered >= 0 &&
+      sheltered <= facades;
     return validCounts && !!vtype;
   }, [zones, storeys, facades, sheltered, vtype]);
 
   const saveDraft = () => {
     const payload = { zones, zone1: { storeys, facades, sheltered, vtype } };
     console.log('VENTILATION SAVE', payload);
-  };
-
-  const goNext = () => {
-    if (!canContinue) return;
-    saveDraft();
-    // project-relative navigation (works on GitHub Pages subpath)
-    router.push(toPath('rooms'));
   };
 
   return (
@@ -151,39 +152,33 @@ export default function VentilationPage(): React.JSX.Element {
           <RadioRow id="v-piv"     name="vent-type" checked={vtype === 'piv'}     onChange={() => setVtype('piv')}     title="Positive Input Ventilation (PIV)" subtitle="Supply-only positive pressure." />
         </div>
 
-        {/* Footer nav – Back + Next */}
+        {/* Footer nav – Back + Next (relative links for static hosting) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18 }}>
-          {/* Back goes to page 1 (project root) */}
-          <Link
-            href={toPath('')}
-            style={{
-              border: '1px solid #ddd',
-              borderRadius: 10,
-              padding: '10px 16px',
-              textDecoration: 'none',
-              color: '#111',
-              background: '#fff',
-            }}
-          >
+          {/* Back → page 1 (root) */}
+          <Link href="../" prefetch={false} style={secondaryBtn}>
             ← Back
           </Link>
 
-          {/* Next → Rooms (page 3) */}
-          <button
-            type="button"
-            onClick={goNext}
-            disabled={!canContinue}
-            style={{
-              borderRadius: 10,
-              padding: '12px 18px',
-              border: '1px solid #111',
-              background: canContinue ? '#111' : '#eee',
-              color: canContinue ? '#fff' : '#888',
-              cursor: canContinue ? 'pointer' : 'not-allowed',
+          {/* Next → Rooms. Always visible; disabled state blocks click. */}
+          <Link
+            href={canContinue ? '../rooms' : '#'}
+            prefetch={false}
+            onClick={(e) => {
+              if (!canContinue) {
+                e.preventDefault();
+                return;
+              }
+              saveDraft();
             }}
+            style={{
+              ...primaryBtn,
+              opacity: canContinue ? 1 : 0.55,
+              pointerEvents: canContinue ? 'auto' : 'none',
+            }}
+            aria-disabled={!canContinue}
           >
-            Save &amp; Continue →
-          </button>
+            Next: Rooms →
+          </Link>
         </div>
       </section>
     </main>
