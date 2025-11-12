@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import Link from 'next/link';
 
 /* ---------- small UI bits ---------- */
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
+
 const card: React.CSSProperties = {
   background: '#fff',
   border: '1px solid #e6e6e6',
@@ -145,27 +145,27 @@ export default function VentilationPage(): React.JSX.Element {
           <RadioRow id="v-piv"     name="vent-type" checked={vtype === 'piv'}     onChange={() => setVtype('piv')}     title="Positive Input Ventilation (PIV)" subtitle="Supply-only positive pressure." />
         </div>
 
-        {/* Footer nav – INSIDE the component */}
+        {/* Footer nav – plain anchors for GH Pages */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18 }}>
-          {/* Back to property (page 1). Relative path works on GH Pages */}
-          <Link href="../" style={secondaryBtn}>
-            ← Back
-          </Link>
+          {/* Back to property (page 1) */}
+          <a href="../" style={secondaryBtn}>← Back</a>
 
-          {/* Next to Rooms. Disabled look if not ready */}
-          <Link
+          {/* Next to Rooms (relative path). Disabled look if incomplete */}
+          <a
             href={canContinue ? '../rooms/' : '#'}
-            onClick={(e) => { if (!canContinue) e.preventDefault(); else saveDraft(); }}
+            onClick={(e) => {
+              if (!canContinue) { e.preventDefault(); return; }
+              saveDraft();
+            }}
             style={{
               ...primaryBtn,
               background: canContinue ? '#111' : '#eee',
               color: canContinue ? '#fff' : '#888',
-              borderColor: '#111',
               pointerEvents: canContinue ? 'auto' : 'none',
             }}
           >
             Next: Rooms →
-          </Link>
+          </a>
         </div>
       </section>
     </main>
