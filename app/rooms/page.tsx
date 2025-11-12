@@ -1,47 +1,95 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
-/* ------------------------------ types ------------------------------ */
+/* ------------------------------------------------------------------ */
+/*                     Age-band → design setpoints                     */
+/* ------------------------------------------------------------------ */
+/**
+ * MCS-style internal design setpoints (°C).
+ * Tweak these if your “Reference Sources – design conditions” table differs.
+ * Keys in the inner map should match your Room Type options.
+ */
+const DESIGN_SETPOINTS: Record<
+  string,
+  Partial<Record<string, number>> & { default: number }
+> = {
+  'pre-1900':            { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '1900-1929':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '1930-1949':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '1950-1966':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '1967-1975':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '1976-1982':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '1983-1990':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '1991-1995':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '1996-2002':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '2003-2006':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '2007-2011':           { default: 18, 'Living Room': 21, Bathroom: 22 },
+  '2012-present':        { default: 18, 'Living Room': 21, Bathroom: 22 },
+  // Fallback “unknown”
+  unknown:               { default: 18, 'Living Room': 21, Bathroom: 22 },
+};
+
+function getAgeBandFromStorage(): string {
+  try {
+    // Prefer a structured key if you later save a full object:
+    //   localStorage.setItem('mcs.property', JSON.stringify({ ageBand: '1996-2002', ... }))
+    const blob = localStorage.getItem('mcs.property');
+    if (blob) {
+      const obj = JSON.parse(blob);
+      if (obj && typeof obj.ageBand === 'string' && obj.ageBand.trim()) return obj.ageBand;
+    }
+    // Or a dedicated single key:
+    const ab = localStorage.getItem('mcs.property.ageBand');
+    if (ab && ab.trim()) return ab;
+  } catch { /* ignore */ }
+  return '2012-present';
+}
+
+function roomSetpoint(ageBand: string, roomType: string): number {
+  const ab = DESIGN_SETPOINTS[ageBand] || DESIGN_SETPOINTS.unknown;
+  const hit = (ab[roomType] ?? ab.default);
+  return typeof hit === 'number' ? hit : DESIGN_SETPOINTS.unknown.default;
+}
+
+/* ------------------------------------------------------------------ */
+/*                               types                                */
+/* ------------------------------------------------------------------ */
 type Room = {
   zone: number;             // 0-based zone index
-  type: string;             // Bedroom, Living, etc
+  type: string;             // e.g., Bedroom, Living Room, etc.
   name: string;             // free text
-  maxCeiling: number;       // metres (m)
-  designTemp: number;       // °C
-  ach: number;              // air changes per hour (1/h)
+  maxCeiling: number;       // metres
+  setpointC: number;        // °C (auto from age band + room type)
+  intermittentPct?: number; // %
+  heatGainsW?: number;      // W
 };
 
 type Zone = { name: string; rooms: Room[] };
 
-/* ------------------------------ page ------------------------------- */
+/* ------------------------------------------------------------------ */
+/*                                Page                                */
+/* ------------------------------------------------------------------ */
 export default function RoomsPage(): React.JSX.Element {
+  // detected age band
+  const [ageBand, setAgeBand] = useState<string>('2012-present');
+
+  useEffect(() => {
+    setAgeBand(getAgeBandFromStorage());
+  }, []);
+
   // zones & rooms
-  const [zones, setZones] = useState<Zone[]>([
-    { name: 'Zone 1', rooms: [] },
-  ]);
+  const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', rooms: [] }]);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
 
-  // modal state (add/edit)
+  // add-room modal
   const [showModal, setShowModal] = useState(false);
-  const [editRef, setEditRef] = useState<{ zi: number; ri: number } | null>(null);
-
-  const [form, setForm] = useState<Room>({
-    zone: 0,
-    type: '',
-    name: '',
-    maxCeiling: 2.4,
-    designTemp: 18,
-    ach: 1.0,
-  });
-
   const roomTypes = useMemo(
     () => [
-      'Bedroom',
       'Living Room',
+      'Bedroom',
       'Kitchen',
-      'toilet (WC)',
       'Bathroom',
       'Hallway',
       'Dining Room',
@@ -53,86 +101,83 @@ export default function RoomsPage(): React.JSX.Element {
     []
   );
 
-  function openAddRoom() {
-    setEditRef(null);
+  const [form, setForm] = useState<Room>({
+    zone: 0,
+    type: '',
+    name: '',
+    maxCeiling: 2.4,
+    setpointC: roomSetpoint('2012-present', ''), // will update as type/ageBand change
+    intermittentPct: undefined,
+    heatGainsW: undefined,
+  });
+
+  // keep form.setpointC in sync with age band + type
+  useEffect(() => {
+    setForm((f) => ({ ...f, setpointC: roomSetpoint(ageBand, f.type) }));
+  }, [ageBand]);
+
+  useEffect(() => {
+    setForm((f) => ({ ...f, setpointC: roomSetpoint(ageBand, f.type) }));
+  }, [form.type]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onOpenAddRoom = () => {
     setForm({
       zone: 0,
       type: '',
       name: '',
       maxCeiling: 2.4,
-      designTemp: 18,
-      ach: 1.0,
+      setpointC: roomSetpoint(ageBand, ''),
+      intermittentPct: undefined,
+      heatGainsW: undefined,
     });
     setShowModal(true);
-  }
+  };
 
-  function openEditRoom(zi: number, ri: number) {
-    const r = zones[zi].rooms[ri];
-    setEditRef({ zi, ri });
-    setForm({ ...r });
-    setShowModal(true);
-  }
-
-  function saveRoom() {
+  const onSaveRoom = () => {
     if (!form.name.trim()) {
       alert('Please enter a Room Name.');
       return;
     }
     const z = [...zones];
-
-    if (editRef) {
-      // update existing
-      const { zi, ri } = editRef;
-      const list = [...z[zi].rooms];
-      list[ri] = { ...form };
-      z[zi] = { ...z[zi], rooms: list };
-    } else {
-      // add new
-      z[form.zone] = { ...z[form.zone], rooms: [...z[form.zone].rooms, { ...form }] };
-    }
-
+    z[form.zone] = {
+      ...z[form.zone],
+      rooms: [...z[form.zone].rooms, { ...form }],
+    };
     setZones(z);
     setExpanded((e) => ({ ...e, [form.zone]: true }));
     setShowModal(false);
-  }
+  };
 
-  function removeRoom(zi: number, ri: number) {
-    const z = [...zones];
-    z[zi] = { ...z[zi], rooms: z[zi].rooms.filter((_, i) => i !== ri) };
-    setZones(z);
-  }
-
-  function addZone() {
+  const onAddZone = () => {
     const n = zones.length + 1;
     setZones([...zones, { name: `Zone ${n}`, rooms: [] }]);
     setExpanded((e) => ({ ...e, [zones.length]: true }));
-  }
+  };
+
+  const onRemoveRoom = (zoneIdx: number, idx: number) => {
+    const z = [...zones];
+    z[zoneIdx] = { ...z[zoneIdx], rooms: z[zoneIdx].rooms.filter((_, i) => i !== idx) };
+    setZones(z);
+  };
 
   return (
     <main style={wrap}>
       <h1 style={h1}>Heated Rooms</h1>
       <p style={subtle}>
-        List the heated rooms and conditioned spaces within each zone of the property.
+        List the heated rooms and ceiling heights for each zone of the property.
       </p>
+      <div style={{ ...badge, marginBottom: 10 }}>
+        Age band: <strong style={{ marginLeft: 6 }}>{ageBand}</strong>
+      </div>
 
       {/* zones & rooms */}
       <section style={card}>
-        {/* table header */}
-        <div style={tableHeader}>
-          <div style={{ flex: 2 }}>Room Name</div>
-          <div style={{ width: 120, textAlign: 'right' }}>Ceiling Height<br/>(m)</div>
-          <div style={{ width: 120, textAlign: 'right' }}>Design Temp<br/>(°C)</div>
-          <div style={{ width: 120, textAlign: 'right' }}>Air Change Rate<br/>(1/h)</div>
-          <div style={{ width: 140 }} />
-        </div>
-
         {zones.map((zone, zi) => (
           <div
             key={zi}
             style={{ borderTop: zi ? '1px solid #eee' : undefined, paddingTop: zi ? 12 : 0 }}
           >
-            {/* zone row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0 6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <button
                 onClick={() => setExpanded((e) => ({ ...e, [zi]: !e[zi] }))}
                 style={iconBtn}
@@ -145,23 +190,33 @@ export default function RoomsPage(): React.JSX.Element {
 
             {expanded[zi] && (
               <div>
+                {/* header row */}
+                <div style={rowHeader}>
+                  <div style={{ flex: 2 }}>Room Name</div>
+                  <div style={{ width: 140, textAlign: 'right' }}>Ceiling Height (m)</div>
+                  <div style={{ width: 140, textAlign: 'right' }}>Design Temp (°C)</div>
+                  <div style={{ width: 80 }} />
+                </div>
+
                 {/* rooms */}
                 {zone.rooms.map((r, i) => (
                   <div key={i} style={row}>
                     <div style={{ flex: 2 }}>{r.name || <em style={muted}>Unnamed</em>}</div>
-                    <div style={{ width: 120, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
-                    <div style={{ width: 120, textAlign: 'right' }}>{r.designTemp.toFixed(1)}</div>
-                    <div style={{ width: 120, textAlign: 'right' }}>{r.ach.toFixed(1)}</div>
-                    <div style={{ width: 140, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button onClick={() => openEditRoom(zi, i)} style={chipBtn}>✎ Edit</button>
-                      <button onClick={() => removeRoom(zi, i)} style={chipDanger}>🗑 Delete</button>
+                    <div style={{ width: 140, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
+                    <div style={{ width: 140, textAlign: 'right' }}>{r.setpointC.toFixed(1)}</div>
+                    <div style={{ width: 80, textAlign: 'right' }}>
+                      <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>
+                        Remove
+                      </button>
                     </div>
                   </div>
                 ))}
 
                 {/* empty state */}
                 {!zone.rooms.length && (
-                  <div style={{ ...muted, padding: '10px 4px' }}>No rooms in this zone yet.</div>
+                  <div style={{ ...muted, padding: '10px 4px' }}>
+                    No rooms in this zone yet.
+                  </div>
                 )}
               </div>
             )}
@@ -169,31 +224,36 @@ export default function RoomsPage(): React.JSX.Element {
         ))}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button onClick={openAddRoom} style={primaryBtn}>+ Add Room</button>
-          <button onClick={addZone} style={secondaryBtn}>+ Add Zone</button>
+          <button onClick={onOpenAddRoom} style={primaryBtn}>
+            Add Room
+          </button>
+          <button onClick={onAddZone} style={secondaryBtn}>
+            Add Zone
+          </button>
         </div>
       </section>
 
-      {/* page footer nav – relative URLs so GH Pages subpath works */}
+      {/* footer nav */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
+        {/* use a project-relative path (works when statically hosted) */}
         <Link href="../ventilation/" style={{ ...secondaryBtn, textDecoration: 'none' }}>
-          ← Back
+          ← Back: Ventilation
         </Link>
         <Link href="../elements/" style={{ ...primaryBtn, textDecoration: 'none' }}>
-          Save &amp; Continue →
+          Next: Building Elements →
         </Link>
       </div>
 
-      {/* modal */}
+      {/* add-room modal */}
       {showModal && (
         <div style={modalBackdrop} onClick={() => setShowModal(false)}>
           <div style={modal} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 10px' }}>{editRef ? 'Edit Room' : 'Add Room'}</h2>
+            <h2 style={{ margin: '0 0 10px' }}>Add Room</h2>
             <p style={{ margin: '6px 0 12px', color: '#555' }}>
               Enter information about this room.
             </p>
 
-            {/* Zone + Room Type */}
+            {/* Ventilation Zone + Room Type */}
             <div style={grid2}>
               <div>
                 <Label>Ventilation Zone *</Label>
@@ -202,7 +262,9 @@ export default function RoomsPage(): React.JSX.Element {
                   onChange={(e) => setForm({ ...form, zone: Number(e.target.value) })}
                 >
                   {zones.map((z, i) => (
-                    <option key={i} value={i}>{z.name}</option>
+                    <option key={i} value={i}>
+                      {z.name}
+                    </option>
                   ))}
                 </Select>
               </div>
@@ -211,11 +273,19 @@ export default function RoomsPage(): React.JSX.Element {
                 <Label>Room Type *</Label>
                 <Select
                   value={form.type}
-                  onChange={(e) => setForm({ ...form, type: e.target.value })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      type: e.target.value,
+                      setpointC: roomSetpoint(ageBand, e.target.value),
+                    })
+                  }
                 >
                   <option value="">Select room type</option>
                   {roomTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
                   ))}
                 </Select>
               </div>
@@ -231,43 +301,98 @@ export default function RoomsPage(): React.JSX.Element {
               />
             </div>
 
-            {/* Ceiling / Design temp / ACH */}
-            <div style={grid3}>
-              <div>
-                <Label>Max Ceiling Height (m)</Label>
+            {/* Max Ceiling Height (m) */}
+            <div>
+              <Label>Max Ceiling Height</Label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <Input
                   type="number"
                   step="0.01"
                   value={form.maxCeiling}
-                  onChange={(e) => setForm({ ...form, maxCeiling: Number(e.target.value || 0) })}
+                  onChange={(e) =>
+                    setForm({ ...form, maxCeiling: Number(e.target.value || 0) })
+                  }
+                  style={{ maxWidth: 160 }}
                 />
-              </div>
-
-              <div>
-                <Label>Design Temp (°C)</Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={form.designTemp}
-                  onChange={(e) => setForm({ ...form, designTemp: Number(e.target.value || 0) })}
-                />
-              </div>
-
-              <div>
-                <Label>Air Change Rate (1/h)</Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={form.ach}
-                  onChange={(e) => setForm({ ...form, ach: Number(e.target.value || 0) })}
-                />
+                <span style={{ ...muted, minWidth: 14 }}>m</span>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
-              <button onClick={() => setShowModal(false)} style={secondaryBtn}>Cancel</button>
-              <button onClick={saveRoom} style={primaryBtn}>
-                {editRef ? 'Save changes' : 'Save room'}
+            {/* Auto design setpoint (read-only) */}
+            <div>
+              <Label>Design Temperature (auto) *</Label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Input
+                  readOnly
+                  value={form.setpointC.toFixed(1)}
+                  style={{ maxWidth: 160, background: '#f9f9f9' }}
+                />
+                <span style={{ ...muted, minWidth: 14 }}>°C</span>
+              </div>
+              <p style={hint}>
+                Calculated from Age Band <strong>{ageBand}</strong> and Room Type.
+                You can adjust the mapping in <code>DESIGN_SETPOINTS</code>.
+              </p>
+            </div>
+
+            <h3 style={{ margin: '12px 0 6px' }}>Advanced usage</h3>
+
+            {/* Intermittent Heating (%) */}
+            <div>
+              <Label>Intermittent Heating</Label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Input
+                  type="number"
+                  placeholder="Optional"
+                  value={form.intermittentPct ?? ''}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      intermittentPct:
+                        e.target.value === '' ? undefined : Number(e.target.value),
+                    })
+                  }
+                  style={{ maxWidth: 160 }}
+                />
+                <span style={{ ...muted, minWidth: 14 }}>%</span>
+              </div>
+              <p style={hint}>
+                Adds an additional allowance for heating up to the space heating load.
+                Calculated as a percentage of fabric heat loss.
+              </p>
+            </div>
+
+            {/* Heat Gains (W) */}
+            <div>
+              <Label>Heat Gains</Label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Input
+                  type="number"
+                  placeholder="Optional"
+                  value={form.heatGainsW ?? ''}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      heatGainsW:
+                        e.target.value === '' ? undefined : Number(e.target.value),
+                    })
+                  }
+                  style={{ maxWidth: 160 }}
+                />
+                <span style={{ ...muted, minWidth: 14 }}>W</span>
+              </div>
+              <p style={hint}>
+                Add any additional heat gain sources such as high occupancy, machinery or
+                solar gains through windows.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+              <button onClick={() => setShowModal(false)} style={secondaryBtn}>
+                Cancel
+              </button>
+              <button onClick={onSaveRoom} style={primaryBtn}>
+                Save room
               </button>
             </div>
           </div>
@@ -279,7 +404,11 @@ export default function RoomsPage(): React.JSX.Element {
 
 /* ------------------------------ UI bits ------------------------------ */
 function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 12, color: '#555', margin: '12px 0 6px' }}>{children}</label>;
+  return (
+    <label style={{ display: 'block', fontSize: 12, color: '#555', margin: '12px 0 6px' }}>
+      {children}
+    </label>
+  );
 }
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ ...input, ...(props.style || {}) }} />;
@@ -298,6 +427,17 @@ const wrap: React.CSSProperties = {
 const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 8px' };
 const muted: React.CSSProperties = { color: '#777', fontStyle: 'normal' };
 const subtle: React.CSSProperties = { color: '#666', fontSize: 13, lineHeight: 1.45 };
+const hint: React.CSSProperties = { color: '#777', fontSize: 12, marginTop: 4, lineHeight: 1.4 };
+
+const badge: React.CSSProperties = {
+  display: 'inline-block',
+  fontSize: 12,
+  color: '#333',
+  background: '#f4f6f8',
+  border: '1px solid #e5e8eb',
+  padding: '6px 10px',
+  borderRadius: 10,
+};
 
 const card: React.CSSProperties = {
   background: '#fff',
@@ -306,16 +446,14 @@ const card: React.CSSProperties = {
   padding: 16,
 };
 
-const tableHeader: React.CSSProperties = {
+const rowHeader: React.CSSProperties = {
   display: 'flex',
   gap: 8,
   padding: '8px 4px',
   color: '#555',
   fontSize: 12,
   borderBottom: '1px solid #eee',
-  fontWeight: 600,
 };
-
 const row: React.CSSProperties = {
   display: 'flex',
   gap: 8,
@@ -348,25 +486,14 @@ const secondaryBtn: React.CSSProperties = {
   padding: '10px 16px',
   borderRadius: 12,
   cursor: 'pointer',
-  display: 'inline-block',
 };
-const chipBtn: React.CSSProperties = {
-  background: '#fff',
-  color: '#111',
-  border: '1px solid #bbb',
-  padding: '6px 10px',
-  borderRadius: 10,
-  cursor: 'pointer',
-};
-const chipDanger: React.CSSProperties = {
-  background: '#fff',
+const linkDanger: React.CSSProperties = {
   color: '#b00020',
-  border: '1px solid #e3a3a8',
-  padding: '6px 10px',
-  borderRadius: 10,
+  textDecoration: 'underline',
+  background: 'none',
+  border: 0,
   cursor: 'pointer',
 };
-
 const iconBtn: React.CSSProperties = {
   background: '#f6f6f6',
   border: '1px solid #e1e1e1',
@@ -380,11 +507,6 @@ const grid2: React.CSSProperties = {
   gridTemplateColumns: 'repeat(2, 1fr)',
   gap: 12,
 };
-const grid3: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(3, 1fr)',
-  gap: 12,
-};
 
 const modalBackdrop: React.CSSProperties = {
   position: 'fixed',
@@ -395,7 +517,7 @@ const modalBackdrop: React.CSSProperties = {
   zIndex: 30,
 };
 const modal: React.CSSProperties = {
-  width: 'min(760px, 92vw)',
+  width: 'min(720px, 92vw)',
   background: '#fff',
   borderRadius: 16,
   border: '1px solid #e6e6e6',
