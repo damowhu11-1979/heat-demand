@@ -2,7 +2,25 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+// ---- storage helpers (safe on static export) ----
+function readProperty(): any {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('mcs.property');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
+function writeProperty(obj: any) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('mcs.property', JSON.stringify(obj));
+  } catch {
+    // ignore quota errors etc.
+  }
+}
 /* ------------------------------ Config ------------------------------ */
 const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
 
@@ -428,6 +446,45 @@ export default function Page(): React.JSX.Element {
               onChange={(e) => setAddress(e.target.value)}
             />
           </div>
+          // Load saved form values (if any) when the page opens
+useEffect(() => {
+  const saved = readProperty();
+  if (!saved) return;
+
+  if (typeof saved.reference === 'string') setReference(saved.reference);
+  if (typeof saved.postcode === 'string') setPostcode(saved.postcode);
+  if (typeof saved.country === 'string') setCountry(saved.country);
+  if (typeof saved.address === 'string') setAddress(saved.address);
+  if (typeof saved.epcNo === 'string') setEpcNo(saved.epcNo);
+  if (typeof saved.uprn === 'string') setUprn(saved.uprn);
+
+  if (typeof saved.altitude === 'number') setAltitude(saved.altitude);
+  if (typeof saved.tex === 'number') setTex(saved.tex);
+  if (typeof saved.hdd === 'number') setHdd(saved.hdd);
+
+  if (typeof saved.dwelling === 'string') setDwelling(saved.dwelling);
+  if (typeof saved.subtype === 'string') setSubtype(saved.subtype);
+  if (typeof saved.ageBand === 'string') setAgeBand(saved.ageBand); // <- IMPORTANT
+  if (typeof saved.occupants === 'number') setOccupants(saved.occupants);
+  if (typeof saved.mode === 'string') setMode(saved.mode);
+  if (typeof saved.airtight === 'string') setAirtight(saved.airtight);
+  if (typeof saved.thermalTest === 'string') setThermalTest(saved.thermalTest);
+}, []);
+    // Auto-save to localStorage as the user edits (every 400ms of inactivity)
+useEffect(() => {
+  const payload = {
+    reference, postcode, country, address, epcNo, uprn,
+    altitude: altitude === '' ? undefined : altitude,
+    tex:      tex      === '' ? undefined : tex,
+    hdd:      hdd      === '' ? undefined : hdd,
+    dwelling, subtype, ageBand, occupants, mode, airtight, thermalTest,
+  };
+  const t = setTimeout(() => writeProperty(payload), 400);
+  return () => clearTimeout(t);
+}, [
+  reference, postcode, country, address, epcNo, uprn,
+  altitude, tex, hdd, dwelling, subtype, ageBand, occupants, mode, airtight, thermalTest
+]);
 {/* EPC Number */}
 <div>
   <Label>EPC Number *</Label>
