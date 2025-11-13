@@ -3,15 +3,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
-/* --------------------------- storage helpers --------------------------- */
+/* --------------------------- storage + types --------------------------- */
 type ElementRow = { name: string; category: string; uValue?: number | '' };
 type ElementsState = {
   walls: ElementRow[];
   floors: ElementRow[];
   ceilings: ElementRow[];
   doors: ElementRow[];
-  windows: ElementRow[]; // windows can optionally have a known U-value
+  windows: ElementRow[];
 };
+type SectionKey = keyof ElementsState; // <-- moved to top-level
 
 const EMPTY: ElementsState = {
   walls: [],
@@ -36,31 +37,25 @@ function writeElements(next: ElementsState) {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem('mcs.elements', JSON.stringify(next));
-  } catch {/* ignore quota errors */}
+  } catch {}
 }
 
-/* ------------------------------- page ---------------------------------- */
+/* -------------------------------- page --------------------------------- */
 export default function ElementsPage(): React.JSX.Element {
-  // all element lists
   const [els, setEls] = useState<ElementsState>(EMPTY);
 
-  // add/edit modal state
-  type SectionKey = keyof ElementsState; // "walls" | "floors" | "ceilings" | "doors" | "windows"
+  // modal state
   const [showModal, setShowModal] = useState(false);
   const [section, setSection] = useState<SectionKey>('walls');
   const [form, setForm] = useState<ElementRow>({ name: '', category: '', uValue: '' });
   const [editIndex, setEditIndex] = useState<number | null>(null);
 
-  // load on mount
   useEffect(() => setEls(readElements()), []);
-
-  // auto-save with small debounce
   useEffect(() => {
     const t = setTimeout(() => writeElements(els), 250);
     return () => clearTimeout(t);
   }, [els]);
 
-  // modal helpers
   const openAdd = (sec: SectionKey) => {
     setSection(sec);
     setForm({ name: '', category: '', uValue: '' });
@@ -97,7 +92,6 @@ export default function ElementsPage(): React.JSX.Element {
     setEls({ ...els, [sec]: list });
   };
 
-  // simple counts for left ticks (optional UX flair)
   const allGood = useMemo(
     () => ({
       property: true,
@@ -112,8 +106,8 @@ export default function ElementsPage(): React.JSX.Element {
     <main style={wrap}>
       <h1 style={h1}>Building Elements</h1>
       <p style={subtle}>
-        List all unique element types that exist within the heated envelope. You’ll select from these
-        when detailing each room.
+        List all unique element types that exist within the heated envelope. You’ll select from these when
+        detailing each room.
       </p>
 
       <Section
@@ -171,9 +165,7 @@ export default function ElementsPage(): React.JSX.Element {
         onRemove={(i) => removeRow('windows', i)}
       />
 
-      {/* footer nav */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
-        {/* relative links keep GitHub Pages happy */}
         <Link href="../rooms/" style={{ ...secondaryBtn, textDecoration: 'none' }}>
           ← Back: Heated Rooms
         </Link>
@@ -182,7 +174,6 @@ export default function ElementsPage(): React.JSX.Element {
         </Link>
       </div>
 
-      {/* add/edit modal */}
       {showModal && (
         <div style={modalBackdrop} onClick={() => setShowModal(false)}>
           <div style={modal} onClick={(e) => e.stopPropagation()}>
@@ -216,7 +207,6 @@ export default function ElementsPage(): React.JSX.Element {
               </div>
             </div>
 
-            {/* Only for windows with known U-value */}
             {section === 'windows' && form.category === 'Known U-Value' && (
               <div style={{ marginTop: 10 }}>
                 <Label>Design / Measured U-Value (W/m²·K)</Label>
@@ -330,19 +320,7 @@ function categoriesFor(sec: SectionKey): string[] {
   if (sec === 'floors') return ['Ground Floor', 'Intermediate Floor', 'Exposed Floor'];
   if (sec === 'ceilings') return ['Internal Ceiling', 'Ceiling to Roof', 'Ceiling to Void'];
   if (sec === 'doors') return ['External Door', 'Internal Door'];
-  // windows
-  return ['External Window', 'Internal Window', 'Known U-Value'];
-}
-
-/* ------------------------------- UI bits ------------------------------- */
-function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
-}
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} style={{ ...input, ...(props.style || {}) }} />;
-}
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} style={{ ...input, ...(props.style || {}) }} />;
+  return ['External Window', 'Internal Window', 'Known U-Value']; // windows
 }
 
 /* -------------------------------- styles -------------------------------- */
