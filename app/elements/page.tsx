@@ -12,7 +12,7 @@ type ElementsState = {
   doors: ElementRow[];
   windows: ElementRow[];
 };
-type SectionKey = keyof ElementsState; // <-- moved to top-level
+type SectionKey = keyof ElementsState;
 
 const EMPTY: ElementsState = {
   walls: [],
@@ -320,7 +320,18 @@ function categoriesFor(sec: SectionKey): string[] {
   if (sec === 'floors') return ['Ground Floor', 'Intermediate Floor', 'Exposed Floor'];
   if (sec === 'ceilings') return ['Internal Ceiling', 'Ceiling to Roof', 'Ceiling to Void'];
   if (sec === 'doors') return ['External Door', 'Internal Door'];
-  return ['External Window', 'Internal Window', 'Known U-Value']; // windows
+  return ['External Window', 'Internal Window', 'Known U-Value'];
+}
+
+/* ------------------------------ small UI bits --------------------------- */
+function Label({ children }: { children: React.ReactNode }) {
+  return <label style={{ display: 'block', fontSize: 12, color: '#555', margin: '12px 0 6px' }}>{children}</label>;
+}
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} style={{ ...input, ...(props.style || {}) }} />;
+}
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={{ ...input, ...(props.style || {}) }} />;
 }
 
 /* -------------------------------- styles -------------------------------- */
