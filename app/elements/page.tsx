@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import ClearDataButton from '@/components/ClearDataButton';
+import ClearDataButton from './components/ClearDataButton';
 
 export default function Page() {
   return (
