@@ -15,7 +15,7 @@ export default function ElementsPage(): React.JSX.Element {
       {/* page header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h1 style={{ margin: 0 }}>Building Elements</h1>
-        <ClearDataButton />
+        
       </div>
 
       {/* ...the rest of your existing elements page UI... */}
