@@ -112,7 +112,7 @@ const U_TABLE = {
   },
 } as const;
 
-function lerp(p: { t: number; u: number }[], t: number): number {
+function lerp(p: ReadonlyArray<{ t: number; u: number }>, t: number): number {
   if (!p.length) return NaN;
   if (t <= p[0].t) return p[0].u;
   const last = p[p.length - 1];
