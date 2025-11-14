@@ -3,11 +3,15 @@
 export default function ClearDataButton() {
   const clearAll = () => {
     try {
+      // property page
       localStorage.removeItem('mcs.property');
+      // rooms page
       localStorage.removeItem('mcs.rooms');
+      // elements page (v1 key you’re using)
       localStorage.removeItem('mcs.elements.v1');
+
       alert('All saved data cleared.');
-      // optional: hard refresh
+      // optional: fully refresh to ensure forms reset
       window.location.reload();
     } catch {
       alert('Unable to clear saved data (storage not available).');
