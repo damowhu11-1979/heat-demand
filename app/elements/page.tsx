@@ -2,20 +2,28 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import ClearDataButton from './components/ClearDataButton';
+import ClearDataButton from '../components/ClearDataButton'; // <- relative path
 
-export default function Page() {
+/* ================================================================
+   UI component
+================================================================ */
+
+export default function ElementsPage(): React.JSX.Element {
+  // ... your state, effects, helpers etc. that were already here ...
+
   return (
     <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0 }}>Your Page Title</h1>
+      {/* page header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h1 style={{ margin: 0 }}>Building Elements</h1>
         <ClearDataButton />
       </div>
 
-      {/* ...rest of your page... */}
+      {/* ...the rest of your existing elements page UI... */}
     </main>
   );
 }
+
 /* ============================================================================
    Persistence helpers
 ============================================================================ */
