@@ -2,8 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import ClearDataButton from '../components/ClearDataButton'; // <- relative path
-
+import ClearDataButton from '@/components/ClearDataButton';
 /* ================================================================
    UI component
 ================================================================ */
