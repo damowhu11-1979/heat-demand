@@ -1,6 +1,5 @@
 'use client';
 import ClearDataButton from '@/components/ClearDataButton';
-
 export default function Page() {
   return (
     <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24 }}>
