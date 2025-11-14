@@ -1,4 +1,7 @@
 'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import ClearDataButton from '@/components/ClearDataButton';
 
 export default function Page() {
@@ -13,10 +16,6 @@ export default function Page() {
     </main>
   );
 }
-
-import React, { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-
 /* ============================================================================
    Persistence helpers
 ============================================================================ */
