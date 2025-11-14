@@ -1,103 +1,98 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 
-/* ----------------------------- storage helpers ----------------------------- */
-type ElementsStore = {
-  floors: FloorType[];
-  // ... add walls/roofs later
-};
+/* ============================================================================
+   Persistence helpers
+============================================================================ */
+const LS_KEY = 'mcs.elements.v1';
+const PROP_KEY = 'mcs.property'; // used only to read ageBand you set on page 1
 
-const LS_KEY = 'mcs.elements';
-function readElements(): ElementsStore {
-  if (typeof window === 'undefined') return { floors: [] };
+function readJSON<T>(k: string): T | null {
+  if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? (JSON.parse(raw) as ElementsStore) : { floors: [] };
+    const raw = localStorage.getItem(k);
+    return raw ? (JSON.parse(raw) as T) : null;
   } catch {
-    return { floors: [] };
+    return null;
   }
 }
-function writeElements(s: ElementsStore) {
+function writeJSON(k: string, v: unknown) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(s));
-  } catch {}
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch {
+    /* ignore quota errors */
+  }
 }
 
-/* ----------------------------------- UI ----------------------------------- */
-function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
-}
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
-}
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
-}
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #ddd',
-  outline: 'none',
-  boxSizing: 'border-box',
-};
-const primaryBtn: React.CSSProperties = {
-  background: '#111',
-  color: '#fff',
-  border: '1px solid #111',
-  padding: '10px 16px',
-  borderRadius: 12,
-  cursor: 'pointer',
-};
-const secondaryBtn: React.CSSProperties = {
-  background: '#fff',
-  color: '#111',
-  border: '1px solid #ddd',
-  padding: '10px 16px',
-  borderRadius: 12,
-  cursor: 'pointer',
-};
-const card: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #e6e6e6',
-  borderRadius: 14,
-  padding: 16,
-};
-const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 };
-const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 };
+/* ============================================================================
+   Types
+============================================================================ */
+type SectionKey = 'walls' | 'floors';
 
-/* ----------------------------- floor data model ---------------------------- */
+type AgeBand =
+  | 'pre-1900' | '1900-1929' | '1930-1949' | '1950-1966'
+  | '1967-1975' | '1976-1982' | '1983-1990' | '1991-1995'
+  | '1996-2002' | '2003-2006' | '2007-2011' | '2012-present';
 
-type FloorCategory =
-  | 'ground-known-insulation' // “Ground Floor (known insulation)”
-  | 'exposed'                 // over garage/outside air
-  | 'internal'                // between storeys (normally ~0)
-  | 'knownU';                 // user enters U directly
+type WallCategory = 'External' | 'Internal' | 'Known U-Value';
+type FloorCategory = 'ground-unknown' | 'ground-known' | 'exposed' | 'internal' | 'known-u';
 
-type FloorConstruction = 'solid' | 'suspended';
-
-export type FloorType = {
-  id: string;
+type WallForm = {
+  category: WallCategory;
   name: string;
-
-  category: FloorCategory;
-  construction?: FloorConstruction;    // required for ground/exposed
-  insulationMm?: number;               // required for ground/exposed
-
-  uSuggested?: number | null;          // auto-suggested
-  uFinal: number;                      // used in calcs
-
-  groundContact?: boolean;             // “accounts for ground contact”
-  includesTB?: boolean;                // “includes thermal bridging factor”
-  tbFactor?: number | '';              // separate ψ-equivalent input (optional)
+  ageBand: AgeBand | '';
+  construction: string; // e.g., Cavity (Filled), Solid Brick etc.
+  uValue?: number | ''; // for Known U-Value
 };
 
-/* ----------------------- U-value lookup & suggestion ----------------------- */
+type FloorForm = {
+  category: FloorCategory;
+  name: string;
+  construction: 'solid' | 'suspended';
+  insulThk?: number | ''; // mm – only for ground-known
+  uValue?: number | '';   // for known-u
+  groundContactAdjust?: boolean; // cosmetic flag only
+  includesPsi?: boolean;         // cosmetic flag only
+};
 
-/** Small, versioned table – replace with your authoritative values when ready */
-const U_TABLE = {
+type SavedModel = {
+  walls: WallForm[];
+  floors: FloorForm[];
+};
+
+/* ============================================================================
+   U-value tables (illustrative) + interpolation
+   NOTE: arrays are readonly; lerp accepts ReadonlyArray<UPoint>
+============================================================================ */
+type UPoint = { t: number; u: number };
+
+function lerp(points: ReadonlyArray<UPoint>, t: number): number {
+  if (!points.length) return NaN;
+  if (t <= points[0].t) return points[0].u;
+  const last = points[points.length - 1];
+  if (t >= last.t) return last.u;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const x = (t - a.t) / (b.t - a.t);
+      return +(a.u + x * (b.u - a.u)).toFixed(2);
+    }
+  }
+  return NaN;
+}
+
+/** Default U profiles by floor exposure + construction.
+ *  t is insulation thickness in mm; u in W/m²K
+ */
+const U_TABLE: {
+  ground: { solid: ReadonlyArray<UPoint>; suspended: ReadonlyArray<UPoint> };
+  exposed: { solid: ReadonlyArray<UPoint>; suspended: ReadonlyArray<UPoint> };
+  internal: { solid: ReadonlyArray<UPoint>; suspended: ReadonlyArray<UPoint> };
+} = {
   ground: {
     solid:     [{ t: 0, u: 1.30 }, { t: 50, u: 0.45 }, { t: 100, u: 0.25 }],
     suspended: [{ t: 0, u: 1.60 }, { t: 50, u: 0.55 }, { t: 100, u: 0.30 }],
@@ -110,389 +105,453 @@ const U_TABLE = {
     solid:     [{ t: 0, u: 0.00 }],
     suspended: [{ t: 0, u: 0.00 }],
   },
-} as const;
+};
 
-function lerp(p: ReadonlyArray<{ t: number; u: number }>, t: number): number {
-  if (!p.length) return NaN;
-  if (t <= p[0].t) return p[0].u;
-  const last = p[p.length - 1];
-  if (t >= last.t) return last.u;
-  for (let i = 0; i < p.length - 1; i++) {
-    const a = p[i], b = p[i + 1];
-    if (t >= a.t && t <= b.t) {
-      const x = (t - a.t) / (b.t - a.t);
-      return +(a.u + x * (b.u - a.u)).toFixed(2);
-    }
+/** Quick defaults by Age Band for walls (illustrative only). */
+const WALL_U_BY_AGE: Record<
+  Exclude<AgeBand, ''>,
+  { [construction: string]: number }
+> = {
+  'pre-1900': { 'Solid Brick or Stone': 2.1, 'Cavity (Unfilled)': 1.6, 'Cavity (Filled)': 1.2, 'Timber Frame': 1.7 },
+  '1900-1929': { 'Solid Brick or Stone': 2.1, 'Cavity (Unfilled)': 1.6, 'Cavity (Filled)': 1.2, 'Timber Frame': 1.7 },
+  '1930-1949': { 'Solid Brick or Stone': 2.0, 'Cavity (Unfilled)': 1.6, 'Cavity (Filled)': 1.2, 'Timber Frame': 1.6 },
+  '1950-1966': { 'Solid Brick or Stone': 1.9, 'Cavity (Unfilled)': 1.5, 'Cavity (Filled)': 0.9, 'Timber Frame': 1.5 },
+  '1967-1975': { 'Solid Brick or Stone': 1.7, 'Cavity (Unfilled)': 1.4, 'Cavity (Filled)': 0.8, 'Timber Frame': 1.3 },
+  '1976-1982': { 'Solid Brick or Stone': 1.5, 'Cavity (Unfilled)': 1.1, 'Cavity (Filled)': 0.6, 'Timber Frame': 0.8 },
+  '1983-1990': { 'Solid Brick or Stone': 1.3, 'Cavity (Unfilled)': 0.9, 'Cavity (Filled)': 0.55, 'Timber Frame': 0.6 },
+  '1991-1995': { 'Solid Brick or Stone': 0.8, 'Cavity (Unfilled)': 0.7, 'Cavity (Filled)': 0.45, 'Timber Frame': 0.45 },
+  '1996-2002': { 'Solid Brick or Stone': 0.6, 'Cavity (Unfilled)': 0.5, 'Cavity (Filled)': 0.35, 'Timber Frame': 0.35 },
+  '2003-2006': { 'Solid Brick or Stone': 0.45, 'Cavity (Unfilled)': 0.4, 'Cavity (Filled)': 0.3, 'Timber Frame': 0.3 },
+  '2007-2011': { 'Solid Brick or Stone': 0.35, 'Cavity (Unfilled)': 0.3, 'Cavity (Filled)': 0.27, 'Timber Frame': 0.27 },
+  '2012-present': { 'Solid Brick or Stone': 0.3, 'Cavity (Unfilled)': 0.28, 'Cavity (Filled)': 0.25, 'Timber Frame': 0.22 },
+};
+
+/* ============================================================================
+   Suggestion helpers
+============================================================================ */
+function suggestWallUValue(f: WallForm): number | null {
+  if (f.category === 'Known U-Value') {
+    return typeof f.uValue === 'number' ? f.uValue : null;
   }
-  return NaN;
+  if (!f.ageBand || !f.construction) return null;
+  const table = WALL_U_BY_AGE[f.ageBand as Exclude<AgeBand, ''>];
+  const v = table?.[f.construction];
+  return typeof v === 'number' ? v : null;
 }
 
-function suggestFloorU(
-  category: FloorCategory,
-  construction?: FloorConstruction,
-  insulationMm?: number
-): number | null {
-  if (category === 'knownU') return null;
-  if (category === 'internal') return 0.0;
-  if (!construction || insulationMm == null || !isFinite(insulationMm)) return null;
+function suggestFloorUValue(f: FloorForm): number | null {
+  if (f.category === 'known-u') {
+    return typeof f.uValue === 'number' ? f.uValue : null;
+  }
+  if (f.category === 'internal') return 0; // partitions within dwelling
 
-  const key = category === 'ground-known-insulation' ? 'ground' : 'exposed';
-  const pts = U_TABLE[key][construction];
-  return lerp(pts, insulationMm);
+  // ground-known & exposed both use thickness-based curves
+  const key =
+    f.category === 'exposed' ? 'exposed'
+    : f.category === 'ground-known' ? 'ground'
+    : /* ground-unknown (fallback heuristic) */ 'ground';
+
+  const pts = U_TABLE[key][f.construction];
+  const t = typeof f.insulThk === 'number' ? f.insulThk : 0;
+  return lerp(pts, t);
 }
 
-/* --------------------------------- page ---------------------------------- */
-
+/* ============================================================================
+   UI component
+============================================================================ */
 export default function ElementsPage(): React.JSX.Element {
-  const [store, setStore] = useState<ElementsStore>({ floors: [] });
-  const [showFloorModal, setShowFloorModal] = useState(false);
-  const [editing, setEditing] = useState<FloorType | null>(null);
+  const [model, setModel] = useState<SavedModel>({ walls: [], floors: [] });
 
-  // load
+  // Load prior saved walls/floors and also age band default from Property page
   useEffect(() => {
-    setStore(readElements());
+    const saved = readJSON<SavedModel>(LS_KEY);
+    setModel(saved ?? { walls: [], floors: [] });
   }, []);
-  // save
+
+  // Persist on change
   useEffect(() => {
-    writeElements(store);
-  }, [store]);
+    writeJSON(LS_KEY, model);
+  }, [model]);
 
-  const onAddFloor = () => {
-    setEditing({
-      id: cryptoRandomId(),
-      name: 'Ground Floor 1',
-      category: 'ground-known-insulation',
-      construction: 'suspended',
-      insulationMm: 0,
-      uSuggested: suggestFloorU('ground-known-insulation', 'suspended', 0),
-      uFinal: suggestFloorU('ground-known-insulation', 'suspended', 0) ?? 1.6,
-      groundContact: true,
-      includesTB: false,
-      tbFactor: '',
+  // default age band to whatever the Property page has
+  const defaultAgeBand = useMemo<AgeBand | ''>(() => {
+    const prop = readJSON<any>(PROP_KEY);
+    return (prop?.ageBand as AgeBand | '') ?? '';
+  }, []);
+
+  /* ------------------------------ Walls ------------------------------ */
+  const [wForm, setWForm] = useState<WallForm>({
+    category: 'External',
+    name: 'External Wall 1',
+    ageBand: defaultAgeBand,
+    construction: '',
+    uValue: '',
+  });
+
+  const wSuggestion = suggestWallUValue(wForm);
+
+  function addWall() {
+    setModel((m) => ({ ...m, walls: [...m.walls, wForm] }));
+    // reset
+    setWForm({
+      category: wForm.category,
+      name: 'External Wall ' + (model.walls.length + 2),
+      ageBand: defaultAgeBand,
+      construction: '',
+      uValue: '',
     });
-    setShowFloorModal(true);
-  };
+  }
 
-  const onEditFloor = (f: FloorType) => {
-    setEditing({ ...f });
-    setShowFloorModal(true);
-  };
+  /* ------------------------------ Floors ----------------------------- */
+  const [fForm, setFForm] = useState<FloorForm>({
+    category: 'ground-known',
+    name: 'Ground Floor 1',
+    construction: 'suspended',
+    insulThk: 0,
+    uValue: '',
+    groundContactAdjust: false,
+    includesPsi: false,
+  });
 
-  const onSaveFloor = (f: FloorType) => {
-    setStore((s) => {
-      const exists = s.floors.some((x) => x.id === f.id);
-      const floors = exists ? s.floors.map((x) => (x.id === f.id ? f : x)) : [...s.floors, f];
-      return { ...s, floors };
+  const fSuggestion = suggestFloorUValue(fForm);
+
+  function addFloor() {
+    setModel((m) => ({ ...m, floors: [...m.floors, fForm] }));
+    setFForm({
+      ...fForm,
+      name: 'Ground Floor ' + (model.floors.length + 2),
     });
-    setShowFloorModal(false);
-  };
+  }
 
-  const onRemoveFloor = (id: string) => {
-    setStore((s) => ({ ...s, floors: s.floors.filter((f) => f.id !== id) }));
-  };
-
+  /* ------------------------------ Render ----------------------------- */
   return (
-    <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
-      <h1 style={{ fontSize: 28, margin: '6px 0 10px' }}>Building Elements</h1>
-      <p style={{ color: '#666', fontSize: 13 }}>Define floor types. U-values are auto-suggested and editable.</p>
+    <main style={wrap}>
+      <h1 style={h1}>Building Elements</h1>
+      <p style={mutedText}>Define wall and floor types. Values are saved automatically.</p>
 
-      {/* Floors list */}
-      <section style={{ ...card, marginTop: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <strong>Floors</strong>
-          <button onClick={onAddFloor} style={primaryBtn}>Add Floor Type</button>
+      {/* Walls */}
+      <section style={card}>
+        <h2 style={h2}>Wall Types</h2>
+
+        <div style={grid2}>
+          <div>
+            <Label>Wall Category *</Label>
+            <Select
+              value={wForm.category}
+              onChange={(e) => setWForm({ ...wForm, category: e.target.value as WallCategory })}
+            >
+              <option value="External">External Wall</option>
+              <option value="Internal">Internal Wall</option>
+              <option value="Known U-Value">Known U-Value</option>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Wall Name *</Label>
+            <Input value={wForm.name} onChange={(e) => setWForm({ ...wForm, name: e.target.value })} />
+          </div>
+
+          {wForm.category !== 'Known U-Value' && (
+            <>
+              <div>
+                <Label>Age Band *</Label>
+                <Select
+                  value={wForm.ageBand}
+                  onChange={(e) => setWForm({ ...wForm, ageBand: e.target.value as AgeBand })}
+                >
+                  <option value="">Select age band</option>
+                  {AGE_BANDS.map((ab) => (
+                    <option key={ab} value={ab}>
+                      {ab}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div>
+                <Label>Construction Type *</Label>
+                <Select
+                  value={wForm.construction}
+                  onChange={(e) => setWForm({ ...wForm, construction: e.target.value })}
+                >
+                  <option value="">Select wall construction</option>
+                  {WALL_CONS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </>
+          )}
+
+          {wForm.category === 'Known U-Value' && (
+            <div>
+              <Label>U-Value *</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={wForm.uValue ?? ''}
+                onChange={(e) =>
+                  setWForm({ ...wForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })
+                }
+              />
+            </div>
+          )}
         </div>
 
-        {store.floors.length === 0 && (
-          <div style={{ color: '#777', marginTop: 10 }}>No floor types yet.</div>
-        )}
+        <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+          Suggested U-value: {wSuggestion ?? '—'} {typeof wSuggestion === 'number' ? 'W/m²K' : ''}
+        </div>
 
-        {store.floors.map((f) => (
-          <div key={f.id} style={{ borderTop: '1px solid #eee', marginTop: 12, paddingTop: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'center' }}>
-              <div><div style={{ fontSize: 12, color: '#666' }}>Name</div><div>{f.name}</div></div>
-              <div><div style={{ fontSize: 12, color: '#666' }}>Category</div><div>{labelForCategory(f.category)}</div></div>
-              <div><div style={{ fontSize: 12, color: '#666' }}>Construction</div><div>{f.construction ?? '—'}</div></div>
-              <div>
-                <div style={{ fontSize: 12, color: '#666' }}>U-value (W/m²K)</div>
-                <div>{f.uFinal.toFixed(2)}{f.uSuggested != null ? <span style={{ color: '#777' }}> (suggested {f.uSuggested.toFixed(2)})</span> : null}</div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+          <button style={primaryBtn} onClick={addWall}>
+            Save Wall Type
+          </button>
+        </div>
+
+        {!!model.walls.length && (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={h3}>Saved Walls</h3>
+            {model.walls.map((w, i) => (
+              <div key={i} style={row}>
+                <div style={{ flex: 2 }}>{w.name}</div>
+                <div style={{ flex: 1 }}>{w.category}</div>
+                <div style={{ flex: 2 }}>
+                  {w.category === 'Known U-Value'
+                    ? `U=${w.uValue}`
+                    : `${w.ageBand || '—'} · ${w.construction || '—'} (≈ ${suggestWallUValue(w) ?? '—'})`}
+                </div>
+                <div>
+                  <button
+                    style={linkDanger}
+                    onClick={() =>
+                      setModel((m) => ({ ...m, walls: m.walls.filter((_, idx) => idx !== i) }))
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => onEditFloor(f)} style={secondaryBtn}>Edit</button>
-                <button onClick={() => onRemoveFloor(f.id)} style={{ ...secondaryBtn, color: '#b00020', borderColor: '#f1c7c7' }}>Remove</button>
-              </div>
-            </div>
+            ))}
           </div>
-        ))}
+        )}
       </section>
 
-      {/* Floor modal */}
-      {showFloorModal && editing && (
-        <FloorModal
-          value={editing}
-          onChange={setEditing}
-          onCancel={() => setShowFloorModal(false)}
-          onSave={() => onSaveFloor(editing)}
-        />
-      )}
+      {/* Floors */}
+      <section style={{ ...card, marginTop: 16 }}>
+        <h2 style={h2}>Floor Types</h2>
+
+        <div style={grid2}>
+          <div>
+            <Label>Floor Category *</Label>
+            <Select
+              value={fForm.category}
+              onChange={(e) => setFForm({ ...fForm, category: e.target.value as FloorCategory })}
+            >
+              <option value="ground-known">Ground Floor (known insulation)</option>
+              <option value="exposed">Exposed Floor</option>
+              <option value="internal">Internal Floor</option>
+              <option value="known-u">Known U-Value</option>
+              <option value="ground-unknown">Ground Floor (unknown insulation)</option>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Floor Name *</Label>
+            <Input value={fForm.name} onChange={(e) => setFForm({ ...fForm, name: e.target.value })} />
+          </div>
+
+          {fForm.category !== 'known-u' && fForm.category !== 'internal' && (
+            <>
+              <div>
+                <Label>Floor Construction *</Label>
+                <Select
+                  value={fForm.construction}
+                  onChange={(e) => setFForm({ ...fForm, construction: e.target.value as 'solid' | 'suspended' })}
+                >
+                  <option value="solid">Solid concrete</option>
+                  <option value="suspended">Suspended (timber/chipboard/beam & block)</option>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Insulation Thickness (mm)</Label>
+                <Input
+                  type="number"
+                  value={fForm.insulThk ?? ''}
+                  onChange={(e) =>
+                    setFForm({ ...fForm, insulThk: e.target.value === '' ? '' : Number(e.target.value) })
+                  }
+                />
+              </div>
+            </>
+          )}
+
+          {fForm.category === 'known-u' && (
+            <div>
+              <Label>U-Value *</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={fForm.uValue ?? ''}
+                onChange={(e) =>
+                  setFForm({ ...fForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })
+                }
+              />
+              <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#555' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!fForm.groundContactAdjust}
+                    onChange={(e) => setFForm({ ...fForm, groundContactAdjust: e.target.checked })}
+                  />
+                  U-value accounts for ground contact (solid floors only)
+                </label>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#555' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!fForm.includesPsi}
+                    onChange={(e) => setFForm({ ...fForm, includesPsi: e.target.checked })}
+                  />
+                  U-value includes thermal bridging factor
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+          Suggested U-value: {fSuggestion ?? '—'} {typeof fSuggestion === 'number' ? 'W/m²K' : ''}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+          <button style={primaryBtn} onClick={addFloor}>
+            Save Floor Type
+          </button>
+        </div>
+
+        {!!model.floors.length && (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={h3}>Saved Floors</h3>
+            {model.floors.map((f, i) => (
+              <div key={i} style={row}>
+                <div style={{ flex: 2 }}>{f.name}</div>
+                <div style={{ flex: 1 }}>{prettyFloorCategory(f.category)}</div>
+                <div style={{ flex: 2 }}>
+                  {f.category === 'known-u'
+                    ? `U=${f.uValue}`
+                    : `${f.construction}${typeof f.insulThk === 'number' ? `, ${f.insulThk}mm` : ''} (≈ ${
+                        suggestFloorUValue(f) ?? '—'
+                      })`}
+                </div>
+                <div>
+                  <button
+                    style={linkDanger}
+                    onClick={() =>
+                      setModel((m) => ({ ...m, floors: m.floors.filter((_, idx) => idx !== i) }))
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* footer nav */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
+        <Link href="/rooms" style={{ ...secondaryBtn, textDecoration: 'none' }}>
+          ← Back: Heated Rooms
+        </Link>
+        <Link href="/room-elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
+          Next: Room Elements →
+        </Link>
+      </div>
     </main>
   );
 }
 
-/* -------------------------------- modal -------------------------------- */
+/* ============================================================================
+   Small utilities / constants
+============================================================================ */
+const AGE_BANDS: AgeBand[] = [
+  'pre-1900','1900-1929','1930-1949','1950-1966',
+  '1967-1975','1976-1982','1983-1990','1991-1995',
+  '1996-2002','2003-2006','2007-2011','2012-present',
+];
 
-function FloorModal({
-  value,
-  onChange,
-  onCancel,
-  onSave,
-}: {
-  value: FloorType;
-  onChange: (v: FloorType) => void;
-  onCancel: () => void;
-  onSave: () => void;
-}) {
-  // recompute suggestion when inputs change
-  const uSuggested = useMemo(() => {
-    return suggestFloorU(value.category, value.construction, value.insulationMm);
-  }, [value.category, value.construction, value.insulationMm]);
+const WALL_CONS = [
+  'Cob',
+  'Cavity (Filled)',
+  'Cavity (Unfilled)',
+  'Solid Brick or Stone',
+  'Stone (Granite/Whinstone)',
+  'Stone (Sandstone/Limestone)',
+  'System Built',
+  'Timber Frame',
+] as const;
 
-  useEffect(() => {
-    // keep fields consistent with category switch
-    if (value.category === 'knownU') {
-      onChange({ ...value, uSuggested: null, construction: undefined, insulationMm: undefined, groundContact: false });
-      return;
-    }
-    if (value.category === 'internal') {
-      const sug = suggestFloorU('internal');
-      onChange({ ...value, uSuggested: sug, uFinal: typeof sug === 'number' ? sug : value.uFinal, construction: undefined, insulationMm: undefined, groundContact: false });
-      return;
-    }
-    // ground/exposed need construction + thickness
-    const sug = uSuggested;
-    if (typeof sug === 'number' && !isNaN(sug)) {
-      // only auto-apply if user hasn’t edited uFinal away from previous suggestion
-      const isFollowingSuggestion = value.uSuggested == null || Math.abs((value.uFinal ?? 0) - (value.uSuggested ?? 0)) < 1e-9;
-      onChange({ ...value, uSuggested: sug, uFinal: isFollowingSuggestion ? sug : value.uFinal });
-    } else {
-      onChange({ ...value, uSuggested: null });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value.category, value.construction, value.insulationMm]);
-
-  const canSave =
-    !!value.name &&
-    (value.category === 'knownU'
-      ? typeof value.uFinal === 'number' && isFinite(value.uFinal)
-      : value.category === 'internal'
-      ? true
-      : !!value.construction && value.insulationMm != null && isFinite(Number(value.insulationMm)));
-
-  return (
-    <div style={modalBackdrop} onClick={onCancel}>
-      <div style={modal} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: '0 0 10px' }}>Add Floor Type</h2>
-
-        {/* Category */}
-        <div style={{ display: 'grid', gap: 10 }}>
-          <RadioCard
-            checked={value.category === 'ground-known-insulation'}
-            onChange={() => onChange({ ...value, category: 'ground-known-insulation' })}
-            title="Ground Floor (known insulation)"
-            subtitle="A floor that separates the dwelling from the ground with known insulation level."
-          />
-          <RadioCard
-            checked={value.category === 'exposed'}
-            onChange={() => onChange({ ...value, category: 'exposed' })}
-            title="Exposed Floor"
-            subtitle="A floor that separates the dwelling from an unheated space (e.g. garage) or outside air (flying freehold)."
-          />
-          <RadioCard
-            checked={value.category === 'internal'}
-            onChange={() => onChange({ ...value, category: 'internal' })}
-            title="Internal Floor"
-            subtitle="A floor that separates different storeys within the same dwelling."
-          />
-          <RadioCard
-            checked={value.category === 'knownU'}
-            onChange={() => onChange({ ...value, category: 'knownU' })}
-            title="Known U-Value"
-            subtitle="A floor that has a measured or design U-value."
-          />
-        </div>
-
-        {/* Name */}
-        <div style={{ marginTop: 14 }}>
-          <Label>Floor Name *</Label>
-          <Input value={value.name} onChange={(e) => onChange({ ...value, name: e.target.value })} />
-        </div>
-
-        {/* Category-specific fields */}
-        {value.category === 'ground-known-insulation' || value.category === 'exposed' ? (
-          <div style={{ ...grid3, marginTop: 10 }}>
-            <div>
-              <Label>Floor Construction *</Label>
-              <Select
-                value={value.construction ?? ''}
-                onChange={(e) => onChange({ ...value, construction: (e.target.value as FloorConstruction) || undefined })}
-              >
-                <option value="">Select floor construction</option>
-                <option value="solid">Solid concrete</option>
-                <option value="suspended">Suspended (timber/chipboard/beam & block)</option>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Insulation Thickness *</Label>
-              <Input
-                type="number"
-                placeholder="mm"
-                value={value.insulationMm ?? ''}
-                onChange={(e) =>
-                  onChange({ ...value, insulationMm: e.target.value === '' ? undefined : Number(e.target.value) })
-                }
-              />
-            </div>
-
-            <div>
-              <Label>Suggested U-value (editable)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={value.uFinal}
-                onChange={(e) => onChange({ ...value, uFinal: Number(e.target.value || 0) })}
-              />
-              <div style={{ color: '#777', fontSize: 12, marginTop: 4 }}>
-                {typeof value.uSuggested === 'number' ? `Suggested: ${value.uSuggested.toFixed(2)} W/m²K` : '—'}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {value.category === 'internal' ? (
-          <div style={{ marginTop: 10 }}>
-            <Label>U-value (fixed)</Label>
-            <Input type="number" step="0.01" value={value.uFinal} readOnly />
-            <div style={{ color: '#777', fontSize: 12, marginTop: 4 }}>Internal floors typically do not contribute to fabric losses.</div>
-          </div>
-        ) : null}
-
-        {value.category === 'knownU' ? (
-          <div style={{ marginTop: 10 }}>
-            <Label>U-Value *</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={value.uFinal}
-              onChange={(e) => onChange({ ...value, uFinal: Number(e.target.value || 0) })}
-            />
-          </div>
-        ) : null}
-
-        {/* Flags / TB factor */}
-        <div style={{ ...grid2, marginTop: 12 }}>
-          <div>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
-              <input
-                type="checkbox"
-                checked={!!value.groundContact}
-                disabled={!(value.category === 'ground-known-insulation' && value.construction === 'solid')}
-                onChange={(e) => onChange({ ...value, groundContact: e.target.checked })}
-              />
-              U-value accounts for ground contact (solid floors only)
-            </label>
-          </div>
-          <div>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
-              <input
-                type="checkbox"
-                checked={!!value.includesTB}
-                onChange={(e) => onChange({ ...value, includesTB: e.target.checked })}
-              />
-              U-value includes thermal bridging factor
-            </label>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 10, ...grid2 }}>
-          <div>
-            <Label>Thermal Bridging Factor</Label>
-            <Input
-              type="number"
-              step="0.001"
-              placeholder="Optional"
-              value={value.tbFactor ?? ''}
-              onChange={(e) =>
-                onChange({ ...value, tbFactor: e.target.value === '' ? '' : Number(e.target.value) })
-              }
-            />
-          </div>
-        </div>
-
-        {/* actions */}
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={onCancel} style={secondaryBtn}>Cancel</button>
-          <button onClick={onSave} disabled={!canSave} style={{ ...primaryBtn, opacity: canSave ? 1 : 0.6 }}>
-            Save floor type
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------ tiny helpers ------------------------------ */
-function RadioCard({
-  checked,
-  onChange,
-  title,
-  subtitle,
-}: {
-  checked: boolean;
-  onChange: () => void;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <label
-      onClick={onChange}
-      style={{
-        border: '1px solid ' + (checked ? '#111' : '#e6e6e6'),
-        borderRadius: 12,
-        padding: 12,
-        cursor: 'pointer',
-        display: 'grid',
-        gridTemplateColumns: '28px 1fr',
-        gap: 10,
-        alignItems: 'start',
-      }}
-    >
-      <input type="radio" checked={checked} readOnly />
-      <div>
-        <div style={{ fontWeight: 600 }}>{title}</div>
-        <div style={{ color: '#666', fontSize: 13, marginTop: 2 }}>{subtitle}</div>
-      </div>
-    </label>
-  );
-}
-function labelForCategory(c: FloorCategory): string {
+function prettyFloorCategory(c: FloorCategory): string {
   switch (c) {
-    case 'ground-known-insulation': return 'Ground (known insulation)';
+    case 'ground-known': return 'Ground (known insulation)';
+    case 'ground-unknown': return 'Ground (unknown insulation)';
     case 'exposed': return 'Exposed';
     case 'internal': return 'Internal';
-    case 'knownU': return 'Known U-Value';
+    case 'known-u': return 'Known U-Value';
   }
 }
-function cryptoRandomId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return Math.random().toString(36).slice(2);
+
+/* ============================================================================
+   Tiny UI bits
+============================================================================ */
+function Label({ children }: { children: React.ReactNode }) {
+  return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
+}
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} style={{ ...input, ...(props.style || {}) }} />;
+}
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={{ ...input, ...(props.style || {}) }} />;
 }
 
-/* --------------------------------- modal UI -------------------------------- */
-const modalBackdrop: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)', display: 'grid', placeItems: 'center', zIndex: 30,
+/* ============================================================================
+   Styles
+============================================================================ */
+const wrap: React.CSSProperties = {
+  maxWidth: 1040, margin: '0 auto', padding: 24,
+  fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
 };
-const modal: React.CSSProperties = {
-  width: 'min(760px, 96vw)', background: '#fff', borderRadius: 16, border: '1px solid #e6e6e6',
-  boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 18, maxHeight: '90vh', overflow: 'auto',
+const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 10px' };
+const h2: React.CSSProperties = { fontSize: 18, margin: '0 0 8px', letterSpacing: 1.2 };
+const h3: React.CSSProperties = { fontSize: 16, margin: '10px 0 6px' };
+const mutedText: React.CSSProperties = { color: '#666', fontSize: 13, marginBottom: 12 };
+
+const card: React.CSSProperties = {
+  background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16,
+};
+const grid2: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12,
+};
+const row: React.CSSProperties = {
+  display: 'flex', gap: 8, padding: '8px 4px', alignItems: 'center', borderBottom: '1px solid #f2f2f2',
+};
+
+const input: React.CSSProperties = {
+  width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd',
+  outline: 'none', boxSizing: 'border-box',
+};
+const primaryBtn: React.CSSProperties = {
+  background: '#111', color: '#fff', border: '1px solid #111',
+  padding: '10px 16px', borderRadius: 12, cursor: 'pointer',
+};
+const secondaryBtn: React.CSSProperties = {
+  background: '#fff', color: '#111', border: '1px solid #ddd',
+  padding: '10px 16px', borderRadius: 12, cursor: 'pointer',
+};
+const linkDanger: React.CSSProperties = {
+  color: '#b00020', textDecoration: 'underline', background: 'none',
+  border: 0, cursor: 'pointer',
 };
