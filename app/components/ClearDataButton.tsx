@@ -1,57 +1,35 @@
 'use client';
 
-import React from 'react';
-
-type Props = {
-  /** Optional: run after clearing localStorage to refresh UI/state */
-  onCleared?: () => void;
-  /** Optional: extra localStorage keys to remove */
-  extraKeys?: string[];
-};
-
-/**
- * Clears all calculator data from localStorage.
- * Keys used in this project:
- * - mcs.property
- * - mcs.ventilation
- * - mcs.rooms
- * - mcs.elements
- */
-export default function ClearDataButton({ onCleared, extraKeys }: Props) {
-  const handleClear = () => {
+export default function ClearDataButton() {
+  const clearAll = () => {
     try {
-      const keys = [
-        'mcs.property',
-        'mcs.ventilation',
-        'mcs.rooms',
-        'mcs.elements',
-        ...(extraKeys || []),
-      ];
-      keys.forEach((k) => localStorage.removeItem(k));
-      // small confirm
-      // eslint-disable-next-line no-alert
-      alert('All saved calculator data has been cleared.');
-      onCleared?.();
+      localStorage.removeItem('mcs.property');
+      localStorage.removeItem('mcs.rooms');
+      localStorage.removeItem('mcs.elements.v1');
+      alert('All saved data cleared.');
+      // optional: hard refresh
+      window.location.reload();
     } catch {
-      // ignore
+      alert('Unable to clear saved data (storage not available).');
     }
   };
 
   return (
     <button
       type="button"
-      onClick={handleClear}
+      onClick={clearAll}
       style={{
+        borderRadius: 10,
+        padding: '10px 14px',
+        border: '1px solid #ddd',
         background: '#fff',
         color: '#111',
-        border: '1px solid #ddd',
-        padding: '8px 12px',
-        borderRadius: 10,
         cursor: 'pointer',
       }}
-      title="Clear all saved data (localStorage)"
+      aria-label="Clear saved data"
+      title="Clear saved data"
     >
-      Clear saved data
+      Clear data
     </button>
   );
 }
