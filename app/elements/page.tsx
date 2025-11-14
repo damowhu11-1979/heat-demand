@@ -2,27 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import ClearDataButton from '@/components/ClearDataButton';
-
-/* ================================================================
-   UI component
-================================================================ */
-
-export default function ElementsPage(): React.JSX.Element {
-  // ... your state, effects, helpers etc. that were already here ...
-
-  return (
-    <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24 }}>
-      {/* page header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h1 style={{ margin: 0 }}>Building Elements</h1>
-     
-      </div>
-
-      {/* ...the rest of your existing elements page UI... */}
-    </main>
-  );
-}
+// use a relative import so it works in static/GitHub Pages builds
+import ClearDataButton from '../components/ClearDataButton';
 
 /* ============================================================================
    Persistence helpers
@@ -106,9 +87,7 @@ function lerp(points: ReadonlyArray<UPoint>, t: number): number {
   return NaN;
 }
 
-/** Default U profiles by floor exposure + construction.
- *  t is insulation thickness in mm; u in W/m²K
- */
+/** Default U profiles by floor exposure + construction. */
 const U_TABLE: {
   ground: { solid: ReadonlyArray<UPoint>; suspended: ReadonlyArray<UPoint> };
   exposed: { solid: ReadonlyArray<UPoint>; suspended: ReadonlyArray<UPoint> };
@@ -166,11 +145,10 @@ function suggestFloorUValue(f: FloorForm): number | null {
   }
   if (f.category === 'internal') return 0; // partitions within dwelling
 
-  // ground-known & exposed both use thickness-based curves
   const key =
     f.category === 'exposed' ? 'exposed'
     : f.category === 'ground-known' ? 'ground'
-    : /* ground-unknown (fallback heuristic) */ 'ground';
+    : 'ground'; // fallback for ground-unknown
 
   const pts = U_TABLE[key][f.construction];
   const t = typeof f.insulThk === 'number' ? f.insulThk : 0;
@@ -178,23 +156,23 @@ function suggestFloorUValue(f: FloorForm): number | null {
 }
 
 /* ============================================================================
-   UI component
+   UI component (SINGLE DEFAULT EXPORT)
 ============================================================================ */
 export default function ElementsPage(): React.JSX.Element {
   const [model, setModel] = useState<SavedModel>({ walls: [], floors: [] });
 
-  // Load prior saved walls/floors and also age band default from Property page
+  // Load saved model
   useEffect(() => {
     const saved = readJSON<SavedModel>(LS_KEY);
     setModel(saved ?? { walls: [], floors: [] });
   }, []);
 
-  // Persist on change
+  // Persist
   useEffect(() => {
     writeJSON(LS_KEY, model);
   }, [model]);
 
-  // default age band to whatever the Property page has
+  // default age band from Property page
   const defaultAgeBand = useMemo<AgeBand | ''>(() => {
     const prop = readJSON<any>(PROP_KEY);
     return (prop?.ageBand as AgeBand | '') ?? '';
@@ -208,12 +186,9 @@ export default function ElementsPage(): React.JSX.Element {
     construction: '',
     uValue: '',
   });
-
   const wSuggestion = suggestWallUValue(wForm);
-
   function addWall() {
     setModel((m) => ({ ...m, walls: [...m.walls, wForm] }));
-    // reset
     setWForm({
       category: wForm.category,
       name: 'External Wall ' + (model.walls.length + 2),
@@ -233,21 +208,20 @@ export default function ElementsPage(): React.JSX.Element {
     groundContactAdjust: false,
     includesPsi: false,
   });
-
   const fSuggestion = suggestFloorUValue(fForm);
-
   function addFloor() {
     setModel((m) => ({ ...m, floors: [...m.floors, fForm] }));
-    setFForm({
-      ...fForm,
-      name: 'Ground Floor ' + (model.floors.length + 2),
-    });
+    setFForm({ ...fForm, name: 'Ground Floor ' + (model.floors.length + 2) });
   }
 
   /* ------------------------------ Render ----------------------------- */
   return (
     <main style={wrap}>
-      <h1 style={h1}>Building Elements</h1>
+      {/* header with Clear Data */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <h1 style={h1}>Building Elements</h1>
+        <ClearDataButton />
+      </div>
       <p style={mutedText}>Define wall and floor types. Values are saved automatically.</p>
 
       {/* Walls */}
@@ -282,9 +256,7 @@ export default function ElementsPage(): React.JSX.Element {
                 >
                   <option value="">Select age band</option>
                   {AGE_BANDS.map((ab) => (
-                    <option key={ab} value={ab}>
-                      {ab}
-                    </option>
+                    <option key={ab} value={ab}>{ab}</option>
                   ))}
                 </Select>
               </div>
@@ -297,9 +269,7 @@ export default function ElementsPage(): React.JSX.Element {
                 >
                   <option value="">Select wall construction</option>
                   {WALL_CONS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
+                    <option key={c} value={c}>{c}</option>
                   ))}
                 </Select>
               </div>
@@ -326,9 +296,7 @@ export default function ElementsPage(): React.JSX.Element {
         </div>
 
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-          <button style={primaryBtn} onClick={addWall}>
-            Save Wall Type
-          </button>
+          <button style={primaryBtn} onClick={addWall}>Save Wall Type</button>
         </div>
 
         {!!model.walls.length && (
@@ -447,9 +415,7 @@ export default function ElementsPage(): React.JSX.Element {
         </div>
 
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-          <button style={primaryBtn} onClick={addFloor}>
-            Save Floor Type
-          </button>
+          <button style={primaryBtn} onClick={addFloor}>Save Floor Type</button>
         </div>
 
         {!!model.floors.length && (
@@ -462,9 +428,7 @@ export default function ElementsPage(): React.JSX.Element {
                 <div style={{ flex: 2 }}>
                   {f.category === 'known-u'
                     ? `U=${f.uValue}`
-                    : `${f.construction}${typeof f.insulThk === 'number' ? `, ${f.insulThk}mm` : ''} (≈ ${
-                        suggestFloorUValue(f) ?? '—'
-                      })`}
+                    : `${f.construction}${typeof f.insulThk === 'number' ? `, ${f.insulThk}mm` : ''} (≈ ${suggestFloorUValue(f) ?? '—'})`}
                 </div>
                 <div>
                   <button
