@@ -1,5 +1,6 @@
 'use client';
-import ClearDataButton from '@/components/ClearDataButton';
+import ClearDataButton from './components/ClearDataButton';
+
 
 export default function Page() {
   return (
