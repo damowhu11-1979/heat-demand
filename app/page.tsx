@@ -3,20 +3,6 @@
 import React from 'react';
 import Link from 'next/link';
 import ClearDataButton from '@/components/ClearDataButton';
-
-export default function Page(): React.JSX.Element {
-  return (
-    <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0 }}>Property</h1>
-      
-      </div>
-
-      {/* … keep the rest of your existing Property page exactly as it is … */}
-    </main>
-  );
-}
-
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
