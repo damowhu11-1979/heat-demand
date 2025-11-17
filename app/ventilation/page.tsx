@@ -3,12 +3,40 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-/* ----- Helpers ----- */
+/* --- LocalStorage Keys --- */
+const STORAGE_KEY = 'mcs.ventilation';
+
+/* --- Airflow Requirements (L/s) --- */
+const CONTINUOUS = {
+  kitchen: 13,
+  bathroom: 8,
+  'utility room': 8,
+  'en-suite': 6,
+  wc: 6
+};
+
+const INTERMITTENT = {
+  kitchen: 30,
+  bathroom: 15,
+  'utility room': 30,
+  'en-suite': 15,
+  wc: 6
+};
+
+const ROOM_LABELS = {
+  kitchen: 'Kitchen',
+  bathroom: 'Bathroom',
+  wc: 'WC',
+  'utility room': 'Utility Room',
+  'en-suite': 'En-suite'
+};
+
+/* --- Helpers --- */
 const readVent = () => {
   if (typeof window === 'undefined') return null;
   try {
-    const r = localStorage.getItem('mcs.ventilation');
-    return r ? JSON.parse(r) : null;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
@@ -17,121 +45,118 @@ const readVent = () => {
 const writeVent = (obj: any) => {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem('mcs.ventilation', JSON.stringify(obj));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
   } catch {}
 };
 
-/* ----- Small UI Bits ----- */
-function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{children}</label>;
-}
+/* --- UI Atoms --- */
+const Label = ({ children }: { children: React.ReactNode }) => (
+  <label style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>{children}</label>
+);
 
-const card: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #e6e6e6',
-  borderRadius: 14,
-  padding: 16,
-  marginBottom: 24
+const primaryBtn = {
+  background: '#111', color: '#fff', padding: '12px 18px', borderRadius: 12, textDecoration: 'none', border: 0
 };
 
-const inputRow: React.CSSProperties = { marginBottom: 16 };
-const primaryBtn: React.CSSProperties = { background: '#111', color: '#fff', padding: '12px 18px', borderRadius: 12, textDecoration: 'none', border: 0 };
-const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', padding: '12px 18px', borderRadius: 12, textDecoration: 'none', border: '1px solid #ccc' };
-
-const btnBox = {
-  border: '1px solid #ccc',
-  padding: '10px 12px',
-  borderRadius: 8,
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 8,
-  fontSize: 14,
-  cursor: 'pointer'
+const secondaryBtn = {
+  background: '#fff', color: '#111', padding: '12px 18px', borderRadius: 12, textDecoration: 'none', border: '1px solid #ccc'
 };
 
-/* ----- Stepper component ----- */
-function Stepper({ label, value, setValue, min = 0, max = 20 }: {
-  label: string, value: number, setValue: (n: number) => void, min?: number, max?: number
-}) {
-  return (
-    <div style={inputRow}>
-      <Label>{label}</Label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={() => setValue(Math.max(min, value - 1))} style={secondaryBtn}>–</button>
-        <div style={{ minWidth: 40, textAlign: 'center', fontSize: 18 }}>{value}</div>
-        <button onClick={() => setValue(Math.min(max, value + 1))} style={secondaryBtn}>+</button>
-      </div>
-    </div>
-  );
-}
+const inputStyle = {
+  padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, width: '100%', fontSize: 14
+};
 
-export default function VentilationPage(): React.JSX.Element {
-  const [zones, setZones] = useState(1);
-  const [storeys, setStoreys] = useState(2);
-  const [facades, setFacades] = useState(4);
-  const [sheltered, setSheltered] = useState(0);
+/* --- Main Component --- */
+export default function VentilationPage() {
   const [type, setType] = useState('natural');
+  const [rooms, setRooms] = useState({
+    kitchen: 1,
+    bathroom: 1,
+    wc: 1,
+    'utility room': 0,
+    'en-suite': 0
+  });
+
+  const totalRequired = Object.entries(rooms).reduce((sum, [key, count]) => {
+    const base = ['mev', 'mv', 'mvhr'].includes(type) ? CONTINUOUS[key] : INTERMITTENT[key];
+    return sum + (base * count);
+  }, 0);
+
+  const isValid = totalRequired >= 30; // Example threshold, adjust as needed
 
   useEffect(() => {
     const saved = readVent();
     if (saved) {
-      if (saved.zones !== undefined) setZones(saved.zones);
-      if (saved.storeys !== undefined) setStoreys(saved.storeys);
-      if (saved.facades !== undefined) setFacades(saved.facades);
-      if (saved.sheltered !== undefined) setSheltered(saved.sheltered);
       if (saved.type) setType(saved.type);
+      if (saved.rooms) setRooms(saved.rooms);
     }
   }, []);
 
   useEffect(() => {
-    writeVent({ zones, storeys, facades, sheltered, type });
-  }, [zones, storeys, facades, sheltered, type]);
+    writeVent({ type, rooms });
+  }, [type, rooms]);
 
   return (
     <main style={{ maxWidth: 800, margin: '0 auto', padding: 24 }}>
       <h1 style={{ fontSize: 28, marginBottom: 6 }}>Ventilation</h1>
-      <div style={{ fontSize: 13, color: '#666', marginBottom: 20 }}>Step 2 of 6 — Set ventilation rates</div>
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 20 }}>
+        Step 2 of 6 — Configure ventilation strategy and minimum air flow requirements
+      </p>
 
-      <section style={card}>
-        <h2 style={{ fontSize: 18, marginBottom: 12 }}>Ventilation Zones</h2>
-        <Stepper label="Number of Ventilation Zones" value={zones} setValue={setZones} />
+      <section style={{ marginBottom: 24 }}>
+        <Label>Ventilation Strategy</Label>
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          style={inputStyle}
+        >
+          <option value="natural">Natural Ventilation</option>
+          <option value="mev">MEV (Mechanical Extract Ventilation)</option>
+          <option value="mv">MV (Mechanical Ventilation)</option>
+          <option value="mvhr">MVHR (Mech. Ventilation w/ Heat Recovery)</option>
+          <option value="piv">PIV (Positive Input Ventilation)</option>
+        </select>
+        <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
+          Strategy determines which air flow rates apply (continuous vs intermittent).
+        </p>
       </section>
 
-      <section style={card}>
-        <h2 style={{ fontSize: 18, marginBottom: 12 }}>Zone 1</h2>
-        <Stepper label="Number of Storeys" value={storeys} setValue={setStoreys} />
-        <Stepper label="Number of External Facades" value={facades} setValue={setFacades} />
-        <Stepper label="How many of these facades are sheltered from the wind?" value={sheltered} setValue={setSheltered} max={facades} />
-      </section>
-
-      <section style={card}>
-        <h2 style={{ fontSize: 18, marginBottom: 12 }}>Ventilation Type</h2>
-        {[
-          { key: 'natural', label: 'Natural Ventilation', desc: 'May include extract fans in wet rooms.' },
-          { key: 'mev', label: 'Mechanical Extract Ventilation (MEV)', desc: 'Extract-only unbalanced system.' },
-          { key: 'mv', label: 'Mechanical Ventilation (MV)', desc: 'Balanced (supply + extract).' },
-          { key: 'mvhr', label: 'Mechanical Ventilation with Heat Recovery (MVHR)', desc: 'Whole-house recovery, efficiency required.' },
-          { key: 'piv', label: 'Positive Input Ventilation (PIV)', desc: 'Supply-only positive pressure.' }
-        ].map(opt => (
-          <label key={opt.key} style={btnBox}>
+      <section style={{ marginBottom: 32 }}>
+        <h3 style={{ fontSize: 18, marginBottom: 12 }}>Room Counts</h3>
+        {Object.keys(rooms).map((roomKey) => (
+          <div key={roomKey} style={{ marginBottom: 12 }}>
+            <Label>{ROOM_LABELS[roomKey]}</Label>
             <input
-              type="radio"
-              name="ventType"
-              value={opt.key}
-              checked={type === opt.key}
-              onChange={() => setType(opt.key)}
-              style={{ marginRight: 10 }}
+              type="number"
+              value={rooms[roomKey]}
+              min={0}
+              onChange={(e) =>
+                setRooms({ ...rooms, [roomKey]: parseInt(e.target.value || '0') })
+              }
+              style={inputStyle}
             />
-            <div>
-              <div style={{ fontWeight: 600 }}>{opt.label}</div>
-              <div style={{ fontSize: 12, color: '#666' }}>{opt.desc}</div>
-            </div>
-          </label>
+          </div>
         ))}
       </section>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24 }}>
+      <section style={{ marginBottom: 28 }}>
+        <h3 style={{ fontSize: 18, marginBottom: 8 }}>Total Required Ventilation</h3>
+        <div style={{
+          background: isValid ? '#e5ffe5' : '#ffe5e5',
+          padding: 16,
+          borderRadius: 10,
+          fontSize: 16,
+          fontWeight: 500
+        }}>
+          {totalRequired} L/s required ({type === 'natural' || type === 'piv' ? 'Intermittent' : 'Continuous'})<br />
+          {isValid ? '✅ Meets typical minimum threshold' : '⚠️ Below expected airflow'}
+        </div>
+        <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
+          Based on UK regulations (e.g. Document F, BS 5250). Adjust as needed per dwelling.
+        </p>
+      </section>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <Link href="/" style={secondaryBtn}>← Back</Link>
         <Link href="/heated-rooms" style={primaryBtn}>Next: Heated Rooms →</Link>
       </div>
