@@ -1,12 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 
-export default function RoomsPage() {
-  return (
-    <main style={{ padding: 24, fontFamily: 'sans-serif' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 12 }}>Heated Rooms</h1>
-      <p style={{ color: '#555' }}>
         This is a placeholder for the Heated Rooms page. You can start building your UI here.
       </p>
     </main>
