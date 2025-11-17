@@ -39,11 +39,46 @@ const writeVent = (obj: any) => {
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>;
 }
-const card: React.CSSProperties = { background: '#fff', border: '1px solid '#e6e6e6', borderRadius: 14, padding: 16 };
-const btnBox: React.CSSProperties = { border: '1px solid #ddd', borderRadius: 10, background: '#fff', cursor: 'pointer' };
-const valBox: React.CSSProperties = { border: '1px solid #ddd', borderRadius: 10, display: 'grid', placeItems: 'center', fontSize: 18, fontWeight: 600 };
-const primaryBtn: React.CSSProperties = { border: '1px solid #111', borderRadius: 10, padding: '12px 18px', background: '#111', color: '#fff', textDecoration: 'none' };
-const secondaryBtn: React.CSSProperties = { border: '1px solid #ddd', borderRadius: 10, padding: '10px 16px', background: '#fff', color: '#111', textDecoration: 'none' };
+const card: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #e6e6e6',
+  borderRadius: 14,
+  padding: 16,
+};
+
+const btnBox: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 10,
+  background: '#fff',
+  cursor: 'pointer',
+};
+
+const valBox: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 10,
+  display: 'grid',
+  placeItems: 'center',
+  fontSize: 18,
+  fontWeight: 600,
+};
+
+const primaryBtn: React.CSSProperties = {
+  border: '1px solid #111',
+  borderRadius: 10,
+  padding: '12px 18px',
+  background: '#111',
+  color: '#fff',
+  textDecoration: 'none',
+};
+
+const secondaryBtn: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 10,
+  padding: '10px 16px',
+  background: '#fff',
+  color: '#111',
+  textDecoration: 'none',
+};
 
 /* ----- stepper ----- */
 function Stepper({
