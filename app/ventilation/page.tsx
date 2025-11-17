@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-
+type RoomKey = keyof typeof ROOM_LABELS;
 /* --- LocalStorage Keys --- */
 const STORAGE_KEY = 'mcs.ventilation';
 
@@ -124,21 +124,21 @@ export default function VentilationPage() {
 
       <section style={{ marginBottom: 32 }}>
         <h3 style={{ fontSize: 18, marginBottom: 12 }}>Room Counts</h3>
-        {Object.keys(rooms).map((roomKey) => (
-          <div key={roomKey} style={{ marginBottom: 12 }}>
-            <Label>{ROOM_LABELS[roomKey]}</Label>
-            <input
-              type="number"
-              value={rooms[roomKey]}
-              min={0}
-              onChange={(e) =>
-                setRooms({ ...rooms, [roomKey]: parseInt(e.target.value || '0') })
-              }
-              style={inputStyle}
-            />
-          </div>
-        ))}
-      </section>
+       {Object.keys(rooms).map((roomKey) => {
+  const key = roomKey as RoomKey;
+  return (
+    <div key={key} style={{ marginBottom: 12 }}>
+      <Label>{ROOM_LABELS[key]}</Label>
+      <input
+        type="number"
+        value={rooms[key]}
+        onChange={(e) => setRooms({ ...rooms, [key]: parseInt(e.target.value || '0') })}
+        min={0}
+        style={inputStyle}
+      />
+    </div>
+  );
+})}
 
       <section style={{ marginBottom: 28 }}>
         <h3 style={{ fontSize: 18, marginBottom: 8 }}>Total Required Ventilation</h3>
