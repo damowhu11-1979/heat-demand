@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-/* --- Airflow Requirements (L/s) --- */
-const CONTINUOUS = {
+/* --- Room Config --- */
+const EXTRACT_FLOW = {
   kitchen: 13,
   bathroom: 8,
   'utility room': 8,
@@ -12,7 +12,7 @@ const CONTINUOUS = {
   wc: 6
 };
 
-const INTERMITTENT = {
+const INTERMITTENT_FLOW = {
   kitchen: 30,
   bathroom: 15,
   'utility room': 30,
@@ -20,24 +20,30 @@ const INTERMITTENT = {
   wc: 6
 };
 
+const SUPPLY_FLOW = {
+  living: 10,
+  bedroom: 8
+};
+
 const ROOM_LABELS = {
   kitchen: 'Kitchen',
   bathroom: 'Bathroom',
   wc: 'WC',
   'utility room': 'Utility Room',
-  'en-suite': 'En-suite'
+  'en-suite': 'En-suite',
+  living: 'Living Room',
+  bedroom: 'Bedroom'
 };
 
 type RoomKey = keyof typeof ROOM_LABELS;
 
-/* --- LocalStorage Helpers --- */
+/* --- Storage Helpers --- */
 const STORAGE_KEY = 'mcs.ventilation';
 
 const readVent = () => {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '');
   } catch {
     return null;
   }
@@ -75,23 +81,36 @@ export default function VentilationPage() {
     bathroom: 1,
     wc: 1,
     'utility room': 0,
-    'en-suite': 0
+    'en-suite': 0,
+    living: 1,
+    bedroom: 2
   });
 
-  const totalRequired = Object.entries(rooms).reduce((sum, [key, count]) => {
+  // Which systems need supply calc
+  const supplyRequired = ['mv', 'mvhr', 'piv'].includes(type);
+
+  const extractTotal = Object.entries(rooms).reduce((sum, [key, count]) => {
     const k = key as RoomKey;
-    const base = ['mev', 'mv', 'mvhr'].includes(type) ? CONTINUOUS[k] : INTERMITTENT[k];
-    return sum + base * count;
+    if (k in EXTRACT_FLOW || k in INTERMITTENT_FLOW) {
+      const flow = ['mev', 'mv', 'mvhr'].includes(type) ? EXTRACT_FLOW[k] : INTERMITTENT_FLOW[k];
+      return sum + flow * count;
+    }
+    return sum;
   }, 0);
 
-  const isValid = totalRequired >= 30; // Example threshold
+  const supplyTotal = Object.entries(rooms).reduce((sum, [key, count]) => {
+    const k = key as RoomKey;
+    if (!supplyRequired) return 0;
+    if (k in SUPPLY_FLOW) {
+      return sum + SUPPLY_FLOW[k] * count;
+    }
+    return sum;
+  }, 0);
 
   useEffect(() => {
     const saved = readVent();
-    if (saved) {
-      if (saved.type) setType(saved.type);
-      if (saved.rooms) setRooms(saved.rooms);
-    }
+    if (saved?.type) setType(saved.type);
+    if (saved?.rooms) setRooms(saved.rooms);
   }, []);
 
   useEffect(() => {
@@ -105,14 +124,10 @@ export default function VentilationPage() {
         Step 2 of 6 — Configure ventilation strategy and minimum air flow requirements
       </p>
 
-      {/* Ventilation Strategy */}
+      {/* Strategy */}
       <section style={{ marginBottom: 24 }}>
         <Label>Ventilation Strategy</Label>
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          style={inputStyle}
-        >
+        <select value={type} onChange={(e) => setType(e.target.value)} style={inputStyle}>
           <option value="natural">Natural Ventilation</option>
           <option value="mev">MEV (Mechanical Extract Ventilation)</option>
           <option value="mv">MV (Mechanical Ventilation)</option>
@@ -120,7 +135,7 @@ export default function VentilationPage() {
           <option value="piv">PIV (Positive Input Ventilation)</option>
         </select>
         <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-          Strategy determines which air flow rates apply (continuous vs intermittent).
+          Strategy determines if both exhaust and supply are required.
         </p>
       </section>
 
@@ -134,9 +149,9 @@ export default function VentilationPage() {
               <Label>{ROOM_LABELS[key]}</Label>
               <input
                 type="number"
+                min={0}
                 value={rooms[key]}
                 onChange={(e) => setRooms({ ...rooms, [key]: parseInt(e.target.value || '0') })}
-                min={0}
                 style={inputStyle}
               />
             </div>
@@ -144,21 +159,37 @@ export default function VentilationPage() {
         })}
       </section>
 
-      {/* Ventilation Summary */}
+      {/* Summary */}
       <section style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 18, marginBottom: 8 }}>Total Required Ventilation</h3>
+        <h3 style={{ fontSize: 18, marginBottom: 8 }}>Required Ventilation Summary</h3>
+
+        {/* Extract */}
         <div style={{
-          background: isValid ? '#e5ffe5' : '#ffe5e5',
-          padding: 16,
+          background: extractTotal >= 30 ? '#e5ffe5' : '#ffe5e5',
+          padding: 14,
           borderRadius: 10,
-          fontSize: 16,
-          fontWeight: 500
+          fontSize: 15,
+          marginBottom: 12
         }}>
-          {totalRequired} L/s required ({type === 'natural' || type === 'piv' ? 'Intermittent' : 'Continuous'})<br />
-          {isValid ? '✅ Meets typical minimum threshold' : '⚠️ Below expected airflow'}
+          <strong>{extractTotal} L/s extract</strong> ({type === 'natural' || type === 'piv' ? 'Intermittent' : 'Continuous'})<br />
+          {extractTotal >= 30 ? '✅ Meets exhaust threshold' : '⚠️ Below expected extract airflow'}
         </div>
+
+        {/* Supply */}
+        {supplyRequired && (
+          <div style={{
+            background: supplyTotal >= 20 ? '#e5ffe5' : '#ffe5e5',
+            padding: 14,
+            borderRadius: 10,
+            fontSize: 15
+          }}>
+            <strong>{supplyTotal} L/s supply</strong><br />
+            {supplyTotal >= 20 ? '✅ Meets supply threshold' : '⚠️ Below expected supply airflow'}
+          </div>
+        )}
+
         <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-          Based on UK regulations (e.g. Document F, BS 5250). Adjust as needed per dwelling.
+          Based on UK regulations (e.g. Document F, BS 5250). Supply applies to MV, MVHR, PIV systems.
         </p>
       </section>
 
