@@ -3,11 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-type RoomKey = keyof typeof ROOM_LABELS;
-
-/* --- LocalStorage Key --- */
-const STORAGE_KEY = 'mcs.ventilation';
-
 /* --- Room labels --- */
 const ROOM_LABELS = {
   kitchen: 'Kitchen',
@@ -16,16 +11,18 @@ const ROOM_LABELS = {
   'utility room': 'Utility Room',
   'en-suite': 'En-suite',
   living: 'Living Room',
-  bedroom: 'Bedroom',
+  bedroom: 'Bedroom'
 };
 
-/* --- Extract and Supply Flow Requirements (L/s) --- */
+type RoomKey = keyof typeof ROOM_LABELS;
+
+/* --- Flow rates (L/s) --- */
 const EXTRACT_FLOW = {
   kitchen: 13,
   bathroom: 8,
   wc: 6,
   'utility room': 8,
-  'en-suite': 6,
+  'en-suite': 6
 };
 
 const INTERMITTENT_FLOW = {
@@ -33,15 +30,17 @@ const INTERMITTENT_FLOW = {
   bathroom: 15,
   wc: 6,
   'utility room': 30,
-  'en-suite': 15,
+  'en-suite': 15
 };
 
 const SUPPLY_FLOW = {
   living: 10,
-  bedroom: 8,
+  bedroom: 8
 };
 
-/* --- Helpers --- */
+/* --- LocalStorage Helpers --- */
+const STORAGE_KEY = 'mcs.ventilation';
+
 const readVent = () => {
   if (typeof window === 'undefined') return null;
   try {
@@ -85,8 +84,8 @@ export default function VentilationPage() {
     wc: 1,
     'utility room': 0,
     'en-suite': 0,
-    living: 1,
-    bedroom: 2,
+    living: 0,
+    bedroom: 0
   });
 
   const isContinuous = ['mev', 'mv', 'mvhr'].includes(type);
@@ -135,11 +134,7 @@ export default function VentilationPage() {
 
       <section style={{ marginBottom: 24 }}>
         <Label>Ventilation Strategy</Label>
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          style={inputStyle}
-        >
+        <select value={type} onChange={(e) => setType(e.target.value)} style={inputStyle}>
           <option value="natural">Natural Ventilation</option>
           <option value="mev">MEV (Mechanical Extract Ventilation)</option>
           <option value="mv">MV (Mechanical Ventilation)</option>
@@ -147,7 +142,7 @@ export default function VentilationPage() {
           <option value="piv">PIV (Positive Input Ventilation)</option>
         </select>
         <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-          Strategy determines which air flow rates apply (continuous vs intermittent).
+          Strategy determines airflow types required (intermittent vs continuous, extract vs supply).
         </p>
       </section>
 
@@ -180,30 +175,29 @@ export default function VentilationPage() {
           padding: 12,
           borderRadius: 10,
           marginBottom: 8,
-          fontSize: 16,
+          fontSize: 16
         }}>
           <strong>{totalExtract} L/s extract</strong> ({isContinuous ? 'Continuous' : 'Intermittent'})<br />
           {isValidExtract ? '✅ Meets extract flow requirement' : '⚠️ Below extract flow threshold'}
         </div>
 
-      {/* Show supply ventilation only if the user has habitable rooms */}
-{isContinuous && (rooms.living > 0 || rooms.bedroom > 0) && (
-  <div style={{
-    background: isValidSupply ? '#e5ffe5' : '#ffe5e5',
-    padding: 12,
-    borderRadius: 10,
-    fontSize: 16,
-    marginTop: 12
-  }}>
-    <strong>{totalSupply} L/s supply</strong> to habitable rooms<br />
-    {isValidSupply
-      ? '✅ Meets supply flow requirement'
-      : '⚠️ Below supply flow threshold'}
-  </div>
-)}
+        {/* ✅ Supply is shown only when relevant rooms exist */}
+        {isContinuous && (rooms.living > 0 || rooms.bedroom > 0) && (
+          <div style={{
+            background: isValidSupply ? '#e5ffe5' : '#ffe5e5',
+            padding: 12,
+            borderRadius: 10,
+            fontSize: 16
+          }}>
+            <strong>{totalSupply} L/s supply</strong> to habitable rooms<br />
+            {isValidSupply
+              ? '✅ Meets supply flow requirement'
+              : '⚠️ Below supply flow threshold'}
+          </div>
+        )}
 
         <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-          Based on UK regulations (e.g. Document F, BS 5250). Adjust as needed per dwelling.
+          Based on UK ventilation standards (e.g. Document F, BS 5250). You can edit room counts above.
         </p>
       </section>
 
