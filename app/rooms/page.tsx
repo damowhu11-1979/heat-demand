@@ -1,13 +1,16 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import React from 'react';
 
-        This is a placeholder for the Heated Rooms page. You can start building your UI here.
-      </p>
+export default function RoomsPage() {
+  return (
+    <main style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>
+      <h1 style={{ fontSize: 28, marginBottom: 12 }}>Rooms</h1>
+      <p>This is the rooms page. You’ve successfully routed to <code>/rooms</code>.</p>
     </main>
   );
 }
+✅ Or: Use 
 
 type Room = {
   zone: number;
