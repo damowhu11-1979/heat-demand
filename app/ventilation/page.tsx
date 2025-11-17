@@ -105,10 +105,10 @@ export default function VentilationPage() {
   const totalExtract = Object.entries(rooms).reduce((sum, [key, count]) => {
     const k = key as RoomKey;
     if (k in EXTRACT_FLOW || k in INTERMITTENT_FLOW) {
-      const flow =
-        ['mev', 'mv', 'mvhr'].includes(type) && k in EXTRACT_FLOW
-          ? EXTRACT_FLOW[k]
-          : INTERMITTENT_FLOW[k as keyof typeof INTERMITTENT_FLOW] || 0;
+     const isContinuous = ['mev', 'mv', 'mvhr'].includes(type);
+const flow = isContinuous
+  ? (EXTRACT_FLOW as Record<string, number>)[k] ?? 0
+  : (INTERMITTENT_FLOW as Record<string, number>)[k] ?? 0;
       return sum + flow * count;
     }
     return sum;
