@@ -2,9 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-type RoomKey = keyof typeof ROOM_LABELS;
-/* --- LocalStorage Keys --- */
-const STORAGE_KEY = 'mcs.ventilation';
 
 /* --- Airflow Requirements (L/s) --- */
 const CONTINUOUS = {
@@ -31,7 +28,11 @@ const ROOM_LABELS = {
   'en-suite': 'En-suite'
 };
 
-/* --- Helpers --- */
+type RoomKey = keyof typeof ROOM_LABELS;
+
+/* --- LocalStorage Helpers --- */
+const STORAGE_KEY = 'mcs.ventilation';
+
 const readVent = () => {
   if (typeof window === 'undefined') return null;
   try {
@@ -69,7 +70,7 @@ const inputStyle = {
 /* --- Main Component --- */
 export default function VentilationPage() {
   const [type, setType] = useState('natural');
-  const [rooms, setRooms] = useState({
+  const [rooms, setRooms] = useState<Record<RoomKey, number>>({
     kitchen: 1,
     bathroom: 1,
     wc: 1,
@@ -78,12 +79,12 @@ export default function VentilationPage() {
   });
 
   const totalRequired = Object.entries(rooms).reduce((sum, [key, count]) => {
-  const k = key as keyof typeof CONTINUOUS;
-  const base = ['mev', 'mv', 'mvhr'].includes(type) ? CONTINUOUS[k] : INTERMITTENT[k];
-  return sum + base * count;
-}, 0);
+    const k = key as RoomKey;
+    const base = ['mev', 'mv', 'mvhr'].includes(type) ? CONTINUOUS[k] : INTERMITTENT[k];
+    return sum + base * count;
+  }, 0);
 
-  const isValid = totalRequired >= 30; // Example threshold, adjust as needed
+  const isValid = totalRequired >= 30; // Example threshold
 
   useEffect(() => {
     const saved = readVent();
@@ -104,6 +105,7 @@ export default function VentilationPage() {
         Step 2 of 6 — Configure ventilation strategy and minimum air flow requirements
       </p>
 
+      {/* Ventilation Strategy */}
       <section style={{ marginBottom: 24 }}>
         <Label>Ventilation Strategy</Label>
         <select
@@ -122,24 +124,27 @@ export default function VentilationPage() {
         </p>
       </section>
 
+      {/* Room Counts */}
       <section style={{ marginBottom: 32 }}>
         <h3 style={{ fontSize: 18, marginBottom: 12 }}>Room Counts</h3>
-       {Object.keys(rooms).map((roomKey) => {
-  const key = roomKey as RoomKey;
-  return (
-    <div key={key} style={{ marginBottom: 12 }}>
-      <Label>{ROOM_LABELS[key]}</Label>
-      <input
-        type="number"
-        value={rooms[key]}
-        onChange={(e) => setRooms({ ...rooms, [key]: parseInt(e.target.value || '0') })}
-        min={0}
-        style={inputStyle}
-      />
-    </div>
-  );
-})}
+        {Object.keys(rooms).map((roomKey) => {
+          const key = roomKey as RoomKey;
+          return (
+            <div key={key} style={{ marginBottom: 12 }}>
+              <Label>{ROOM_LABELS[key]}</Label>
+              <input
+                type="number"
+                value={rooms[key]}
+                onChange={(e) => setRooms({ ...rooms, [key]: parseInt(e.target.value || '0') })}
+                min={0}
+                style={inputStyle}
+              />
+            </div>
+          );
+        })}
+      </section>
 
+      {/* Ventilation Summary */}
       <section style={{ marginBottom: 28 }}>
         <h3 style={{ fontSize: 18, marginBottom: 8 }}>Total Required Ventilation</h3>
         <div style={{
@@ -157,6 +162,7 @@ export default function VentilationPage() {
         </p>
       </section>
 
+      {/* Navigation */}
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <Link href="/" style={secondaryBtn}>← Back</Link>
         <Link href="/heated-rooms" style={primaryBtn}>Next: Heated Rooms →</Link>
