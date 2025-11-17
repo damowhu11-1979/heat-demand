@@ -1,15 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 
-export default function RoomsPage() {
-  return (
-    <main style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 12 }}>Rooms</h1>
-      <p>This is the rooms page. You’ve successfully routed to <code>/rooms</code>.</p>
-    </main>
-  );
-}
+/* ------------------------------ TYPES ------------------------------ */
 
 type Room = {
   zone: number;
@@ -21,6 +15,8 @@ type Room = {
 };
 
 type Zone = { name: string; rooms: Room[] };
+
+/* ------------------------------ STORAGE ------------------------------ */
 
 const ROOMS_KEY = 'mcs.rooms';
 
@@ -41,11 +37,14 @@ const writeRooms = (zones: Zone[]) => {
   } catch {}
 };
 
+/* ------------------------------ PAGE ------------------------------ */
+
 export default function RoomsPage(): React.JSX.Element {
   const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', rooms: [] }]);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
 
   const [showModal, setShowModal] = useState(false);
+
   const [form, setForm] = useState<Room>({
     zone: 0,
     type: '',
@@ -55,19 +54,22 @@ export default function RoomsPage(): React.JSX.Element {
     airChangeRate: undefined,
   });
 
+  /* Load existing rooms */
   useEffect(() => {
     const saved = readRooms();
-    if (saved && Array.isArray(saved) && saved.length) {
+    if (saved && Array.isArray(saved)) {
       setZones(saved);
       setExpanded({ 0: true });
     }
   }, []);
 
+  /* Auto-save */
   useEffect(() => {
     const t = setTimeout(() => writeRooms(zones), 400);
     return () => clearTimeout(t);
   }, [zones]);
 
+  /* Room type list */
   const roomTypes = useMemo(
     () => [
       'Bedroom',
@@ -84,6 +86,7 @@ export default function RoomsPage(): React.JSX.Element {
     []
   );
 
+  /* Add a room */
   const onOpenAddRoom = () => {
     setForm({
       zone: 0,
@@ -98,27 +101,37 @@ export default function RoomsPage(): React.JSX.Element {
 
   const onSaveRoom = () => {
     if (!form.name.trim()) {
-      alert('Please enter a Room Name.');
+      alert('Please enter a room name.');
       return;
     }
-    const z = [...zones];
-    z[form.zone] = { ...z[form.zone], rooms: [...z[form.zone].rooms, { ...form }] };
-    setZones(z);
+    const copy = [...zones];
+    copy[form.zone] = {
+      ...copy[form.zone],
+      rooms: [...copy[form.zone].rooms, { ...form }],
+    };
+    setZones(copy);
     setExpanded((e) => ({ ...e, [form.zone]: true }));
     setShowModal(false);
   };
 
+  /* Add zone */
   const onAddZone = () => {
     const n = zones.length + 1;
     setZones([...zones, { name: `Zone ${n}`, rooms: [] }]);
     setExpanded((e) => ({ ...e, [zones.length]: true }));
   };
 
+  /* Remove room */
   const onRemoveRoom = (zoneIdx: number, idx: number) => {
-    const z = [...zones];
-    z[zoneIdx] = { ...z[zoneIdx], rooms: z[zoneIdx].rooms.filter((_, i) => i !== idx) };
-    setZones(z);
+    const copy = [...zones];
+    copy[zoneIdx] = {
+      ...copy[zoneIdx],
+      rooms: copy[zoneIdx].rooms.filter((_, i) => i !== idx),
+    };
+    setZones(copy);
   };
+
+  /* ------------------------------ RENDER ------------------------------ */
 
   return (
     <main style={wrap}>
@@ -138,7 +151,6 @@ export default function RoomsPage(): React.JSX.Element {
               <button
                 onClick={() => setExpanded((e) => ({ ...e, [zi]: !e[zi] }))}
                 style={iconBtn}
-                aria-label="Toggle zone"
               >
                 {expanded[zi] ? '▾' : '▸'}
               </button>
@@ -152,15 +164,16 @@ export default function RoomsPage(): React.JSX.Element {
                   <div style={{ width: 120, textAlign: 'right' }}>Ceiling (m)</div>
                   <div style={{ width: 120, textAlign: 'right' }}>Design Temp (°C)</div>
                   <div style={{ width: 120, textAlign: 'right' }}>Air Changes (/hr)</div>
-                  <div style={{ width: 80 }} />
+                  <div style={{ width: 80 }}></div>
                 </div>
 
                 {zone.rooms.map((r, i) => (
                   <div key={i} style={row}>
-                    <div style={{ flex: 2 }}>{r.name || <em style={muted}>Unnamed</em>}</div>
+                    <div style={{ flex: 2 }}>{r.name}</div>
                     <div style={{ width: 120, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
                     <div style={{ width: 120, textAlign: 'right' }}>{r.designTemp ?? '-'}</div>
                     <div style={{ width: 120, textAlign: 'right' }}>{r.airChangeRate ?? '-'}</div>
+
                     <div style={{ width: 80, textAlign: 'right' }}>
                       <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>
                         Remove
@@ -178,12 +191,8 @@ export default function RoomsPage(): React.JSX.Element {
         ))}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button onClick={onOpenAddRoom} style={primaryBtn}>
-            Add Room
-          </button>
-          <button onClick={onAddZone} style={secondaryBtn}>
-            Add Zone
-          </button>
+          <button onClick={onOpenAddRoom} style={primaryBtn}>Add Room</button>
+          <button onClick={onAddZone} style={secondaryBtn}>Add Zone</button>
         </div>
       </section>
 
@@ -191,15 +200,17 @@ export default function RoomsPage(): React.JSX.Element {
         <Link href="/ventilation" style={{ ...secondaryBtn, textDecoration: 'none' }}>
           ← Back: Ventilation
         </Link>
+
         <Link href="/elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
           Next: Building Elements →
         </Link>
       </div>
 
+      {/* ------------------------------ MODAL ------------------------------ */}
       {showModal && (
         <div style={modalBackdrop} onClick={() => setShowModal(false)}>
           <div style={modal} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 10px' }}>Add Room</h2>
+            <h2 style={{ margin: '0 0 12px' }}>Add Room</h2>
 
             <div style={grid2}>
               <div>
@@ -209,9 +220,7 @@ export default function RoomsPage(): React.JSX.Element {
                   onChange={(e) => setForm({ ...form, zone: Number(e.target.value) })}
                 >
                   {zones.map((z, i) => (
-                    <option key={i} value={i}>
-                      {z.name}
-                    </option>
+                    <option key={i} value={i}>{z.name}</option>
                   ))}
                 </Select>
               </div>
@@ -224,9 +233,7 @@ export default function RoomsPage(): React.JSX.Element {
                 >
                   <option value="">Select room type</option>
                   {roomTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </Select>
               </div>
@@ -234,7 +241,6 @@ export default function RoomsPage(): React.JSX.Element {
 
             <Label>Room Name *</Label>
             <Input
-              placeholder="e.g., Bedroom 1"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
@@ -252,7 +258,6 @@ export default function RoomsPage(): React.JSX.Element {
             <Label>Design Temperature (°C)</Label>
             <Input
               type="number"
-              placeholder="Optional"
               value={form.designTemp ?? ''}
               onChange={(e) =>
                 setForm({
@@ -265,7 +270,6 @@ export default function RoomsPage(): React.JSX.Element {
             <Label>Air Change Rate (/hr)</Label>
             <Input
               type="number"
-              placeholder="Optional"
               value={form.airChangeRate ?? ''}
               onChange={(e) =>
                 setForm({
@@ -275,7 +279,7 @@ export default function RoomsPage(): React.JSX.Element {
               }
             />
 
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
               <button onClick={() => setShowModal(false)} style={secondaryBtn}>
                 Cancel
               </button>
@@ -290,21 +294,10 @@ export default function RoomsPage(): React.JSX.Element {
   );
 }
 
-// ========== UI Bits ==========
+/* ------------------------------ UI COMPONENTS ------------------------------ */
 
 function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <label
-      style={{
-        display: 'block',
-        fontSize: 12,
-        color: '#555',
-        margin: '12px 0 6px',
-      }}
-    >
-      {children}
-    </label>
-  );
+  return <label style={{ display: 'block', margin: '12px 0 6px', color: '#555', fontSize: 12 }}>{children}</label>;
 }
 
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
@@ -315,41 +308,40 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} style={{ ...input, ...(props.style || {}) }} />;
 }
 
-// ========== Styles ==========
+/* ------------------------------ STYLES ------------------------------ */
 
 const wrap: React.CSSProperties = {
   maxWidth: 1040,
   margin: '0 auto',
   padding: 24,
-  fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
 };
 
-const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 8px' };
-const muted: React.CSSProperties = { color: '#777', fontStyle: 'normal' };
-const subtle: React.CSSProperties = { color: '#666', fontSize: 13, lineHeight: 1.45 };
+const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 12px' };
+
+const subtle: React.CSSProperties = { fontSize: 13, color: '#666', marginBottom: 16 };
+
+const muted: React.CSSProperties = { color: '#777' };
 
 const card: React.CSSProperties = {
   background: '#fff',
-  border: '1px solid #e6e6e6',
+  border: '1px solid #eee',
   borderRadius: 14,
   padding: 16,
 };
 
 const rowHeader: React.CSSProperties = {
   display: 'flex',
-  gap: 8,
   padding: '8px 4px',
-  color: '#555',
-  fontSize: 12,
   borderBottom: '1px solid #eee',
+  fontSize: 12,
+  color: '#555',
 };
 
 const row: React.CSSProperties = {
   display: 'flex',
-  gap: 8,
   padding: '10px 4px',
   alignItems: 'center',
-  borderBottom: '1px solid #f2f2f2',
+  borderBottom: '1px solid #f4f4f4',
 };
 
 const input: React.CSSProperties = {
@@ -358,7 +350,6 @@ const input: React.CSSProperties = {
   borderRadius: 10,
   border: '1px solid #ddd',
   outline: 'none',
-  boxSizing: 'border-box',
 };
 
 const primaryBtn: React.CSSProperties = {
@@ -381,18 +372,18 @@ const secondaryBtn: React.CSSProperties = {
 
 const linkDanger: React.CSSProperties = {
   color: '#b00020',
+  cursor: 'pointer',
   textDecoration: 'underline',
   background: 'none',
   border: 0,
-  cursor: 'pointer',
 };
 
 const iconBtn: React.CSSProperties = {
-  background: '#f6f6f6',
-  border: '1px solid #e1e1e1',
+  padding: '4px 10px',
   borderRadius: 8,
-  padding: '4px 8px',
+  border: '1px solid #ccc',
   cursor: 'pointer',
+  background: '#fafafa',
 };
 
 const grid2: React.CSSProperties = {
@@ -402,19 +393,19 @@ const grid2: React.CSSProperties = {
 };
 
 const modalBackdrop: React.CSSProperties = {
-  position: 'fixed' as const,
+  position: 'fixed',
   inset: 0,
-  background: 'rgba(0,0,0,0.32)',
-  display: 'grid' as const,
-  placeItems: 'center' as const,
-  zIndex: 30,
+  background: 'rgba(0,0,0,0.3)',
+  display: 'grid',
+  placeItems: 'center',
+  zIndex: 50,
 };
 
 const modal: React.CSSProperties = {
-  width: 'min(720px, 92vw)',
   background: '#fff',
-  borderRadius: 16,
+  width: 'min(700px, 90vw)',
+  borderRadius: 14,
   border: '1px solid #e6e6e6',
-  boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-  padding: 18,
+  padding: 20,
+  boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
 };
