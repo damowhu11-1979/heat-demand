@@ -3,28 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-/* --- Room Config --- */
-const EXTRACT_FLOW = {
-  kitchen: 13,
-  bathroom: 8,
-  'utility room': 8,
-  'en-suite': 6,
-  wc: 6
-};
+type RoomKey = keyof typeof ROOM_LABELS;
 
-const INTERMITTENT_FLOW = {
-  kitchen: 30,
-  bathroom: 15,
-  'utility room': 30,
-  'en-suite': 15,
-  wc: 6
-};
+/* --- LocalStorage Key --- */
+const STORAGE_KEY = 'mcs.ventilation';
 
-const SUPPLY_FLOW = {
-  living: 10,
-  bedroom: 8
-};
-
+/* --- Room labels --- */
 const ROOM_LABELS = {
   kitchen: 'Kitchen',
   bathroom: 'Bathroom',
@@ -32,18 +16,37 @@ const ROOM_LABELS = {
   'utility room': 'Utility Room',
   'en-suite': 'En-suite',
   living: 'Living Room',
-  bedroom: 'Bedroom'
+  bedroom: 'Bedroom',
 };
 
-type RoomKey = keyof typeof ROOM_LABELS;
+/* --- Extract and Supply Flow Requirements (L/s) --- */
+const EXTRACT_FLOW = {
+  kitchen: 13,
+  bathroom: 8,
+  wc: 6,
+  'utility room': 8,
+  'en-suite': 6,
+};
 
-/* --- Storage Helpers --- */
-const STORAGE_KEY = 'mcs.ventilation';
+const INTERMITTENT_FLOW = {
+  kitchen: 30,
+  bathroom: 15,
+  wc: 6,
+  'utility room': 30,
+  'en-suite': 15,
+};
 
+const SUPPLY_FLOW = {
+  living: 10,
+  bedroom: 8,
+};
+
+/* --- Helpers --- */
 const readVent = () => {
   if (typeof window === 'undefined') return null;
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '');
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
@@ -83,34 +86,40 @@ export default function VentilationPage() {
     'utility room': 0,
     'en-suite': 0,
     living: 1,
-    bedroom: 2
+    bedroom: 2,
   });
 
-  // Which systems need supply calc
-  const supplyRequired = ['mv', 'mvhr', 'piv'].includes(type);
+  const isContinuous = ['mev', 'mv', 'mvhr'].includes(type);
 
-  const extractTotal = Object.entries(rooms).reduce((sum, [key, count]) => {
+  const totalExtract = Object.entries(rooms).reduce((sum, [key, count]) => {
     const k = key as RoomKey;
     if (k in EXTRACT_FLOW || k in INTERMITTENT_FLOW) {
-      const flow = ['mev', 'mv', 'mvhr'].includes(type) ? EXTRACT_FLOW[k] : INTERMITTENT_FLOW[k];
+      const flow = isContinuous
+        ? EXTRACT_FLOW[k as keyof typeof EXTRACT_FLOW]
+        : INTERMITTENT_FLOW[k as keyof typeof INTERMITTENT_FLOW];
       return sum + flow * count;
     }
     return sum;
   }, 0);
 
-  const supplyTotal = Object.entries(rooms).reduce((sum, [key, count]) => {
+  const totalSupply = Object.entries(rooms).reduce((sum, [key, count]) => {
     const k = key as RoomKey;
-    if (!supplyRequired) return 0;
     if (k in SUPPLY_FLOW) {
-      return sum + SUPPLY_FLOW[k] * count;
+      const flow = SUPPLY_FLOW[k as keyof typeof SUPPLY_FLOW];
+      return sum + flow * count;
     }
     return sum;
   }, 0);
 
+  const isValidExtract = totalExtract >= 30;
+  const isValidSupply = isContinuous ? totalSupply >= 15 : true;
+
   useEffect(() => {
     const saved = readVent();
-    if (saved?.type) setType(saved.type);
-    if (saved?.rooms) setRooms(saved.rooms);
+    if (saved) {
+      if (saved.type) setType(saved.type);
+      if (saved.rooms) setRooms(saved.rooms);
+    }
   }, []);
 
   useEffect(() => {
@@ -124,10 +133,13 @@ export default function VentilationPage() {
         Step 2 of 6 — Configure ventilation strategy and minimum air flow requirements
       </p>
 
-      {/* Strategy */}
       <section style={{ marginBottom: 24 }}>
         <Label>Ventilation Strategy</Label>
-        <select value={type} onChange={(e) => setType(e.target.value)} style={inputStyle}>
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          style={inputStyle}
+        >
           <option value="natural">Natural Ventilation</option>
           <option value="mev">MEV (Mechanical Extract Ventilation)</option>
           <option value="mv">MV (Mechanical Ventilation)</option>
@@ -135,11 +147,10 @@ export default function VentilationPage() {
           <option value="piv">PIV (Positive Input Ventilation)</option>
         </select>
         <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-          Strategy determines if both exhaust and supply are required.
+          Strategy determines which air flow rates apply (continuous vs intermittent).
         </p>
       </section>
 
-      {/* Room Counts */}
       <section style={{ marginBottom: 32 }}>
         <h3 style={{ fontSize: 18, marginBottom: 12 }}>Room Counts</h3>
         {Object.keys(rooms).map((roomKey) => {
@@ -149,9 +160,11 @@ export default function VentilationPage() {
               <Label>{ROOM_LABELS[key]}</Label>
               <input
                 type="number"
-                min={0}
                 value={rooms[key]}
-                onChange={(e) => setRooms({ ...rooms, [key]: parseInt(e.target.value || '0') })}
+                onChange={(e) =>
+                  setRooms({ ...rooms, [key]: parseInt(e.target.value || '0') })
+                }
+                min={0}
                 style={inputStyle}
               />
             </div>
@@ -159,41 +172,37 @@ export default function VentilationPage() {
         })}
       </section>
 
-      {/* Summary */}
       <section style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 18, marginBottom: 8 }}>Required Ventilation Summary</h3>
+        <h3 style={{ fontSize: 18, marginBottom: 8 }}>Required Ventilation</h3>
 
-        {/* Extract */}
         <div style={{
-          background: extractTotal >= 30 ? '#e5ffe5' : '#ffe5e5',
-          padding: 14,
+          background: isValidExtract ? '#e5ffe5' : '#ffe5e5',
+          padding: 12,
           borderRadius: 10,
-          fontSize: 15,
-          marginBottom: 12
+          marginBottom: 8,
+          fontSize: 16,
         }}>
-          <strong>{extractTotal} L/s extract</strong> ({type === 'natural' || type === 'piv' ? 'Intermittent' : 'Continuous'})<br />
-          {extractTotal >= 30 ? '✅ Meets exhaust threshold' : '⚠️ Below expected extract airflow'}
+          <strong>{totalExtract} L/s extract</strong> ({isContinuous ? 'Continuous' : 'Intermittent'})<br />
+          {isValidExtract ? '✅ Meets extract flow requirement' : '⚠️ Below extract flow threshold'}
         </div>
 
-        {/* Supply */}
-        {supplyRequired && (
+        {isContinuous && (
           <div style={{
-            background: supplyTotal >= 20 ? '#e5ffe5' : '#ffe5e5',
-            padding: 14,
+            background: isValidSupply ? '#e5ffe5' : '#ffe5e5',
+            padding: 12,
             borderRadius: 10,
-            fontSize: 15
+            fontSize: 16,
           }}>
-            <strong>{supplyTotal} L/s supply</strong><br />
-            {supplyTotal >= 20 ? '✅ Meets supply threshold' : '⚠️ Below expected supply airflow'}
+            <strong>{totalSupply} L/s supply</strong> to habitable rooms<br />
+            {isValidSupply ? '✅ Meets supply flow requirement' : '⚠️ Below supply flow threshold'}
           </div>
         )}
 
         <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-          Based on UK regulations (e.g. Document F, BS 5250). Supply applies to MV, MVHR, PIV systems.
+          Based on UK regulations (e.g. Document F, BS 5250). Adjust as needed per dwelling.
         </p>
       </section>
 
-      {/* Navigation */}
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <Link href="/" style={secondaryBtn}>← Back</Link>
         <Link href="/heated-rooms" style={primaryBtn}>Next: Heated Rooms →</Link>
