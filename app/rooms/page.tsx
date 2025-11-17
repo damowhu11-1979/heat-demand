@@ -10,7 +10,6 @@ export default function RoomsPage() {
     </main>
   );
 }
-✅ Or: Use 
 
 type Room = {
   zone: number;
