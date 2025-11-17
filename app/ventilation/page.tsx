@@ -1,28 +1,19 @@
- 'use client';
+'use client';
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-/* --- Room labels --- */
-const ROOM_LABELS = {
-  kitchen: 'Kitchen',
-  bathroom: 'Bathroom',
-  wc: 'WC',
-  'utility room': 'Utility Room',
-  'en-suite': 'En-suite',
-  living: 'Living Room',
-  bedroom: 'Bedroom'
-};
-
 type RoomKey = keyof typeof ROOM_LABELS;
 
-/* --- Flow rates (L/s) --- */
+const STORAGE_KEY = 'mcs.ventilation';
+
+// Flow rates (L/s)
 const EXTRACT_FLOW = {
   kitchen: 13,
   bathroom: 8,
   wc: 6,
   'utility room': 8,
-  'en-suite': 6
+  'en-suite': 6,
 };
 
 const INTERMITTENT_FLOW = {
@@ -30,16 +21,34 @@ const INTERMITTENT_FLOW = {
   bathroom: 15,
   wc: 6,
   'utility room': 30,
-  'en-suite': 15
+  'en-suite': 15,
 };
 
 const SUPPLY_FLOW = {
   living: 10,
-  bedroom: 8
+  bedroom: 8,
 };
 
-/* --- LocalStorage Helpers --- */
-const STORAGE_KEY = 'mcs.ventilation';
+const ROOM_LABELS = {
+  kitchen: 'Kitchen',
+  bathroom: 'Bathroom',
+  wc: 'WC',
+  'utility room': 'Utility Room',
+  'en-suite': 'En-suite',
+  living: 'Living Room',
+  bedroom: 'Bedroom',
+};
+
+// Initial room values
+const DEFAULT_ROOMS: Record<RoomKey, number> = {
+  kitchen: 1,
+  bathroom: 1,
+  wc: 1,
+  'utility room': 0,
+  'en-suite': 0,
+  living: 0,
+  bedroom: 0,
+};
 
 const readVent = () => {
   if (typeof window === 'undefined') return null;
@@ -58,44 +67,48 @@ const writeVent = (obj: any) => {
   } catch {}
 };
 
-/* --- UI Atoms --- */
 const Label = ({ children }: { children: React.ReactNode }) => (
   <label style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>{children}</label>
 );
 
 const primaryBtn = {
-  background: '#111', color: '#fff', padding: '12px 18px', borderRadius: 12, textDecoration: 'none', border: 0
+  background: '#111',
+  color: '#fff',
+  padding: '12px 18px',
+  borderRadius: 12,
+  textDecoration: 'none',
+  border: 0,
 };
 
 const secondaryBtn = {
-  background: '#fff', color: '#111', padding: '12px 18px', borderRadius: 12, textDecoration: 'none', border: '1px solid #ccc'
+  background: '#fff',
+  color: '#111',
+  padding: '12px 18px',
+  borderRadius: 12,
+  textDecoration: 'none',
+  border: '1px solid #ccc',
 };
 
 const inputStyle = {
-  padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, width: '100%', fontSize: 14
+  padding: '10px 12px',
+  border: '1px solid #ddd',
+  borderRadius: 8,
+  width: '100%',
+  fontSize: 14,
 };
 
-/* --- Main Component --- */
 export default function VentilationPage() {
   const [type, setType] = useState('natural');
-  const [rooms, setRooms] = useState<Record<RoomKey, number>>({
-    kitchen: 1,
-    bathroom: 1,
-    wc: 1,
-    'utility room': 0,
-    'en-suite': 0,
-    living: 0,
-    bedroom: 0
-  });
+  const [rooms, setRooms] = useState<Record<RoomKey, number>>(DEFAULT_ROOMS);
 
-  const isContinuous = ['mev', 'mv', 'mvhr'].includes(type);
-
+  // Extract and supply airflow totals
   const totalExtract = Object.entries(rooms).reduce((sum, [key, count]) => {
     const k = key as RoomKey;
     if (k in EXTRACT_FLOW || k in INTERMITTENT_FLOW) {
-      const flow = isContinuous
-        ? EXTRACT_FLOW[k as keyof typeof EXTRACT_FLOW]
-        : INTERMITTENT_FLOW[k as keyof typeof INTERMITTENT_FLOW];
+      const flow =
+        ['mev', 'mv', 'mvhr'].includes(type) && k in EXTRACT_FLOW
+          ? EXTRACT_FLOW[k]
+          : INTERMITTENT_FLOW[k as keyof typeof INTERMITTENT_FLOW] || 0;
       return sum + flow * count;
     }
     return sum;
@@ -103,21 +116,23 @@ export default function VentilationPage() {
 
   const totalSupply = Object.entries(rooms).reduce((sum, [key, count]) => {
     const k = key as RoomKey;
-    if (k in SUPPLY_FLOW) {
-      const flow = SUPPLY_FLOW[k as keyof typeof SUPPLY_FLOW];
-      return sum + flow * count;
-    }
-    return sum;
+    const flow = SUPPLY_FLOW[k as keyof typeof SUPPLY_FLOW] || 0;
+    return sum + flow * count;
   }, 0);
 
-  const isValidExtract = totalExtract >= 30;
-  const isValidSupply = isContinuous ? totalSupply >= 15 : true;
+  const extractOK = totalExtract >= 30;
+  const supplyOK = totalSupply >= 15;
 
   useEffect(() => {
     const saved = readVent();
     if (saved) {
       if (saved.type) setType(saved.type);
-      if (saved.rooms) setRooms(saved.rooms);
+      if (saved.rooms) {
+        setRooms((prev) => ({
+          ...prev,
+          ...saved.rooms,
+        }));
+      }
     }
   }, []);
 
@@ -148,7 +163,7 @@ export default function VentilationPage() {
 
       <section style={{ marginBottom: 32 }}>
         <h3 style={{ fontSize: 18, marginBottom: 12 }}>Room Counts</h3>
-        {Object.keys(rooms).map((roomKey) => {
+        {Object.keys(ROOM_LABELS).map((roomKey) => {
           const key = roomKey as RoomKey;
           return (
             <div key={key} style={{ marginBottom: 12 }}>
@@ -170,29 +185,30 @@ export default function VentilationPage() {
       <section style={{ marginBottom: 28 }}>
         <h3 style={{ fontSize: 18, marginBottom: 8 }}>Required Ventilation</h3>
 
-        <div style={{
-          background: isValidExtract ? '#e5ffe5' : '#ffe5e5',
-          padding: 12,
-          borderRadius: 10,
-          marginBottom: 8,
-          fontSize: 16
-        }}>
-          <strong>{totalExtract} L/s extract</strong> ({isContinuous ? 'Continuous' : 'Intermittent'})<br />
-          {isValidExtract ? '✅ Meets extract flow requirement' : '⚠️ Below extract flow threshold'}
+        <div
+          style={{
+            background: extractOK ? '#e5ffe5' : '#ffe5e5',
+            padding: 16,
+            borderRadius: 10,
+            fontSize: 14,
+            marginBottom: 8,
+          }}
+        >
+          <strong>{totalExtract} L/s extract</strong> ({['mev', 'mv', 'mvhr'].includes(type) ? 'Continuous' : 'Intermittent'})<br />
+          {extractOK ? '✅ Meets extract flow requirement' : '⚠️ Below extract threshold'}
         </div>
 
-        {/* ✅ Supply is shown only when relevant rooms exist */}
-        {isContinuous && (rooms.living > 0 || rooms.bedroom > 0) && (
-          <div style={{
-            background: isValidSupply ? '#e5ffe5' : '#ffe5e5',
-            padding: 12,
-            borderRadius: 10,
-            fontSize: 16
-          }}>
+        {totalSupply > 0 && (
+          <div
+            style={{
+              background: supplyOK ? '#e5ffe5' : '#ffe5e5',
+              padding: 16,
+              borderRadius: 10,
+              fontSize: 14,
+            }}
+          >
             <strong>{totalSupply} L/s supply</strong> to habitable rooms<br />
-            {isValidSupply
-              ? '✅ Meets supply flow requirement'
-              : '⚠️ Below supply flow threshold'}
+            {supplyOK ? '✅ Meets supply flow requirement' : '⚠️ Below supply flow threshold'}
           </div>
         )}
 
@@ -202,9 +218,13 @@ export default function VentilationPage() {
       </section>
 
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Link href="/" style={secondaryBtn}>← Back</Link>
-        <Link href="/heated-rooms" style={primaryBtn}>Next: Heated Rooms →</Link>
+        <Link href="/" style={secondaryBtn}>
+          ← Back
+        </Link>
+        <Link href="/heated-rooms" style={primaryBtn}>
+          Next: Heated Rooms →
+        </Link>
       </div>
     </main>
   );
-}
+ }
