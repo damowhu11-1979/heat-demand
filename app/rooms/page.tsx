@@ -3,21 +3,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
-/* ------------------------------ types ------------------------------ */
 type Room = {
   zone: number;
   type: string;
   name: string;
   maxCeiling: number;
-  intermittentPct?: number;
-  heatGainsW?: number;
   designTemp?: number;
   airChangeRate?: number;
 };
 
 type Zone = { name: string; rooms: Room[] };
 
-/* ------------------------- localStorage helpers ------------------------- */
 const ROOMS_KEY = 'mcs.rooms';
 
 const readRooms = (): Zone[] | null => {
@@ -37,7 +33,6 @@ const writeRooms = (zones: Zone[]) => {
   } catch {}
 };
 
-/* ------------------------------ component ------------------------------ */
 export default function RoomsPage(): React.JSX.Element {
   const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', rooms: [] }]);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
@@ -48,6 +43,8 @@ export default function RoomsPage(): React.JSX.Element {
     type: '',
     name: '',
     maxCeiling: 2.4,
+    designTemp: undefined,
+    airChangeRate: undefined,
   });
 
   useEffect(() => {
@@ -63,11 +60,21 @@ export default function RoomsPage(): React.JSX.Element {
     return () => clearTimeout(t);
   }, [zones]);
 
-  const roomTypes = useMemo(() => [
-    'Bedroom', 'Living Room', 'Kitchen', 'Bathroom',
-    'Hallway', 'Dining Room', 'Study', 'Garage',
-    'Porch', 'Other'
-  ], []);
+  const roomTypes = useMemo(
+    () => [
+      'Bedroom',
+      'Living Room',
+      'Kitchen',
+      'Bathroom',
+      'Hallway',
+      'Dining Room',
+      'Study',
+      'Garage',
+      'Porch',
+      'Other',
+    ],
+    []
+  );
 
   const onOpenAddRoom = () => {
     setForm({
@@ -75,8 +82,6 @@ export default function RoomsPage(): React.JSX.Element {
       type: '',
       name: '',
       maxCeiling: 2.4,
-      intermittentPct: undefined,
-      heatGainsW: undefined,
       designTemp: undefined,
       airChangeRate: undefined,
     });
@@ -103,7 +108,7 @@ export default function RoomsPage(): React.JSX.Element {
 
   const onRemoveRoom = (zoneIdx: number, idx: number) => {
     const z = [...zones];
-    z[zoneIdx].rooms.splice(idx, 1);
+    z[zoneIdx] = { ...z[zoneIdx], rooms: z[zoneIdx].rooms.filter((_, i) => i !== idx) };
     setZones(z);
   };
 
@@ -114,7 +119,13 @@ export default function RoomsPage(): React.JSX.Element {
 
       <section style={card}>
         {zones.map((zone, zi) => (
-          <div key={zi} style={{ borderTop: zi ? '1px solid #eee' : undefined, paddingTop: zi ? 12 : 0 }}>
+          <div
+            key={zi}
+            style={{
+              borderTop: zi ? '1px solid #eee' : undefined,
+              paddingTop: zi ? 12 : 0,
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <button
                 onClick={() => setExpanded((e) => ({ ...e, [zi]: !e[zi] }))}
@@ -130,28 +141,28 @@ export default function RoomsPage(): React.JSX.Element {
               <div>
                 <div style={rowHeader}>
                   <div style={{ flex: 2 }}>Room Name</div>
-                  <div style={{ width: 100, textAlign: 'right' }}>Ceiling (m)</div>
-                  <div style={{ width: 100, textAlign: 'right' }}>Design Temp (°C)</div>
-                  <div style={{ width: 120, textAlign: 'right' }}>Air Change Rate (1/h)</div>
+                  <div style={{ width: 120, textAlign: 'right' }}>Ceiling (m)</div>
+                  <div style={{ width: 120, textAlign: 'right' }}>Design Temp (°C)</div>
+                  <div style={{ width: 120, textAlign: 'right' }}>Air Changes (/hr)</div>
                   <div style={{ width: 80 }} />
                 </div>
 
                 {zone.rooms.map((r, i) => (
                   <div key={i} style={row}>
                     <div style={{ flex: 2 }}>{r.name || <em style={muted}>Unnamed</em>}</div>
-                    <div style={{ width: 100, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
-                    <div style={{ width: 100, textAlign: 'right' }}>{r.designTemp ?? '—'}</div>
-                    <div style={{ width: 120, textAlign: 'right' }}>{r.airChangeRate ?? '—'}</div>
+                    <div style={{ width: 120, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
+                    <div style={{ width: 120, textAlign: 'right' }}>{r.designTemp ?? '-'}</div>
+                    <div style={{ width: 120, textAlign: 'right' }}>{r.airChangeRate ?? '-'}</div>
                     <div style={{ width: 80, textAlign: 'right' }}>
-                      <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>Remove</button>
+                      <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>
+                        Remove
+                      </button>
                     </div>
                   </div>
                 ))}
 
                 {!zone.rooms.length && (
-                  <div style={{ ...muted, padding: '10px 4px' }}>
-                    No rooms in this zone yet.
-                  </div>
+                  <div style={{ ...muted, padding: '10px 4px' }}>No rooms in this zone yet.</div>
                 )}
               </div>
             )}
@@ -159,74 +170,110 @@ export default function RoomsPage(): React.JSX.Element {
         ))}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button onClick={onOpenAddRoom} style={primaryBtn}>Add Room</button>
-          <button onClick={onAddZone} style={secondaryBtn}>Add Zone</button>
+          <button onClick={onOpenAddRoom} style={primaryBtn}>
+            Add Room
+          </button>
+          <button onClick={onAddZone} style={secondaryBtn}>
+            Add Zone
+          </button>
         </div>
       </section>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-        <Link href="/ventilation" style={secondaryBtn}>← Back: Ventilation</Link>
-        <Link href="/elements" style={primaryBtn}>Next: Building Elements →</Link>
+        <Link href="/ventilation" style={{ ...secondaryBtn, textDecoration: 'none' }}>
+          ← Back: Ventilation
+        </Link>
+        <Link href="/elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
+          Next: Building Elements →
+        </Link>
       </div>
 
       {showModal && (
         <div style={modalBackdrop} onClick={() => setShowModal(false)}>
           <div style={modal} onClick={(e) => e.stopPropagation()}>
-            <h2>Add Room</h2>
+            <h2 style={{ margin: '0 0 10px' }}>Add Room</h2>
 
             <div style={grid2}>
               <div>
                 <Label>Ventilation Zone *</Label>
-                <Select value={form.zone} onChange={(e) => setForm({ ...form, zone: Number(e.target.value) })}>
+                <Select
+                  value={form.zone}
+                  onChange={(e) => setForm({ ...form, zone: Number(e.target.value) })}
+                >
                   {zones.map((z, i) => (
-                    <option key={i} value={i}>{z.name}</option>
+                    <option key={i} value={i}>
+                      {z.name}
+                    </option>
                   ))}
                 </Select>
               </div>
 
               <div>
                 <Label>Room Type *</Label>
-                <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                <Select
+                  value={form.type}
+                  onChange={(e) => setForm({ ...form, type: e.target.value })}
+                >
                   <option value="">Select room type</option>
                   {roomTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
                   ))}
                 </Select>
               </div>
             </div>
 
-            <div>
-              <Label>Room Name *</Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </div>
+            <Label>Room Name *</Label>
+            <Input
+              placeholder="e.g., Bedroom 1"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
 
-            <div>
-              <Label>Ceiling Height</Label>
-              <Input type="number" step="0.01" value={form.maxCeiling} onChange={(e) => setForm({ ...form, maxCeiling: parseFloat(e.target.value || '0') })} />
-            </div>
+            <Label>Max Ceiling Height (m)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={form.maxCeiling}
+              onChange={(e) =>
+                setForm({ ...form, maxCeiling: parseFloat(e.target.value) || 0 })
+              }
+            />
 
-            <h3>Advanced Usage</h3>
+            <Label>Design Temperature (°C)</Label>
+            <Input
+              type="number"
+              placeholder="Optional"
+              value={form.designTemp ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  designTemp: e.target.value === '' ? undefined : parseFloat(e.target.value),
+                })
+              }
+            />
 
-            <div style={grid2}>
-              <div>
-                <Label>Design Temperature (°C)</Label>
-                <Input type="number" placeholder="Optional" value={form.designTemp ?? ''} onChange={(e) => {
-                  const val = e.target.value;
-                  setForm({ ...form, designTemp: val === '' ? undefined : parseFloat(val) });
-                }} />
-              </div>
-              <div>
-                <Label>Air Change Rate (1/h)</Label>
-                <Input type="number" placeholder="Optional" value={form.airChangeRate ?? ''} onChange={(e) => {
-                  const val = e.target.value;
-                  setForm({ ...form, airChangeRate: val === '' ? undefined : parseFloat(val) });
-                }} />
-              </div>
-            </div>
+            <Label>Air Change Rate (/hr)</Label>
+            <Input
+              type="number"
+              placeholder="Optional"
+              value={form.airChangeRate ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  airChangeRate: e.target.value === '' ? undefined : parseFloat(e.target.value),
+                })
+              }
+            />
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, gap: 10 }}>
-              <button onClick={() => setShowModal(false)} style={secondaryBtn}>Cancel</button>
-              <button onClick={onSaveRoom} style={primaryBtn}>Save Room</button>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+              <button onClick={() => setShowModal(false)} style={secondaryBtn}>
+                Cancel
+              </button>
+              <button onClick={onSaveRoom} style={primaryBtn}>
+                Save room
+              </button>
             </div>
           </div>
         </div>
@@ -235,79 +282,131 @@ export default function RoomsPage(): React.JSX.Element {
   );
 }
 
-/* ------------------------- UI Components ------------------------- */
-const Label = ({ children }: { children: React.ReactNode }) => (
-  <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>
-);
+// ========== UI Bits ==========
 
-const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
-  <input {...props} style={{ ...input, ...(props.style || {}) }} />
-);
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <label
+      style={{
+        display: 'block',
+        fontSize: 12,
+        color: '#555',
+        margin: '12px 0 6px',
+      }}
+    >
+      {children}
+    </label>
+  );
+}
 
-const Select = (props: React.SelectHTMLAttributes<HTMLSelectElement>) => (
-  <select {...props} style={{ ...input, ...(props.style || {}) }} />
-);
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} style={{ ...input, ...(props.style || {}) }} />;
+}
 
-/* ------------------------------ Styles ------------------------------ */
-const wrap = { maxWidth: 1040, margin: '0 auto', padding: 24 };
-const h1 = { fontSize: 28, margin: '6px 0 8px' };
-const muted = { color: '#777', fontStyle: 'normal' };
-const subtle = { color: '#666', fontSize: 13, lineHeight: 1.45 };
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={{ ...input, ...(props.style || {}) }} />;
+}
 
-const card = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
+// ========== Styles ==========
 
-const rowHeader = {
-  display: 'flex', gap: 8, padding: '8px 4px',
-  color: '#555', fontSize: 12, borderBottom: '1px solid #eee',
+const wrap: React.CSSProperties = {
+  maxWidth: 1040,
+  margin: '0 auto',
+  padding: 24,
+  fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
 };
 
-const row = {
-  display: 'flex', gap: 8, padding: '10px 4px',
-  alignItems: 'center', borderBottom: '1px solid #f2f2f2',
+const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 8px' };
+const muted: React.CSSProperties = { color: '#777', fontStyle: 'normal' };
+const subtle: React.CSSProperties = { color: '#666', fontSize: 13, lineHeight: 1.45 };
+
+const card: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #e6e6e6',
+  borderRadius: 14,
+  padding: 16,
 };
 
-const input = {
-  width: '100%', padding: '10px 12px', borderRadius: 10,
-  border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box',
+const rowHeader: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  padding: '8px 4px',
+  color: '#555',
+  fontSize: 12,
+  borderBottom: '1px solid #eee',
 };
 
-const primaryBtn = {
-  background: '#111', color: '#fff', border: '1px solid #111',
-  padding: '10px 16px', borderRadius: 12, cursor: 'pointer',
+const row: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  padding: '10px 4px',
+  alignItems: 'center',
+  borderBottom: '1px solid #f2f2f2',
 };
 
-const secondaryBtn = {
-  background: '#fff', color: '#111', border: '1px solid #ddd',
-  padding: '10px 16px', borderRadius: 12, cursor: 'pointer',
+const input: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #ddd',
+  outline: 'none',
+  boxSizing: 'border-box',
 };
 
-const linkDanger = {
-  color: '#b00020', textDecoration: 'underline',
-  background: 'none', border: 0, cursor: 'pointer',
+const primaryBtn: React.CSSProperties = {
+  background: '#111',
+  color: '#fff',
+  border: '1px solid #111',
+  padding: '10px 16px',
+  borderRadius: 12,
+  cursor: 'pointer',
 };
 
-const iconBtn = {
-  background: '#f6f6f6', border: '1px solid #e1e1e1',
-  borderRadius: 8, padding: '4px 8px', cursor: 'pointer',
+const secondaryBtn: React.CSSProperties = {
+  background: '#fff',
+  color: '#111',
+  border: '1px solid #ddd',
+  padding: '10px 16px',
+  borderRadius: 12,
+  cursor: 'pointer',
 };
 
-const grid2 = {
-  display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12,
+const linkDanger: React.CSSProperties = {
+  color: '#b00020',
+  textDecoration: 'underline',
+  background: 'none',
+  border: 0,
+  cursor: 'pointer',
+};
+
+const iconBtn: React.CSSProperties = {
+  background: '#f6f6f6',
+  border: '1px solid #e1e1e1',
+  borderRadius: 8,
+  padding: '4px 8px',
+  cursor: 'pointer',
+};
+
+const grid2: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, 1fr)',
+  gap: 12,
 };
 
 const modalBackdrop: React.CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
+  position: 'fixed' as const,
+  inset: 0,
   background: 'rgba(0,0,0,0.32)',
-  display: 'grid',
-  placeItems: 'center',
+  display: 'grid' as const,
+  placeItems: 'center' as const,
   zIndex: 30,
 };
 
-const modal = {
-  width: 'min(720px, 92vw)', background: '#fff', borderRadius: 16,
-  border: '1px solid #e6e6e6', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 18,
+const modal: React.CSSProperties = {
+  width: 'min(720px, 92vw)',
+  background: '#fff',
+  borderRadius: 16,
+  border: '1px solid #e6e6e6',
+  boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+  padding: 18,
 };
