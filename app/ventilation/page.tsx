@@ -186,17 +186,21 @@ export default function VentilationPage() {
           {isValidExtract ? '✅ Meets extract flow requirement' : '⚠️ Below extract flow threshold'}
         </div>
 
-        {isContinuous && (
-          <div style={{
-            background: isValidSupply ? '#e5ffe5' : '#ffe5e5',
-            padding: 12,
-            borderRadius: 10,
-            fontSize: 16,
-          }}>
-            <strong>{totalSupply} L/s supply</strong> to habitable rooms<br />
-            {isValidSupply ? '✅ Meets supply flow requirement' : '⚠️ Below supply flow threshold'}
-          </div>
-        )}
+      {/* Show supply ventilation only if the user has habitable rooms */}
+{isContinuous && (rooms.living > 0 || rooms.bedroom > 0) && (
+  <div style={{
+    background: isValidSupply ? '#e5ffe5' : '#ffe5e5',
+    padding: 12,
+    borderRadius: 10,
+    fontSize: 16,
+    marginTop: 12
+  }}>
+    <strong>{totalSupply} L/s supply</strong> to habitable rooms<br />
+    {isValidSupply
+      ? '✅ Meets supply flow requirement'
+      : '⚠️ Below supply flow threshold'}
+  </div>
+)}
 
         <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
           Based on UK regulations (e.g. Document F, BS 5250). Adjust as needed per dwelling.
