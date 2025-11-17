@@ -135,8 +135,8 @@ export default function RoomsPage(): React.JSX.Element {
 
   return (
     <main style={wrap}>
-      <h1 style={h1}>Heated Rooms</h1>
-      <p style={subtle}>List the heated rooms and ceiling heights for each zone of the property.</p>
+      <h1 style={h1}>rooms</h1>
+      <p style={subtle}>List the rooms and ceiling heights for each zone of the property.</p>
 
       <section style={card}>
         {zones.map((zone, zi) => (
