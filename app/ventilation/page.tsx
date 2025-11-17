@@ -82,7 +82,7 @@ const secondaryBtn: React.CSSProperties = {
   textDecoration: 'none',
 };
 
-/* ----- stepper ----- */
+/* ----- Stepper component ----- */
 function Stepper({
   value,
   setValue,
@@ -131,4 +131,45 @@ function Stepper({
   );
 }
 
-/* ----- radio row ----- */
+/* ----- ✅ Default Page Component Export ----- */
+export default function VentilationPage(): React.JSX.Element {
+  const [ventRate, setVentRate] = useState(5);
+
+  // Load on mount
+  useEffect(() => {
+    const saved = readVent();
+    if (saved?.ventRate !== undefined) {
+      setVentRate(saved.ventRate);
+    }
+  }, []);
+
+  // Save when value changes
+  useEffect(() => {
+    writeVent({ ventRate });
+  }, [ventRate]);
+
+  return (
+    <main style={{ maxWidth: 800, margin: '0 auto', padding: 24 }}>
+      <h1 style={{ fontSize: 28, marginBottom: 12 }}>Ventilation</h1>
+      <div style={{ color: '#888', fontSize: 12, marginBottom: 18 }}>
+        Step 2 of 6 — Set ventilation rates
+      </div>
+
+      <section style={card}>
+        <Label>Ventilation Rate (litres/second)</Label>
+        <Stepper
+          value={ventRate}
+          setValue={setVentRate}
+          min={0}
+          max={50}
+          ariaLabel="ventilation rate"
+        />
+      </section>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24 }}>
+        <Link href="/" style={secondaryBtn}>← Back</Link>
+        <Link href="/heated-rooms" style={primaryBtn}>Next: Heated Rooms →</Link>
+      </div>
+    </main>
+  );
+}
