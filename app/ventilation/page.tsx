@@ -78,9 +78,10 @@ export default function VentilationPage() {
   });
 
   const totalRequired = Object.entries(rooms).reduce((sum, [key, count]) => {
-    const base = ['mev', 'mv', 'mvhr'].includes(type) ? CONTINUOUS[key] : INTERMITTENT[key];
-    return sum + (base * count);
-  }, 0);
+  const k = key as keyof typeof CONTINUOUS;
+  const base = ['mev', 'mv', 'mvhr'].includes(type) ? CONTINUOUS[k] : INTERMITTENT[k];
+  return sum + base * count;
+}, 0);
 
   const isValid = totalRequired >= 30; // Example threshold, adjust as needed
 
