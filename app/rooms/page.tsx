@@ -295,9 +295,16 @@ const grid2 = {
   display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12,
 };
 
-const modalBackdrop = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)',
-  display: 'grid', placeItems: 'center', zIndex: 30,
+const modalBackdrop: React.CSSProperties = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: 'rgba(0,0,0,0.32)',
+  display: 'grid',
+  placeItems: 'center',
+  zIndex: 30,
 };
 
 const modal = {
