@@ -1,13 +1,11 @@
 /** @type {import('next').NextConfig} */
-const isProd = process.env.NODE_ENV === 'production';
-
 const nextConfig = {
-  output: 'export',           // static export for GH Pages
-  trailingSlash: true,        // folders as pages (…/page/index.html)
-  images: { unoptimized: true },
+  output: 'export',               // static export mode
+  trailingSlash: true,            // so /rooms/ becomes /rooms/index.html
   basePath: isProd ? '/heat-demand' : '',
   assetPrefix: isProd ? '/heat-demand/' : undefined,
-};
+  // … other config
+}
 
 export default nextConfig;
 
