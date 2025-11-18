@@ -220,7 +220,7 @@ export default function ElementsPage(): React.JSX.Element {
       {/* header with Clear Data */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <h1 style={h1}>Building Elements</h1>
-        <ClearDataButton />
+        <ClearDataButton onClearState={() => {
       </div>
       <p style={mutedText}>Define wall and floor types. Values are saved automatically.</p>
 
