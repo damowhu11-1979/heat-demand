@@ -1,19 +1,13 @@
-// app/layout.tsx
-import './globals.css';
+import { AppStateProvider } from './context/AppStateContext';
 
-export const metadata = {
-  title: 'Next.js App',
-  description: 'Created with create-next-app',
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AppStateProvider>
+          {children}
+        </AppStateProvider>
+      </body>
     </html>
   );
 }
