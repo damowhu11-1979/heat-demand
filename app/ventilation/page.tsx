@@ -7,7 +7,6 @@ type RoomKey = keyof typeof ROOM_LABELS;
 
 const STORAGE_KEY = 'mcs.ventilation';
 
-// Flow rates (L/s)
 const EXTRACT_FLOW = {
   kitchen: 13,
   bathroom: 8,
@@ -39,7 +38,6 @@ const ROOM_LABELS = {
   bedroom: 'Bedroom',
 };
 
-// Initial room values
 const DEFAULT_ROOMS: Record<RoomKey, number> = {
   kitchen: 1,
   bathroom: 1,
@@ -100,15 +98,18 @@ const inputStyle = {
 export default function VentilationPage() {
   const [type, setType] = useState('natural');
   const [rooms, setRooms] = useState<Record<RoomKey, number>>(DEFAULT_ROOMS);
+  const [ventilationZones, setVentilationZones] = useState(1);
+  const [storeys, setStoreys] = useState(1);
+  const [externalFacades, setExternalFacades] = useState(4);
+  const [shelteredFacades, setShelteredFacades] = useState(0);
 
-  // Extract and supply airflow totals
   const totalExtract = Object.entries(rooms).reduce((sum, [key, count]) => {
     const k = key as RoomKey;
     if (k in EXTRACT_FLOW || k in INTERMITTENT_FLOW) {
-     const isContinuous = ['mev', 'mv', 'mvhr'].includes(type);
-const flow = isContinuous
-  ? (EXTRACT_FLOW as Record<string, number>)[k] ?? 0
-  : (INTERMITTENT_FLOW as Record<string, number>)[k] ?? 0;
+      const isContinuous = ['mev', 'mv', 'mvhr'].includes(type);
+      const flow = isContinuous
+        ? (EXTRACT_FLOW as Record<string, number>)[k] ?? 0
+        : (INTERMITTENT_FLOW as Record<string, number>)[k] ?? 0;
       return sum + flow * count;
     }
     return sum;
@@ -116,7 +117,7 @@ const flow = isContinuous
 
   const totalSupply = Object.entries(rooms).reduce((sum, [key, count]) => {
     const k = key as RoomKey;
-    const flow = SUPPLY_FLOW[k as keyof typeof SUPPLY_FLOW] || 0;
+    const flow = SUPPLY_FLOW[k] || 0;
     return sum + flow * count;
   }, 0);
 
@@ -127,18 +128,17 @@ const flow = isContinuous
     const saved = readVent();
     if (saved) {
       if (saved.type) setType(saved.type);
-      if (saved.rooms) {
-        setRooms((prev) => ({
-          ...prev,
-          ...saved.rooms,
-        }));
-      }
+      if (saved.rooms) setRooms((prev) => ({ ...prev, ...saved.rooms }));
+      if (saved.ventilationZones) setVentilationZones(saved.ventilationZones);
+      if (saved.storeys) setStoreys(saved.storeys);
+      if (saved.externalFacades) setExternalFacades(saved.externalFacades);
+      if (saved.shelteredFacades) setShelteredFacades(saved.shelteredFacades);
     }
   }, []);
 
   useEffect(() => {
-    writeVent({ type, rooms });
-  }, [type, rooms]);
+    writeVent({ type, rooms, ventilationZones, storeys, externalFacades, shelteredFacades });
+  }, [type, rooms, ventilationZones, storeys, externalFacades, shelteredFacades]);
 
   return (
     <main style={{ maxWidth: 800, margin: '0 auto', padding: 24 }}>
@@ -146,6 +146,55 @@ const flow = isContinuous
       <p style={{ color: '#666', fontSize: 13, marginBottom: 20 }}>
         Step 2 of 6 — Configure ventilation strategy and minimum air flow requirements
       </p>
+
+      <section style={{ marginBottom: 24 }}>
+        <h3 style={{ fontSize: 18, marginBottom: 12 }}>Ventilation Zone Info</h3>
+
+        <div style={{ marginBottom: 12 }}>
+          <Label>Number of Ventilation Zones</Label>
+          <input
+            type="number"
+            min={1}
+            value={ventilationZones}
+            onChange={(e) => setVentilationZones(parseInt(e.target.value || '1'))}
+            style={inputStyle}
+          />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <Label>Number of Storeys</Label>
+          <input
+            type="number"
+            min={1}
+            value={storeys}
+            onChange={(e) => setStoreys(parseInt(e.target.value || '1'))}
+            style={inputStyle}
+          />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <Label>Number of External Facades</Label>
+          <input
+            type="number"
+            min={0}
+            value={externalFacades}
+            onChange={(e) => setExternalFacades(parseInt(e.target.value || '0'))}
+            style={inputStyle}
+          />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <Label>How many are sheltered from wind?</Label>
+          <input
+            type="number"
+            min={0}
+            max={externalFacades}
+            value={shelteredFacades}
+            onChange={(e) => setShelteredFacades(parseInt(e.target.value || '0'))}
+            style={inputStyle}
+          />
+        </div>
+      </section>
 
       <section style={{ marginBottom: 24 }}>
         <Label>Ventilation Strategy</Label>
@@ -218,13 +267,10 @@ const flow = isContinuous
       </section>
 
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Link href="/" style={secondaryBtn}>
-          ← Back
-        </Link>
-        <Link href="/rooms" style={primaryBtn}>
-          Next: Heated Rooms →
-        </Link>
+        <Link href="/" style={secondaryBtn}>← Back</Link>
+        <Link href="/rooms" style={primaryBtn}>Next: Heated Rooms →</Link>
       </div>
     </main>
   );
- }
+}
+
