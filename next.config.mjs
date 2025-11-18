@@ -1,11 +1,13 @@
 /** @type {import('next').NextConfig} */
+const isProd = process.env.NODE_ENV === 'production';
+
 const nextConfig = {
-  output: 'export',               // static export mode
-  trailingSlash: true,            // so /rooms/ becomes /rooms/index.html
+  output: 'export',
+  trailingSlash: true,
+  images: { unoptimized: true },
   basePath: isProd ? '/heat-demand' : '',
   assetPrefix: isProd ? '/heat-demand/' : undefined,
-  // … other config
-}
+};
 
 export default nextConfig;
 
