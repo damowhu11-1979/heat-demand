@@ -1,39 +1,37 @@
 'use client';
 
-export default function ClearDataButton() {
-  const clearAll = () => {
-    try {
-      // property page
-      localStorage.removeItem('mcs.property');
-      // rooms page
-      localStorage.removeItem('mcs.rooms');
-      // elements page (v1 key you’re using)
-      localStorage.removeItem('mcs.elements.v1');
+import React from 'react';
 
-      alert('All saved data cleared.');
-      // optional: fully refresh to ensure forms reset
-      window.location.reload();
-    } catch {
-      alert('Unable to clear saved data (storage not available).');
+interface ClearDataButtonProps {
+  onClearState: () => void;
+  style?: React.CSSProperties;
+}
+
+export default function ClearDataButton({ onClearState, style }: ClearDataButtonProps) {
+  const handleClick = () => {
+    const ok = confirm('Are you sure you want to clear all data?');
+    if (!ok) return;
+
+    // Clear localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('mcs.property');
     }
+
+    // Clear React state via callback
+    onClearState();
   };
 
   return (
-    <button
-      type="button"
-      onClick={clearAll}
-      style={{
-        borderRadius: 10,
-        padding: '10px 14px',
-        border: '1px solid #ddd',
-        background: '#fff',
-        color: '#111',
-        cursor: 'pointer',
-      }}
-      aria-label="Clear saved data"
-      title="Clear saved data"
-    >
-      Clear data
+    <button onClick={handleClick} style={{
+      background: '#fff',
+      color: '#111',
+      border: '1px solid #ddd',
+      padding: '10px 16px',
+      borderRadius: 10,
+      cursor: 'pointer',
+      ...style
+    }}>
+      Clear Data
     </button>
   );
 }
