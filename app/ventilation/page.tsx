@@ -117,9 +117,9 @@ export default function VentilationPage() {
 
 const totalSupply = Object.entries(rooms).reduce((sum, [key, count]) => {
   const k = key as RoomKey;
-  const flow = k in SUPPLY_FLOW ? SUPPLY_FLOW[k] : 0;
-  return sum + flow * count;
-}, 0);
+  const flow = Object.prototype.hasOwnProperty.call(SUPPLY_FLOW, k)
+  ? SUPPLY_FLOW[k as keyof typeof SUPPLY_FLOW]
+  : 0;
 
   const extractOK = totalExtract >= 30;
   const supplyOK = totalSupply >= 15;
