@@ -221,7 +221,7 @@ const flow = isContinuous
         <Link href="/" style={secondaryBtn}>
           ← Back
         </Link>
-        <Link href="/heated-rooms" style={primaryBtn}>
+        <Link href="/rooms" style={primaryBtn}>
           Next: Heated Rooms →
         </Link>
       </div>
