@@ -21,7 +21,34 @@ function writeProperty(obj: any) {
     /* ignore quota errors */
   }
 }
+const onClear = () => {
+  // Clear localStorage
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('mcs.property');
+  }
 
+  // Reset all state
+  setReference('');
+  setPostcode('');
+  setCountry('England');
+  setAddress('');
+  setEpcNo('');
+  setUprn('');
+  setAltitude(0);
+  setTex(-3);
+  setHdd(2100);
+  setDwelling('');
+  setSubtype('');
+  setAgeBand('');
+  setOccupants(2);
+  setMode('Net Internal');
+  setAirtight('Standard Method');
+  setThermalTest('');
+  setLatlonOverride('');
+  setPcPaste('');
+  setClimStatus('');
+  setAltStatus('');
+};
 /* ───────────────────────────── Config & helpers ───────────────────────────── */
 const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
 const EPC_BASE = 'https://find-energy-certificate.service.gov.uk';
