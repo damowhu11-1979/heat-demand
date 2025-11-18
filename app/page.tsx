@@ -227,14 +227,14 @@ export default function Page(): React.JSX.Element {
   const climateRef = useRef<ClimateMap | null>(null);
 
   /* ─────────────── Clear Button Logic (VALID) ─────────────── */
- const onClear = () => {
-  const confirmed = window.confirm('Are you sure you want to clear all data? This cannot be undone.');
+const onClear = () => {
+  const confirmed = window.confirm('Are you sure you want to clear ALL data on this page?');
   if (!confirmed) return;
 
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('mcs.property');
-  }
+  // Remove saved data
+  localStorage.removeItem('mcs.property');
 
+  // Reset all state on this page
   setReference('');
   setPostcode('');
   setCountry('England');
