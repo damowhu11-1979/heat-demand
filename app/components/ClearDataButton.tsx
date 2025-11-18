@@ -1,36 +1,17 @@
-'use client';
-
-import React from 'react';
-
-interface ClearDataButtonProps {
-  onClearState: () => void;
-  style?: React.CSSProperties;
-}
-
-export default function ClearDataButton({ onClearState, style }: ClearDataButtonProps) {
-  const handleClick = () => {
-    const ok = confirm('Are you sure you want to clear all data?');
-    if (!ok) return;
-
-    // Clear localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('mcs.property');
-    }
-
-    // Clear React state via callback
-    onClearState();
-  };
-
+"use client";
+export default function ClearDataButton({ onClearState }: { onClearState: () => void }) {
   return (
-    <button onClick={handleClick} style={{
-      background: '#fff',
-      color: '#111',
-      border: '1px solid #ddd',
-      padding: '10px 16px',
-      borderRadius: 10,
-      cursor: 'pointer',
-      ...style
-    }}>
+    <button
+      onClick={onClearState}
+      style={{
+        background: '#fff',
+        color: '#111',
+        border: '1px solid #ddd',
+        padding: '10px 16px',
+        borderRadius: 10,
+        cursor: 'pointer'
+      }}
+    >
       Clear Data
     </button>
   );
