@@ -14,11 +14,11 @@ type Room = {
   airChangeRate?: number;
 };
 
-type Zone = { name: string; rooms: Room[] };
+type Zone = { name: string; Rooms: Room[] };
 
 /* ------------------------------ STORAGE ------------------------------ */
 
-const ROOMS_KEY = 'mcs.rooms';
+const ROOMS_KEY = 'mcs.Rooms';
 
 const readRooms = (): Zone[] | null => {
   if (typeof window === 'undefined') return null;
@@ -40,7 +40,7 @@ const writeRooms = (zones: Zone[]) => {
 /* ------------------------------ PAGE ------------------------------ */
 
 export default function RoomsPage(): React.JSX.Element {
-  const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', rooms: [] }]);
+  const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', Rooms: [] }]);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
 
   const [showModal, setShowModal] = useState(false);
@@ -54,7 +54,7 @@ export default function RoomsPage(): React.JSX.Element {
     airChangeRate: undefined,
   });
 
-  /* Load existing rooms */
+  /* Load existing Rooms */
   useEffect(() => {
     const saved = readRooms();
     if (saved && Array.isArray(saved)) {
@@ -107,7 +107,7 @@ export default function RoomsPage(): React.JSX.Element {
     const copy = [...zones];
     copy[form.zone] = {
       ...copy[form.zone],
-      rooms: [...copy[form.zone].rooms, { ...form }],
+      Rooms: [...copy[form.zone].Rooms, { ...form }],
     };
     setZones(copy);
     setExpanded((e) => ({ ...e, [form.zone]: true }));
@@ -117,7 +117,7 @@ export default function RoomsPage(): React.JSX.Element {
   /* Add zone */
   const onAddZone = () => {
     const n = zones.length + 1;
-    setZones([...zones, { name: `Zone ${n}`, rooms: [] }]);
+    setZones([...zones, { name: `Zone ${n}`, Rooms: [] }]);
     setExpanded((e) => ({ ...e, [zones.length]: true }));
   };
 
@@ -126,7 +126,7 @@ export default function RoomsPage(): React.JSX.Element {
     const copy = [...zones];
     copy[zoneIdx] = {
       ...copy[zoneIdx],
-      rooms: copy[zoneIdx].rooms.filter((_, i) => i !== idx),
+      Rooms: copy[zoneIdx].Rooms.filter((_, i) => i !== idx),
     };
     setZones(copy);
   };
@@ -135,8 +135,8 @@ export default function RoomsPage(): React.JSX.Element {
 
   return (
     <main style={wrap}>
-      <h1 style={h1}>rooms</h1>
-      <p style={subtle}>List the rooms and ceiling heights for each zone of the property.</p>
+      <h1 style={h1}>Rooms</h1>
+      <p style={subtle}>List the Rooms and ceiling heights for each zone of the property.</p>
 
       <section style={card}>
         {zones.map((zone, zi) => (
@@ -167,7 +167,7 @@ export default function RoomsPage(): React.JSX.Element {
                   <div style={{ width: 80 }}></div>
                 </div>
 
-                {zone.rooms.map((r, i) => (
+                {zone.Rooms.map((r, i) => (
                   <div key={i} style={row}>
                     <div style={{ flex: 2 }}>{r.name}</div>
                     <div style={{ width: 120, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
@@ -182,8 +182,8 @@ export default function RoomsPage(): React.JSX.Element {
                   </div>
                 ))}
 
-                {!zone.rooms.length && (
-                  <div style={{ ...muted, padding: '10px 4px' }}>No rooms in this zone yet.</div>
+                {!zone.Rooms.length && (
+                  <div style={{ ...muted, padding: '10px 4px' }}>No Rooms in this zone yet.</div>
                 )}
               </div>
             )}
