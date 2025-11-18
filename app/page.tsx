@@ -227,32 +227,35 @@ export default function Page(): React.JSX.Element {
   const climateRef = useRef<ClimateMap | null>(null);
 
   /* ─────────────── Clear Button Logic (VALID) ─────────────── */
-  const onClear = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('mcs.property');
-    }
+ const onClear = () => {
+  const confirmed = window.confirm('Are you sure you want to clear all data? This cannot be undone.');
+  if (!confirmed) return;
 
-    setReference('');
-    setPostcode('');
-    setCountry('England');
-    setAddress('');
-    setEpcNo('');
-    setUprn('');
-    setAltitude(0);
-    setTex(-3);
-    setHdd(2100);
-    setDwelling('');
-    setSubtype('');
-    setAgeBand('');
-    setOccupants(2);
-    setMode('Net Internal');
-    setAirtight('Standard Method');
-    setThermalTest('No Test Performed');
-    setLatlonOverride('');
-    setPcPaste('');
-    setClimStatus('');
-    setAltStatus('');
-  };
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('mcs.property');
+  }
+
+  setReference('');
+  setPostcode('');
+  setCountry('England');
+  setAddress('');
+  setEpcNo('');
+  setUprn('');
+  setAltitude(0);
+  setTex(-3);
+  setHdd(2100);
+  setDwelling('');
+  setSubtype('');
+  setAgeBand('');
+  setOccupants(2);
+  setMode('Net Internal');
+  setAirtight('Standard Method');
+  setThermalTest('No Test Performed');
+  setLatlonOverride('');
+  setPcPaste('');
+  setClimStatus('');
+  setAltStatus('');
+};
 
   /* ─────────────── side effects ─────────────── */
   // (UNCHANGED)
@@ -580,16 +583,12 @@ export default function Page(): React.JSX.Element {
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-          
-          {/* ➕ HERE IS YOUR NEW CLEAR BUTTON */}
-          <ClearDataButton onClearState={onClear} />
-
-          <button onClick={onSave} style={primaryBtn}>Save</button>
-
-          <Link href="/ventilation" style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}>
-            Next: Ventilation →
-          </Link>
-        </div>
+  <ClearDataButton onClearState={onClear} />
+  <button onClick={onSave} style={primaryBtn}>Save</button>
+  <Link href="/ventilation" style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}>
+    Next: Ventilation →
+  </Link>
+</div>
       </section>
     </main>
   );
