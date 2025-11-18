@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 import Link from 'next/link';
 import ClearDataButton from './components/ClearDataButton';
 import React, { useEffect, useRef, useState } from 'react';
@@ -21,34 +21,9 @@ function writeProperty(obj: any) {
     /* ignore quota errors */
   }
 }
-const onClear = () => {
-  // Clear localStorage
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('mcs.property');
-  }
 
-  // Reset all state
-  setReference('');
-  setPostcode('');
-  setCountry('England');
-  setAddress('');
-  setEpcNo('');
-  setUprn('');
-  setAltitude(0);
-  setTex(-3);
-  setHdd(2100);
-  setDwelling('');
-  setSubtype('');
-  setAgeBand('');
-  setOccupants(2);
-  setMode('Net Internal');
-  setAirtight('Standard Method');
-  setThermalTest('');
-  setLatlonOverride('');
-  setPcPaste('');
-  setClimStatus('');
-  setAltStatus('');
-};
+/* ❌ REMOVE INCORRECT onClear HERE */
+
 /* ───────────────────────────── Config & helpers ───────────────────────────── */
 const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
 const EPC_BASE = 'https://find-energy-certificate.service.gov.uk';
@@ -85,7 +60,7 @@ function lookupDesign(map: ClimateMap, postcode: string): ClimateRow | undefined
   }
   return undefined;
 }
-/** Load climate JSON from likely locations (local or GH Pages) */
+/** Load climate JSON */
 async function loadClimateMap(): Promise<ClimateMap> {
   const isBrowser = typeof window !== 'undefined';
   const pathname = isBrowser && window.location ? window.location.pathname : '/';
@@ -110,8 +85,7 @@ async function loadClimateMap(): Promise<ClimateMap> {
         feed = await r.json();
         break;
       }
-    } catch {
-      /* try next */}
+    } catch {}
   }
   if (!Array.isArray(feed)) return new Map();
 
@@ -146,7 +120,7 @@ async function geoByPostcodeOrAddress(postcode: string, address: string, latlonO
           return { lat: j.result.latitude, lon: j.result.longitude };
         }
       }
-    } catch { /* fall back */ }
+    } catch {}
   }
   const q = (postcode || address || '').trim();
   if (q.length < 3) throw new Error('Enter postcode or address');
@@ -157,7 +131,7 @@ async function geoByPostcodeOrAddress(postcode: string, address: string, latlonO
   if (!a?.length) throw new Error('Address not found');
   return { lat: +a[0].lat, lon: +a[0].lon };
 }
-async function elevation(lat: number, lon: number): Promise<{ metres: number; provider: string }> {
+async function elevation(lat: number, lon: number) {
   try {
     const u = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`;
     const r = await fetch(u, { cache: 'no-store' });
@@ -177,11 +151,11 @@ async function elevation(lat: number, lon: number): Promise<{ metres: number; pr
   }
 }
 
-/* ───────────── PropertyChecker paste parser (epc/uprn/age/occupants/etc) ───────────── */
-function parsePropertyChecker(text: string): {
-  epc?: string; uprn?: string; occupants?: number; ageBand?: string; postcode?: string; address?: string;
-} {
-  const out: { epc?: string; uprn?: string; occupants?: number; ageBand?: string; postcode?: string; address?: string } = {};
+/* ───────────── PropertyChecker paste parser ───────────── */
+function parsePropertyChecker(text: string) {
+  const out: {
+    epc?: string; uprn?: string; occupants?: number; ageBand?: string; postcode?: string; address?: string;
+  } = {};
   const t = String(text || '');
 
   const mEpc = t.match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
@@ -252,9 +226,36 @@ export default function Page(): React.JSX.Element {
   const [pcPaste, setPcPaste] = useState('');
   const climateRef = useRef<ClimateMap | null>(null);
 
-  /* ─────────────── side effects (TOP-LEVEL — not inside JSX) ─────────────── */
+  /* ─────────────── Clear Button Logic (VALID) ─────────────── */
+  const onClear = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('mcs.property');
+    }
 
-  // Load postcode climate map once
+    setReference('');
+    setPostcode('');
+    setCountry('England');
+    setAddress('');
+    setEpcNo('');
+    setUprn('');
+    setAltitude(0);
+    setTex(-3);
+    setHdd(2100);
+    setDwelling('');
+    setSubtype('');
+    setAgeBand('');
+    setOccupants(2);
+    setMode('Net Internal');
+    setAirtight('Standard Method');
+    setThermalTest('No Test Performed');
+    setLatlonOverride('');
+    setPcPaste('');
+    setClimStatus('');
+    setAltStatus('');
+  };
+
+  /* ─────────────── side effects ─────────────── */
+  // (UNCHANGED)
   useEffect(() => {
     (async () => {
       setClimStatus('Loading climate table…');
@@ -264,7 +265,6 @@ export default function Page(): React.JSX.Element {
     })();
   }, []);
 
-  // Update design temp/HDD when postcode changes and table exists
   useEffect(() => {
     const map = climateRef.current;
     if (!map || !postcode) return;
@@ -278,12 +278,10 @@ export default function Page(): React.JSX.Element {
     }
   }, [postcode]);
 
-  // Clear subtype unless Terraced
   useEffect(() => {
     if (dwelling !== 'Terraced') setSubtype('');
   }, [dwelling]);
 
-  // Load saved values on mount
   useEffect(() => {
     const saved = readProperty();
     if (!saved) return;
@@ -308,7 +306,6 @@ export default function Page(): React.JSX.Element {
     if (typeof saved.thermalTest === 'string') setThermalTest(saved.thermalTest);
   }, []);
 
-  // Auto-save to localStorage (debounced)
   useEffect(() => {
     const payload = {
       reference, postcode, country, address, epcNo, uprn,
@@ -324,7 +321,6 @@ export default function Page(): React.JSX.Element {
     altitude, tex, hdd, dwelling, subtype, ageBand, occupants, mode, airtight, thermalTest
   ]);
 
-  // Altitude lookup
   const onFindAltitude = async () => {
     try {
       setAltStatus('Looking up…');
@@ -337,7 +333,6 @@ export default function Page(): React.JSX.Element {
     }
   };
 
-  // PropertyChecker paste → parse
   const onParsePropertyChecker = () => {
     const res = parsePropertyChecker(pcPaste);
     if (res.epc) setEpcNo(res.epc);
@@ -350,7 +345,6 @@ export default function Page(): React.JSX.Element {
     alert('Saved locally (console).');
   };
 
-  // Manual save button (also useful for debugging)
   const onSave = () => {
     const payload = {
       reference, postcode, country, address, epcNo, uprn,
@@ -534,7 +528,6 @@ export default function Page(): React.JSX.Element {
               value={subtype}
               onChange={(e) => setSubtype(e.target.value)}
               disabled={dwelling !== 'Terraced'}
-              title={dwelling !== 'Terraced' ? 'Only applies when dwelling type = Terraced' : ''}
             >
               <option value="">—</option>
               <option>Terraced (mid)</option>
@@ -587,11 +580,15 @@ export default function Page(): React.JSX.Element {
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-          {/* Go to Ventilation (page 2) */}
+          
+          {/* ➕ HERE IS YOUR NEW CLEAR BUTTON */}
+          <ClearDataButton onClearState={onClear} />
+
+          <button onClick={onSave} style={primaryBtn}>Save</button>
+
           <Link href="/ventilation" style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}>
             Next: Ventilation →
           </Link>
-          <button onClick={onSave} style={primaryBtn}>Save</button>
         </div>
       </section>
     </main>
