@@ -369,12 +369,15 @@ const onClear = () => {
       </div>
 
       {/* Import from PropertyChecker */}
-      <section style={card}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-          <strong>Import from </strong>
-          <a href={PROPERTY_CHECKER_URL} target="_blank" rel="noreferrer">PropertyChecker.co.uk</a>
-          <span>(optional)</span>
-        </div>
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+  <ClearDataButton onClearState={onClear} />
+  <button onClick={onSave} style={primaryBtn}>Save</button>
+  <Link href="/ventilation" legacyBehavior>
+    <a style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}>
+      Next: Ventilation →
+    </a>
+  </Link>
+</div>
 
         <div style={{ marginBottom: 12 }}>
           <Label>Paste PropertyChecker page text</Label>
