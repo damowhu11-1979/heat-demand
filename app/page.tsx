@@ -21,7 +21,23 @@ function writeProperty(obj: any) {
     /* ignore quota errors */
   }
 }
+/* Clear ALL app data in one place */
+function clearAllMcsData() {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('mcs.')) keys.push(k);
+    }
+    keys.forEach((k) => localStorage.removeItem(k));
 
+    // If you also stash anything in sessionStorage with the same prefix:
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith('mcs.')) sessionStorage.removeItem(k);
+    }
+  } catch {/* ignore */}
+}
 /* ───────────────────────────── Config & helpers ───────────────────────────── */
 const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
 const EPC_BASE = 'https://find-energy-certificate.service.gov.uk';
@@ -226,34 +242,37 @@ export default function Page(): React.JSX.Element {
 
   /* ─────────────── Clear Button Logic (VALID) ─────────────── */
   const onClear = () => {
-    const confirmed = window.confirm('Are you sure you want to clear all data? This will reset the entire app.');
-    if (!confirmed) return;
+  const confirmed = window.confirm('Are you sure you want to clear all data? This will reset the entire app.');
+  if (!confirmed) return;
 
-    localStorage.removeItem('mcs.property');
+  // clear everything owned by the app
+  clearAllMcsData();
 
-    setReference('');
-    setPostcode('');
-    setCountry('England');
-    setAddress('');
-    setEpcNo('');
-    setUprn('');
-    setAltitude(0);
-    setTex(-3);
-    setHdd(2100);
-    setDwelling('');
-    setSubtype('');
-    setAgeBand('');
-    setOccupants(2);
-    setMode('Net Internal');
-    setAirtight('Standard Method');
-    setThermalTest('No Test Performed');
-    setLatlonOverride('');
-    setPcPaste('');
-    setClimStatus('');
-    setAltStatus('');
+  // reset this page's local state (so the UI reflects the wipe immediately)
+  setReference('');
+  setPostcode('');
+  setCountry('England');
+  setAddress('');
+  setEpcNo('');
+  setUprn('');
+  setAltitude(0);
+  setTex(-3);
+  setHdd(2100);
+  setDwelling('');
+  setSubtype('');
+  setAgeBand('');
+  setOccupants(2);
+  setMode('Net Internal');
+  setAirtight('Standard Method');
+  setThermalTest('No Test Performed');
+  setLatlonOverride('');
+  setPcPaste('');
+  setClimStatus('');
+  setAltStatus('');
 
-    window.location.href = '/';
-  };
+  // ✅ stay on the same path (works on GitHub Pages project sites)
+  window.location.reload();
+};
 
   /* ─────────────── side effects ─────────────── */
   useEffect(() => {
