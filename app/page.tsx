@@ -395,7 +395,7 @@ export default function Page(): React.JSX.Element {
       </div>
 
      {/* Import from PropertyChecker */}
-<div style={{ marginBottom: 12 }}>
+<div style={{ marginBottom: 16 }}>
 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
   <Label>Paste PropertyChecker page text</Label>
 
