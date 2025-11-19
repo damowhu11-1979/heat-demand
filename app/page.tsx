@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 import Link from 'next/link';
 import ClearDataButton from './components/ClearDataButton';
 import React, { useEffect, useRef, useState } from 'react';
@@ -21,8 +21,6 @@ function writeProperty(obj: any) {
     /* ignore quota errors */
   }
 }
-
-/* ❌ REMOVE INCORRECT onClear HERE */
 
 /* ───────────────────────────── Config & helpers ───────────────────────────── */
 const PROPERTY_CHECKER_URL = 'https://propertychecker.co.uk/';
@@ -227,41 +225,37 @@ export default function Page(): React.JSX.Element {
   const climateRef = useRef<ClimateMap | null>(null);
 
   /* ─────────────── Clear Button Logic (VALID) ─────────────── */
-const onClear = () => {
-  const confirmed = window.confirm('Are you sure you want to clear all data? This will reset the entire app.');
-  if (!confirmed) return;
+  const onClear = () => {
+    const confirmed = window.confirm('Are you sure you want to clear all data? This will reset the entire app.');
+    if (!confirmed) return;
 
-  // Remove stored data
-  localStorage.removeItem('mcs.property');
+    localStorage.removeItem('mcs.property');
 
-  // Reset all local state
-  setReference('');
-  setPostcode('');
-  setCountry('England');
-  setAddress('');
-  setEpcNo('');
-  setUprn('');
-  setAltitude(0);
-  setTex(-3);
-  setHdd(2100);
-  setDwelling('');
-  setSubtype('');
-  setAgeBand('');
-  setOccupants(2);
-  setMode('Net Internal');
-  setAirtight('Standard Method');
-  setThermalTest('No Test Performed');
-  setLatlonOverride('');
-  setPcPaste('');
-  setClimStatus('');
-  setAltStatus('');
+    setReference('');
+    setPostcode('');
+    setCountry('England');
+    setAddress('');
+    setEpcNo('');
+    setUprn('');
+    setAltitude(0);
+    setTex(-3);
+    setHdd(2100);
+    setDwelling('');
+    setSubtype('');
+    setAgeBand('');
+    setOccupants(2);
+    setMode('Net Internal');
+    setAirtight('Standard Method');
+    setThermalTest('No Test Performed');
+    setLatlonOverride('');
+    setPcPaste('');
+    setClimStatus('');
+    setAltStatus('');
 
-  // ✅ Redirect to home to reset other pages
-  window.location.href = '/';
-};
+    window.location.href = '/';
+  };
 
   /* ─────────────── side effects ─────────────── */
-  // (UNCHANGED)
   useEffect(() => {
     (async () => {
       setClimStatus('Loading climate table…');
@@ -362,25 +356,26 @@ const onClear = () => {
   };
 
   /* ────────────────────────────────── JSX ────────────────────────────────── */
-return (
-  <main>
+  return (
     <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Heat Load Calculator (MCS-style)</h1>
       <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>
         Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results
       </div>
 
-      {/* Import from PropertyChecker */}
+      {/* Top actions */}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
         <ClearDataButton onClearState={onClear} />
         <button onClick={onSave} style={primaryBtn}>Save</button>
-        <Link href="/ventilation" legacyBehavior>
-          <a style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}>
-            Next: Ventilation →
-          </a>
+        <Link
+          href="/ventilation"
+          style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}
+        >
+          Next: Ventilation →
         </Link>
       </div>
 
+      {/* Import from PropertyChecker */}
       <div style={{ marginBottom: 12 }}>
         <Label>Paste PropertyChecker page text</Label>
         <textarea
@@ -397,13 +392,7 @@ return (
           </span>
         </div>
       </div>
-    </main>
 
-    <section style={{ ...card, marginTop: 12 }}>
-      {/* Your existing content here... (e.g., Top grid, property details, etc.) */}
-    </section>
-  </>
-);>  // 
       <section style={{ ...card, marginTop: 12 }}>
         {/* Top grid */}
         <div style={grid3}>
@@ -593,16 +582,16 @@ return (
         <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>{climStatus}</div>
 
         {/* Actions */}
- <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-  <ClearDataButton onClearState={onClear} />
-  <button onClick={onSave} style={primaryBtn}>Save</button>
-  <Link
-    href="/ventilation"
-    style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}
-  >
-    Next: Ventilation →
-  </Link>
-</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+          <ClearDataButton onClearState={onClear} />
+          <button onClick={onSave} style={primaryBtn}>Save</button>
+          <Link
+            href="/ventilation"
+            style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}
+          >
+            Next: Ventilation →
+          </Link>
+        </div>
       </section>
     </main>
   );
