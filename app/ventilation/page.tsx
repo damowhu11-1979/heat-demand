@@ -87,13 +87,11 @@ const secondaryBtn = {
   border: '1px solid #ccc',
 };
 
-const inputStyle = {
-  fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
+const inputStyle: React.CSSProperties = {
+  fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
   padding: '10px 12px',
   border: '1px solid #ddd',
   borderRadius: 8,
-  width: '100%',
-  fontSize: 14,
 };
 
 export default function VentilationPage() {
