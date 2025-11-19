@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 import Link from 'next/link';
 import ClearDataButton from './components/ClearDataButton';
 import React, { useEffect, useRef, useState } from 'react';
@@ -113,14 +113,14 @@ async function loadClimateMap(): Promise<ClimateMap> {
   }
   return map;
 }
-function parseLatLon(s: string): LatLon | null {
+function parseLatLon(s: string): { lat: number; lon: number } | null {
   const m = String(s || '').trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (!m) return null;
   const lat = +m[1], lon = +m[2];
   if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   return { lat, lon };
 }
-async function geoByPostcodeOrAddress(postcode: string, address: string, latlonOverride?: string): Promise<LatLon> {
+async function geoByPostcodeOrAddress(postcode: string, address: string, latlonOverride?: string): Promise<{lat:number;lon:number}> {
   const direct = latlonOverride ? parseLatLon(latlonOverride) : null;
   if (direct) return direct;
 
@@ -167,9 +167,7 @@ async function elevation(lat: number, lon: number) {
 
 /* ───────────── PropertyChecker paste parser ───────────── */
 function parsePropertyChecker(text: string) {
-  const out: {
-    epc?: string; uprn?: string; occupants?: number; ageBand?: string; postcode?: string; address?: string;
-  } = {};
+  const out: { epc?: string; uprn?: string; occupants?: number; ageBand?: string; postcode?: string; address?: string } = {};
   const t = String(text || '');
 
   const mEpc = t.match(/\b(\d{4}-\d{4}-\d{4}-\d{4}-\d{4})\b/);
@@ -242,37 +240,31 @@ export default function Page(): React.JSX.Element {
 
   /* ─────────────── Clear Button Logic (VALID) ─────────────── */
   const onClear = () => {
-  const confirmed = window.confirm('Are you sure you want to clear all data? This will reset the entire app.');
-  if (!confirmed) return;
-
-  // clear everything owned by the app
-  clearAllMcsData();
-
-  // reset this page's local state (so the UI reflects the wipe immediately)
-  setReference('');
-  setPostcode('');
-  setCountry('England');
-  setAddress('');
-  setEpcNo('');
-  setUprn('');
-  setAltitude(0);
-  setTex(-3);
-  setHdd(2100);
-  setDwelling('');
-  setSubtype('');
-  setAgeBand('');
-  setOccupants(2);
-  setMode('Net Internal');
-  setAirtight('Standard Method');
-  setThermalTest('No Test Performed');
-  setLatlonOverride('');
-  setPcPaste('');
-  setClimStatus('');
-  setAltStatus('');
-
-  // ✅ stay on the same path (works on GitHub Pages project sites)
-  window.location.reload();
-};
+    const confirmed = window.confirm('Are you sure you want to clear all data? This will reset the entire app.');
+    if (!confirmed) return;
+    clearAllMcsData();
+    setReference('');
+    setPostcode('');
+    setCountry('England');
+    setAddress('');
+    setEpcNo('');
+    setUprn('');
+    setAltitude(0);
+    setTex(-3);
+    setHdd(2100);
+    setDwelling('');
+    setSubtype('');
+    setAgeBand('');
+    setOccupants(2);
+    setMode('Net Internal');
+    setAirtight('Standard Method');
+    setThermalTest('No Test Performed');
+    setLatlonOverride('');
+    setPcPaste('');
+    setClimStatus('');
+    setAltStatus('');
+    window.location.reload();
+  };
 
   /* ─────────────── side effects ─────────────── */
   useEffect(() => {
@@ -340,6 +332,17 @@ export default function Page(): React.JSX.Element {
     altitude, tex, hdd, dwelling, subtype, ageBand, occupants, mode, airtight, thermalTest
   ]);
 
+  /* NEW: mirror Age Band to localStorage for Rooms page */
+  useEffect(() => {
+    try {
+      if (ageBand) {
+        localStorage.setItem('mcs.AgeBand', ageBand);
+      } else {
+        localStorage.removeItem('mcs.AgeBand');
+      }
+    } catch {}
+  }, [ageBand]);
+
   const onFindAltitude = async () => {
     try {
       setAltStatus('Looking up…');
@@ -382,57 +385,48 @@ export default function Page(): React.JSX.Element {
         Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results
       </div>
 
-     {/* Top actions */}
-<div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-  <ClearDataButton onClearState={onClear} />
-  <button onClick={onSave} style={primaryBtn}>Save</button>
-  <Link
-    href="/ventilation"
-    style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}
-  >
-    Next: Ventilation →
-  </Link>
-</div>
+      {/* Top actions */}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+        <ClearDataButton onClearState={onClear} />
+        <button onClick={onSave} style={primaryBtn}>Save</button>
+        <Link
+          href="/ventilation"
+          style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}
+        >
+          Next: Ventilation →
+        </Link>
+      </div>
 
-{/* PropertyChecker launcher – its own row, spaced down */}
-<div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-  <a
-    href={PROPERTY_CHECKER_URL}
-    target="_blank"
-    rel="noreferrer noopener"
-    style={{
-      ...primaryBtn,
-      padding: '14px 20px',
-      borderRadius: 14,
-      fontSize: 14,
-      lineHeight: '20px',
-      textDecoration: 'none',
-      display: 'inline-block',
-      whiteSpace: 'nowrap',
-    }}
-    title="Open propertychecker.co.uk"
-  >
-    Open PropertyChecker ↗
-  </a>
-</div>
+      {/* PropertyChecker launcher */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+        <a
+          href={PROPERTY_CHECKER_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          style={{ ...primaryBtn, padding: '14px 20px', borderRadius: 14, fontSize: 14, lineHeight: '20px', textDecoration: 'none', display: 'inline-block', whiteSpace: 'nowrap' }}
+          title="Open propertychecker.co.uk"
+        >
+          Open PropertyChecker ↗
+        </a>
+      </div>
 
-{/* Import from PropertyChecker */}
-<div style={{ marginTop: 12, marginBottom: 12 }}>
-  <Label>Paste PropertyChecker page text</Label>
-  <textarea
-    rows={4}
-    value={pcPaste}
-    onChange={(e) => setPcPaste(e.target.value)}
-    placeholder="Paste the PropertyChecker property page (or details section) here, then click Parse"
-    style={{ width: '100%', ...inputStyle, height: 120, resize: 'vertical' }}
-  />
-  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-    <button onClick={onParsePropertyChecker} style={secondaryBtn}>Parse</button>
-    <span style={{ color: '#666', fontSize: 12 }}>
-      Will fill EPC, UPRN, occupants, age band, address and postcode.
-    </span>
-  </div>
-</div>
+      {/* Import from PropertyChecker */}
+      <div style={{ marginTop: 12, marginBottom: 12 }}>
+        <Label>Paste PropertyChecker page text</Label>
+        <textarea
+          rows={4}
+          value={pcPaste}
+          onChange={(e) => setPcPaste(e.target.value)}
+          placeholder="Paste the PropertyChecker property page (or details section) here, then click Parse"
+          style={{ width: '100%', ...inputStyle, height: 120, resize: 'vertical' }}
+        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+          <button onClick={onParsePropertyChecker} style={secondaryBtn}>Parse</button>
+          <span style={{ color: '#666', fontSize: 12 }}>
+            Will fill EPC, UPRN, occupants, age band, address and postcode.
+          </span>
+        </div>
+      </div>
 
       <section style={{ ...card, marginTop: 12 }}>
         {/* Top grid */}
