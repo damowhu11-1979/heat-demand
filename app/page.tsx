@@ -1,4 +1,4 @@
-'use client';
+ 'use client';
 import Link from 'next/link';
 import ClearDataButton from './components/ClearDataButton';
 import React, { useEffect, useRef, useState } from 'react';
