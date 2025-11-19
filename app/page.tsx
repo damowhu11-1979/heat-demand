@@ -363,7 +363,7 @@ const onClear = () => {
 
   /* ────────────────────────────────── JSX ────────────────────────────────── */
 return (
-  <>
+  <main>
     <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Heat Load Calculator (MCS-style)</h1>
       <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>
