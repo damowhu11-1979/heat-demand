@@ -228,12 +228,14 @@ export default function Page(): React.JSX.Element {
 
   /* ─────────────── Clear Button Logic (VALID) ─────────────── */
 const onClear = () => {
-  const confirmed = window.confirm('Are you sure you want to clear ALL data on this page?');
+  const confirmed = window.confirm('Are you sure you want to clear all data? This will reset the entire app.');
   if (!confirmed) return;
 
-  // Remove saved data
   localStorage.removeItem('mcs.property');
 
+  // ✅ Reload to reset all pages/states
+  window.location.href = '/';
+};
   // Reset all state on this page
   setReference('');
   setPostcode('');
