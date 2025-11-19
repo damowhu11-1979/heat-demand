@@ -88,6 +88,7 @@ const secondaryBtn = {
 };
 
 const inputStyle = {
+  fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
   padding: '10px 12px',
   border: '1px solid #ddd',
   borderRadius: 8,
