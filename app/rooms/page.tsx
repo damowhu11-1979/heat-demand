@@ -66,8 +66,11 @@ const DEFAULT_DESIGN_TEMP_BY_AGE: Record<string, number> = {
 
 const defaultDesignTempFromAgeBand = (): number => {
   if (typeof window === 'undefined') return 21;
-  const band = localStorage.getItem(AGE_BAND_KEY);
-  return (band && DEFAULT_DESIGN_TEMP_BY_AGE[band]) ?? 21;
+  const band = localStorage.getItem(AGE_BAND_KEY) as keyof typeof DEFAULT_DESIGN_TEMP_BY_AGE | null;
+  if (band && DEFAULT_DESIGN_TEMP_BY_AGE[band] !== undefined) {
+    return DEFAULT_DESIGN_TEMP_BY_AGE[band];
+  }
+  return 21;
 };
 
 /* ------------------------------ HELPERS ------------------------------ */
