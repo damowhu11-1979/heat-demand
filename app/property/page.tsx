@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import ClearDataButton from './components/ClearDataButton';
+import ClearDataButton from '../components/ClearDataButton';
 import React, { useEffect, useRef, useState } from 'react';
 
 /* ──────────────────── storage helpers (safe on static export) ──────────────────── */
