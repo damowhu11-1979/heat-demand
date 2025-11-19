@@ -397,7 +397,7 @@ const onClear = () => {
         </div>
       </section>
 
-      {/* Main form */}
+     </main>  // 
       <section style={{ ...card, marginTop: 12 }}>
         {/* Top grid */}
         <div style={grid3}>
