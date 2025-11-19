@@ -43,7 +43,6 @@ const readRooms = (): Zone[] | null => {
   if (parsed?.version === STORAGE_VERSION && Array.isArray(parsed.zones)) {
     return parsed.zones;
   }
-  // Migrators could go here if you had older shapes.
   return null;
 };
 
@@ -52,6 +51,23 @@ const writeRooms = (zones: Zone[]) => {
   try {
     localStorage.setItem(ROOMS_KEY, JSON.stringify({ version: STORAGE_VERSION, zones }));
   } catch {}
+};
+
+/* ------------------------------ AGE BAND ------------------------------ */
+/** Age Band written by the Property page */
+const AGE_BAND_KEY = 'mcs.AgeBand' as const;
+
+/** Map your Property page Age Bands -> default Design Temp (°C) */
+const DEFAULT_DESIGN_TEMP_BY_AGE: Record<string, number> = {
+  'pre-1900': 21, '1900-1929': 21, '1930-1949': 21, '1950-1966': 21,
+  '1967-1975': 21, '1976-1982': 21, '1983-1990': 21, '1991-1995': 21,
+  '1996-2002': 21, '2003-2006': 21, '2007-2011': 21, '2012-present': 20,
+};
+
+const defaultDesignTempFromAgeBand = (): number => {
+  if (typeof window === 'undefined') return 21;
+  const band = localStorage.getItem(AGE_BAND_KEY);
+  return (band && DEFAULT_DESIGN_TEMP_BY_AGE[band]) ?? 21;
 };
 
 /* ------------------------------ HELPERS ------------------------------ */
@@ -79,7 +95,7 @@ export default function RoomsPage(): React.JSX.Element {
     type: '',
     name: '',
     maxCeiling: 2.4,
-    designTemp: 20,
+    designTemp: defaultDesignTempFromAgeBand(),   // ← default from Age Band
     airChangeRate: 1,
     internalAirVolume: undefined,
     intermittentHeatingPct: undefined,
@@ -123,7 +139,11 @@ export default function RoomsPage(): React.JSX.Element {
   const onOpenAddRoom = () => {
     setIsEditing(false);
     setEditingIndices(null);
-    setForm({ ...emptyForm, zone: 0 });
+    setForm({
+      ...emptyForm,
+      zone: 0,
+      designTemp: defaultDesignTempFromAgeBand(), // ← fresh read each time
+    });
     setShowModal(true);
   };
 
@@ -174,7 +194,7 @@ export default function RoomsPage(): React.JSX.Element {
   const onSaveRoom = () => {
     const errs = validate(form);
     if (errs.length) {
-      alert(errs.join('\n'));
+      alert(errs.join('\\n'));
       return;
     }
     const copy = [...zones];
