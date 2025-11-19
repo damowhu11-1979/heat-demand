@@ -394,23 +394,35 @@ export default function Page(): React.JSX.Element {
         </Link>
       </div>
 
-      {/* Import from PropertyChecker */}
-      <div style={{ marginBottom: 12 }}>
-        <Label>Paste PropertyChecker page text</Label>
-        <textarea
-          rows={4}
-          value={pcPaste}
-          onChange={(e) => setPcPaste(e.target.value)}
-          placeholder="Paste the PropertyChecker property page (or details section) here, then click Parse"
-          style={{ width: '100%', ...inputStyle, height: 120, resize: 'vertical' }}
-        />
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-          <button onClick={onParsePropertyChecker} style={secondaryBtn}>Parse</button>
-          <span style={{ color: '#666', fontSize: 12 }}>
-            Will fill EPC, UPRN, occupants, age band, address and postcode.
-          </span>
-        </div>
-      </div>
+     {/* Import from PropertyChecker */}
+<div style={{ marginBottom: 12 }}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <Label>Paste PropertyChecker page text</Label>
+    <a
+      href={PROPERTY_CHECKER_URL}
+      target="_blank"
+      rel="noreferrer noopener"
+      style={{ fontSize: 12, color: '#3366cc', textDecoration: 'underline' }}
+      title="Open propertychecker.co.uk"
+    >
+      Open PropertyChecker ↗
+    </a>
+  </div>
+
+  <textarea
+    rows={4}
+    value={pcPaste}
+    onChange={(e) => setPcPaste(e.target.value)}
+    placeholder="Paste the PropertyChecker property page (or details section) here, then click Parse"
+    style={{ width: '100%', ...inputStyle, height: 120, resize: 'vertical' }}
+  />
+  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+    <button onClick={onParsePropertyChecker} style={secondaryBtn}>Parse</button>
+    <span style={{ color: '#666', fontSize: 12 }}>
+      Will fill EPC, UPRN, occupants, age band, address and postcode.
+    </span>
+  </div>
+</div>
 
       <section style={{ ...card, marginTop: 12 }}>
         {/* Top grid */}
