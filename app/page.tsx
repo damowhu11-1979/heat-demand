@@ -362,7 +362,8 @@ const onClear = () => {
   };
 
   /* ────────────────────────────────── JSX ────────────────────────────────── */
-  return (
+return (
+  <>
     <main style={{ maxWidth: 1040, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
       <h1 style={{ fontSize: 28, margin: '6px 0 12px' }}>Heat Load Calculator (MCS-style)</h1>
       <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>
@@ -371,34 +372,38 @@ const onClear = () => {
 
       {/* Import from PropertyChecker */}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-  <ClearDataButton onClearState={onClear} />
-  <button onClick={onSave} style={primaryBtn}>Save</button>
-  <Link href="/ventilation" legacyBehavior>
-    <a style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}>
-      Next: Ventilation →
-    </a>
-  </Link>
-</div>
+        <ClearDataButton onClearState={onClear} />
+        <button onClick={onSave} style={primaryBtn}>Save</button>
+        <Link href="/ventilation" legacyBehavior>
+          <a style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}>
+            Next: Ventilation →
+          </a>
+        </Link>
+      </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <Label>Paste PropertyChecker page text</Label>
-          <textarea
-            rows={4}
-            value={pcPaste}
-            onChange={(e) => setPcPaste(e.target.value)}
-            placeholder="Paste the PropertyChecker property page (or details section) here, then click Parse"
-            style={{ width: '100%', ...inputStyle, height: 120, resize: 'vertical' }}
-          />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-            <button onClick={onParsePropertyChecker} style={secondaryBtn}>Parse</button>
-            <span style={{ color: '#666', fontSize: 12 }}>
-              Will fill EPC, UPRN, occupants, age band, address and postcode.
-            </span>
-          </div>
+      <div style={{ marginBottom: 12 }}>
+        <Label>Paste PropertyChecker page text</Label>
+        <textarea
+          rows={4}
+          value={pcPaste}
+          onChange={(e) => setPcPaste(e.target.value)}
+          placeholder="Paste the PropertyChecker property page (or details section) here, then click Parse"
+          style={{ width: '100%', ...inputStyle, height: 120, resize: 'vertical' }}
+        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+          <button onClick={onParsePropertyChecker} style={secondaryBtn}>Parse</button>
+          <span style={{ color: '#666', fontSize: 12 }}>
+            Will fill EPC, UPRN, occupants, age band, address and postcode.
+          </span>
         </div>
-      </section>
+      </div>
+    </main>
 
-     </main>  // 
+    <section style={{ ...card, marginTop: 12 }}>
+      {/* Your existing content here... (e.g., Top grid, property details, etc.) */}
+    </section>
+  </>
+);>  // 
       <section style={{ ...card, marginTop: 12 }}>
         {/* Top grid */}
         <div style={grid3}>
