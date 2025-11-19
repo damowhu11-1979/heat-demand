@@ -231,12 +231,10 @@ const onClear = () => {
   const confirmed = window.confirm('Are you sure you want to clear all data? This will reset the entire app.');
   if (!confirmed) return;
 
+  // Remove stored data
   localStorage.removeItem('mcs.property');
 
-  // ✅ Reload to reset all pages/states
-  window.location.href = '/';
-};
-  // Reset all state on this page
+  // Reset all local state
   setReference('');
   setPostcode('');
   setCountry('England');
@@ -257,6 +255,9 @@ const onClear = () => {
   setPcPaste('');
   setClimStatus('');
   setAltStatus('');
+
+  // ✅ Redirect to home to reset other pages
+  window.location.href = '/';
 };
 
   /* ─────────────── side effects ─────────────── */
