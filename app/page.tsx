@@ -382,36 +382,33 @@ export default function Page(): React.JSX.Element {
         Property → Ventilation → Heated Rooms → Building Elements → Room Elements → Results
       </div>
 
-      {/* Top actions */}
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-        <ClearDataButton onClearState={onClear} />
-        <button onClick={onSave} style={primaryBtn}>Save</button>
-        <Link
-          href="/ventilation"
-          style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}
-        >
-          Next: Ventilation →
-        </Link>
-      </div>
+     {/* Top actions */}
+<div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+  <ClearDataButton onClearState={onClear} />
+  <button onClick={onSave} style={primaryBtn}>Save</button>
+  <Link
+    href="/ventilation"
+    style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block', lineHeight: '20px' }}
+  >
+    Next: Ventilation →
+  </Link>
+</div>
 
-     {/* Import from PropertyChecker */}
-<div style={{ marginBottom: 16 }}>
-<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-  <Label>Paste PropertyChecker page text</Label>
-
+{/* PropertyChecker launcher – its own row, spaced down */}
+<div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
   <a
     href={PROPERTY_CHECKER_URL}
     target="_blank"
     rel="noreferrer noopener"
     style={{
-      ...primaryBtn,          // use your existing button style
-      padding: '14px 20px',   // bigger
-      borderRadius: 14,       // a bit rounder
-      fontSize: 14,           // larger text
+      ...primaryBtn,
+      padding: '14px 20px',
+      borderRadius: 14,
+      fontSize: 14,
       lineHeight: '20px',
       textDecoration: 'none',
       display: 'inline-block',
-      whiteSpace: 'nowrap'
+      whiteSpace: 'nowrap',
     }}
     title="Open propertychecker.co.uk"
   >
@@ -419,6 +416,9 @@ export default function Page(): React.JSX.Element {
   </a>
 </div>
 
+{/* Import from PropertyChecker */}
+<div style={{ marginTop: 12, marginBottom: 12 }}>
+  <Label>Paste PropertyChecker page text</Label>
   <textarea
     rows={4}
     value={pcPaste}
