@@ -396,18 +396,28 @@ export default function Page(): React.JSX.Element {
 
      {/* Import from PropertyChecker */}
 <div style={{ marginBottom: 12 }}>
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-    <Label>Paste PropertyChecker page text</Label>
-    <a
-      href={PROPERTY_CHECKER_URL}
-      target="_blank"
-      rel="noreferrer noopener"
-      style={{ fontSize: 12, color: '#3366cc', textDecoration: 'underline' }}
-      title="Open propertychecker.co.uk"
-    >
-      Open PropertyChecker ↗
-    </a>
-  </div>
+<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+  <Label>Paste PropertyChecker page text</Label>
+
+  <a
+    href={PROPERTY_CHECKER_URL}
+    target="_blank"
+    rel="noreferrer noopener"
+    style={{
+      ...primaryBtn,          // use your existing button style
+      padding: '14px 20px',   // bigger
+      borderRadius: 14,       // a bit rounder
+      fontSize: 14,           // larger text
+      lineHeight: '20px',
+      textDecoration: 'none',
+      display: 'inline-block',
+      whiteSpace: 'nowrap'
+    }}
+    title="Open propertychecker.co.uk"
+  >
+    Open PropertyChecker ↗
+  </a>
+</div>
 
   <textarea
     rows={4}
