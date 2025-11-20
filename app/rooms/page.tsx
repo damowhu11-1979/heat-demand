@@ -72,6 +72,65 @@ const defaultDesignTempFromAgeBand = (): number => {
   }
   return 21;
 };
+/* ----------------------- AGE BAND → DEFAULTS ----------------------- */
+/** Age Band written by the Property page (page 1) */
+const AGE_BAND_KEY = 'mcs.AgeBand' as const;
+
+/** Reference: Internal room temperatures by Age Band (see PDF pgs 13–14). */
+const RECOMMENDED_BY_ROOM_AGE_A: Record<string, number> = {
+  Bathroom: 22,
+  'Bedroom': 18,
+  'Bedroom with en-suite': 21,
+  'Bedroom/study': 21,
+  'Breakfast room': 21,
+  'Cloakroom/WC': 18,
+  'Dining Room': 21,
+  'Family/morning room': 21,
+  'Games room': 21,
+  Hall: 18,
+  'Internal room/corridor': 18,
+  Kitchen: 18,
+  Landing: 18,
+  'Lounge/sitting room': 21,
+  'Living Room': 21,
+  'Shower room': 22,
+  'Store room': 10,
+  Study: 21,
+  Toilet: 18,
+  'Utility room': 15,
+  Other: 21,       // sensible fallback
+};
+
+const RECOMMENDED_BY_ROOM_AGE_B_ONWARDS: Record<string, number> = new Proxy({}, {
+  get: (_t, k: string) => (k === 'Bathroom' || k === 'Shower room' ? 22 : 21),
+}) as Record<string, number>;
+
+/** Treat “newer, well-insulated” as Age Band B onwards. Adjust list as you refine. */
+const AGE_B_BANDS = new Set<string>(['2012-present']);
+
+/** For backward compatibility (used when no room type selected) */
+const DEFAULT_DESIGN_TEMP_BY_AGE: Record<string, number> = {
+  'pre-1900': 21, '1900-1929': 21, '1930-1949': 21, '1950-1966': 21,
+  '1967-1975': 21, '1976-1982': 21, '1983-1990': 21, '1991-1995': 21,
+  '1996-2002': 21, '2003-2006': 21, '2007-2011': 21, '2012-present': 21,
+};
+
+const readAgeBand = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(AGE_BAND_KEY);
+};
+
+const isAgeBandBOnwards = () => {
+  const band = readAgeBand();
+  return band ? AGE_B_BANDS.has(band) : false;
+};
+
+const recommendedTempFor = (roomType: string): number => {
+  if (!roomType) return 21;
+  return isAgeBandBOnwards()
+    ? RECOMMENDED_BY_ROOM_AGE_B_ONWARDS[roomType] ?? 21
+    : RECOMMENDED_BY_ROOM_AGE_A[roomType] ?? 21;
+};
 
 /* ------------------------------ HELPERS ------------------------------ */
 
