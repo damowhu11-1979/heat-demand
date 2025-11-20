@@ -2,45 +2,83 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-// use a relative import so it works in static/GitHub Pages builds
-import ClearDataButton from '../components/ClearDataButton';
+// ClearDataButton import removed; provide a local fallback component below to avoid missing-file build errors
 
 /* ============================================================================
-   Persistence helpers
+   Persistence helpers (now robust to missing/blocked localStorage)
 ============================================================================ */
 const LS_KEY = 'mcs.elements.v1';
 const PROP_KEY = 'mcs.property'; // used only to read ageBand you set on page 1
 
-function readJSON<T>(k: string): T | null {
+/**
+ * Safely obtain a Storage instance. Returns null if storage is unavailable
+ * (SSR, sandboxed/blocked, Safari privacy errors, etc.).
+ */
+function getStorage(): Storage | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(k);
-    return raw ? (JSON.parse(raw) as T) : null;
+    // test hook to simulate disabled storage in dev tests
+    if ((window as any).__MCS_DISABLE_STORAGE__) return null;
+    if (!('localStorage' in window)) return null;
+    const s = (window as any).localStorage as Storage | undefined | null;
+    if (!s) return null;
+    if (typeof s.getItem !== 'function' || typeof s.setItem !== 'function') return null;
+    // Don't probe with s.getItem; some environments throw even on benign calls.
+    return s;
   } catch {
     return null;
   }
 }
-function writeJSON(k: string, v: unknown) {
-  if (typeof window === 'undefined') return;
+
+function readJSON<T>(k: string): T | null {
+  const s = getStorage();
+  if (!s) return null;
   try {
-    localStorage.setItem(k, JSON.stringify(v));
+    const raw = s.getItem(k);
+    // Guard against null, empty string, or previously stored literal strings 'null' / 'undefined'
+    if (raw === null || raw === '' || raw === 'null' || raw === 'undefined') return null;
+
+    const parsed = JSON.parse(raw);
+    // JSON.parse('null') -> null; ensure we normalize to null for callers
+    if (parsed === null || typeof parsed === 'undefined') return null;
+    return parsed as T;
   } catch {
-    /* ignore quota errors */
+    // Any malformed JSON or storage errors should be treated as missing
+    return null;
+  }
+}
+function writeJSON(k: string, v: unknown) {
+  const s = getStorage();
+  if (!s) return;
+  try {
+    // Avoid accidentally persisting undefined as the literal string 'undefined'
+    if (typeof v === 'undefined') {
+      s.removeItem(k);
+      return;
+    }
+    s.setItem(k, JSON.stringify(v));
+  } catch {
+    /* ignore quota or access errors */
   }
 }
 
 /* ============================================================================
    Types
 ============================================================================ */
-type SectionKey = 'walls' | 'floors';
+type SectionKey = 'walls' | 'floors' | 'ceilings' | 'doors' | 'windows';
 
 type AgeBand =
   | 'pre-1900' | '1900-1929' | '1930-1949' | '1950-1966'
   | '1967-1975' | '1976-1982' | '1983-1990' | '1991-1995'
   | '1996-2002' | '2003-2006' | '2007-2011' | '2012-present';
 
-type WallCategory = 'External' | 'Internal' | 'Known U-Value';
-type FloorCategory = 'ground-unknown' | 'ground-known' | 'exposed' | 'internal' | 'known-u';
+type WallCategory = 'External' | 'Internal' | 'Party' | 'Known U-Value';
+type FloorCategory = 'ground-unknown' | 'ground-known' | 'exposed' | 'internal' | 'party' | 'known-u';
+
+// new element categories
+type CeilingCategory = 'external-roof' | 'internal' | 'party' | 'known-u';
+type DoorCategory = 'external' | 'internal' | 'known-u';
+type WindowCategory = 'external' | 'internal' | 'known-u';
 
 type WallForm = {
   category: WallCategory;
@@ -60,13 +98,41 @@ type FloorForm = {
   includesPsi?: boolean;         // cosmetic flag only
 };
 
+// new element forms
+interface CeilingForm {
+  category: CeilingCategory;
+  name: string;
+  roofType?: 'flat' | 'pitched' | '';
+  insulThk?: number | '';
+  uValue?: number | '';
+}
+
+interface DoorForm {
+  category: DoorCategory;
+  name: string;
+  ageBand?: AgeBand | '';
+  uValue?: number | '';
+}
+
+interface WindowForm {
+  category: WindowCategory;
+  name: string;
+  glazingType?: 'single' | 'double' | 'triple' | '';
+  frameType?: 'uPVC' | 'timber' | 'aluminium' | '';
+  ageBand?: AgeBand | '';
+  uValue?: number | '';
+}
+
 type SavedModel = {
   walls: WallForm[];
   floors: FloorForm[];
+  ceilings: CeilingForm[];
+  doors: DoorForm[];
+  windows: WindowForm[];
 };
 
 /* ============================================================================
-   U-value tables (illustrative) + interpolation
+   U-value tables (authoritative defaults) + interpolation
    NOTE: arrays are readonly; lerp accepts ReadonlyArray<UPoint>
 ============================================================================ */
 type UPoint = { t: number; u: number };
@@ -87,7 +153,7 @@ function lerp(points: ReadonlyArray<UPoint>, t: number): number {
   return NaN;
 }
 
-/** Default U profiles by floor exposure + construction. */
+/** Default U profiles by floor exposure + construction (illustrative). */
 const U_TABLE: {
   ground: { solid: ReadonlyArray<UPoint>; suspended: ReadonlyArray<UPoint> };
   exposed: { solid: ReadonlyArray<UPoint>; suspended: ReadonlyArray<UPoint> };
@@ -133,6 +199,7 @@ function suggestWallUValue(f: WallForm): number | null {
   if (f.category === 'Known U-Value') {
     return typeof f.uValue === 'number' ? f.uValue : null;
   }
+  if (f.category === 'Internal' || f.category === 'Party') return 0; // partitions or party walls assumed adiabatic for heat loss
   if (!f.ageBand || !f.construction) return null;
   const table = WALL_U_BY_AGE[f.ageBand as Exclude<AgeBand, ''>];
   const v = table?.[f.construction];
@@ -143,7 +210,7 @@ function suggestFloorUValue(f: FloorForm): number | null {
   if (f.category === 'known-u') {
     return typeof f.uValue === 'number' ? f.uValue : null;
   }
-  if (f.category === 'internal') return 0; // partitions within dwelling
+  if (f.category === 'internal' || f.category === 'party') return 0; // internal/party floors
 
   const key =
     f.category === 'exposed' ? 'exposed'
@@ -155,16 +222,84 @@ function suggestFloorUValue(f: FloorForm): number | null {
   return lerp(pts, t);
 }
 
+function suggestCeilingUValue(c: CeilingForm): number | null {
+  if (c.category === 'known-u') return typeof c.uValue === 'number' ? c.uValue : null;
+  if (c.category === 'internal' || c.category === 'party') return 0;
+  // RdSAP10 Table 16: joist-level insulation (column 1). We'll interpolate between table points.
+  const pts: ReadonlyArray<UPoint> = [
+    { t: 0, u: 2.3 },
+    { t: 12, u: 1.5 },
+    { t: 25, u: 1.0 },
+    { t: 50, u: 0.68 },
+    { t: 75, u: 0.50 },
+    { t: 100, u: 0.40 },
+    { t: 125, u: 0.35 },
+    { t: 150, u: 0.30 },
+    { t: 175, u: 0.25 },
+    { t: 200, u: 0.21 },
+    { t: 225, u: 0.19 },
+    { t: 250, u: 0.17 },
+    { t: 270, u: 0.16 },
+    { t: 300, u: 0.14 },
+    { t: 350, u: 0.12 },
+    { t: 400, u: 0.11 },
+  ];
+  const t = typeof c.insulThk === 'number' ? c.insulThk : 0;
+  return lerp(pts, t);
+}
+
+function suggestDoorUValue(d: DoorForm): number | null {
+  if (d.category === 'known-u') return typeof d.uValue === 'number' ? d.uValue : null;
+  if (d.category === 'internal') return 0; // internal doors don't contribute to envelope loss
+  if (d.category === 'external') return null; // leave to Known-U or future RdSAP table by style/age
+  return null;
+}
+
+const WINDOW_U_DEFAULTS: Record<'single' | 'double' | 'triple', number> = {
+  // RdSAP10 Table 25 (non-separated conservatory defaults) used as baseline
+  single: 4.8,
+  double: 3.1, // 6mm gap
+  triple: 2.4, // 6mm gaps
+};
+function suggestWindowUValue(w: WindowForm): number | null {
+  if (w.category === 'known-u') return typeof w.uValue === 'number' ? w.uValue : null;
+  if (!w.glazingType) return null;
+  return WINDOW_U_DEFAULTS[w.glazingType as 'single' | 'double' | 'triple'];
+}
+
+/* ============================================================================
+   Local fallback: ClearDataButton (used if the shared component is unavailable)
+============================================================================ */
+function ClearDataButton({ onClearState }: { onClearState?: () => void }): React.JSX.Element {
+  const handleClick = () => {
+    if (typeof window === 'undefined') return;
+    const ok = window.confirm('Clear all saved Building Elements data?');
+    if (!ok) return;
+    try {
+      const s = getStorage();
+      s?.removeItem(LS_KEY);
+      // Optional: also clear property defaults to reflect a "fresh start"
+      // s?.removeItem(PROP_KEY);
+    } catch {}
+    onClearState?.();
+  };
+  return (
+    <button style={secondaryBtn} onClick={handleClick} aria-label="Clear saved data">
+      Clear Data
+    </button>
+  );
+}
+
 /* ============================================================================
    UI component (SINGLE DEFAULT EXPORT)
 ============================================================================ */
 export default function ElementsPage(): React.JSX.Element {
-  const [model, setModel] = useState<SavedModel>({ walls: [], floors: [] });
+  const [model, setModel] = useState<SavedModel>({ walls: [], floors: [], ceilings: [], doors: [], windows: [] });
 
   // Load saved model
   useEffect(() => {
     const saved = readJSON<SavedModel>(LS_KEY);
-    setModel(saved ?? { walls: [], floors: [] });
+    setModel(saved ?? { walls: [], floors: [], ceilings: [], doors: [], windows: [] });
   }, []);
 
   // Persist
@@ -214,6 +349,48 @@ export default function ElementsPage(): React.JSX.Element {
     setFForm({ ...fForm, name: 'Ground Floor ' + (model.floors.length + 2) });
   }
 
+  /* ------------------------------ Ceilings --------------------------- */
+  const [cForm, setCForm] = useState<CeilingForm>({
+    category: 'external-roof',
+    name: 'External Roof 1',
+    roofType: 'pitched',
+    insulThk: 0,
+    uValue: '',
+  });
+  const cSuggestion = suggestCeilingUValue(cForm);
+  function addCeiling() {
+    setModel((m) => ({ ...m, ceilings: [...m.ceilings, cForm] }));
+    setCForm({ ...cForm, name: 'External Roof ' + (model.ceilings.length + 2) });
+  }
+
+  /* ------------------------------ Doors ------------------------------ */
+  const [dForm, setDForm] = useState<DoorForm>({
+    category: 'external',
+    name: 'External Door 1',
+    ageBand: defaultAgeBand,
+    uValue: '',
+  });
+  const dSuggestion = suggestDoorUValue(dForm);
+  function addDoor() {
+    setModel((m) => ({ ...m, doors: [...m.doors, dForm] }));
+    setDForm({ ...dForm, name: (dForm.category === 'external' ? 'External Door ' : 'Internal Door ') + (model.doors.length + 2) });
+  }
+
+  /* ------------------------------ Windows ---------------------------- */
+  const [winForm, setWinForm] = useState<WindowForm>({
+    category: 'external',
+    name: 'External Window 1',
+    glazingType: '',
+    frameType: '',
+    ageBand: defaultAgeBand,
+    uValue: '',
+  });
+  const winSuggestion = suggestWindowUValue(winForm);
+  function addWindow() {
+    setModel((m) => ({ ...m, windows: [...m.windows, winForm] }));
+    setWinForm({ ...winForm, name: (winForm.category === 'external' ? 'External Window ' : 'Internal Window ') + (model.windows.length + 2) });
+  }
+
   /* ------------------------------ Render ----------------------------- */
   return (
     <main style={wrap}>
@@ -222,7 +399,7 @@ export default function ElementsPage(): React.JSX.Element {
         <h1 style={h1}>Building Elements</h1>
         <ClearDataButton onClearState={() => {}} />
       </div>
-      <p style={mutedText}>Define wall and floor types. Values are saved automatically.</p>
+      <p style={mutedText}>Define wall, floor, ceiling/roof, door and window types. Values are saved automatically.</p>
 
       {/* Walls */}
       <section style={card}>
@@ -238,6 +415,7 @@ export default function ElementsPage(): React.JSX.Element {
               <option value="External">External Wall</option>
               <option value="Internal">Internal Wall</option>
               <option value="Known U-Value">Known U-Value</option>
+              <option value="Party">Party Wall</option>
             </Select>
           </div>
 
@@ -341,6 +519,7 @@ export default function ElementsPage(): React.JSX.Element {
               <option value="ground-known">Ground Floor (known insulation)</option>
               <option value="exposed">Exposed Floor</option>
               <option value="internal">Internal Floor</option>
+              <option value="party">Party Floor</option>
               <option value="known-u">Known U-Value</option>
               <option value="ground-unknown">Ground Floor (unknown insulation)</option>
             </Select>
@@ -446,6 +625,243 @@ export default function ElementsPage(): React.JSX.Element {
         )}
       </section>
 
+      {/* Ceilings */}
+      <section style={{ ...card, marginTop: 16 }}>
+        <h2 style={h2}>Ceiling Types</h2>
+
+        <div style={grid2}>
+          <div>
+            <Label>Ceiling Category *</Label>
+            <Select
+              value={cForm.category}
+              onChange={(e) => setCForm({ ...cForm, category: e.target.value as CeilingCategory })}
+            >
+              <option value="external-roof">External Roof</option>
+              <option value="internal">Internal Ceiling</option>
+              <option value="party">Party Ceiling</option>
+              <option value="known-u">Known U-Value</option>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Ceiling Name *</Label>
+            <Input value={cForm.name} onChange={(e) => setCForm({ ...cForm, name: e.target.value })} />
+          </div>
+
+          {cForm.category === 'external-roof' && (
+            <>
+              <div>
+                <Label>Roof Type</Label>
+                <Select
+                  value={cForm.roofType || ''}
+                  onChange={(e) => setCForm({ ...cForm, roofType: (e.target.value as 'flat' | 'pitched' | '') })}
+                >
+                  <option value="">Select roof type</option>
+                  <option value="flat">Flat roof</option>
+                  <option value="pitched">Pitched roof</option>
+                </Select>
+              </div>
+              <div>
+                <Label>Insulation Thickness (mm)</Label>
+                <Input
+                  type="number"
+                  value={cForm.insulThk ?? ''}
+                  onChange={(e) => setCForm({ ...cForm, insulThk: e.target.value === '' ? '' : Number(e.target.value) })}
+                />
+              </div>
+            </>
+          )}
+
+          {cForm.category === 'known-u' && (
+            <div>
+              <Label>U-Value *</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={cForm.uValue ?? ''}
+                onChange={(e) => setCForm({ ...cForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })}
+              />
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+          Suggested U-value: {cSuggestion ?? '—'} {typeof cSuggestion === 'number' ? 'W/m²K' : ''}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+          <button style={primaryBtn} onClick={addCeiling}>Save Ceiling Type</button>
+        </div>
+
+        {!!model.ceilings.length && (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={h3}>Saved Ceilings</h3>
+            {model.ceilings.map((c, i) => (
+              <div key={i} style={row}>
+                <div style={{ flex: 2 }}>{c.name}</div>
+                <div style={{ flex: 1 }}>
+                  {c.category === 'external-roof' ? 'External Roof' : c.category === 'internal' ? 'Internal Ceiling' : c.category === 'party' ? 'Party Ceiling' : 'Known U-Value'}
+                </div>
+                <div style={{ flex: 2 }}>
+                  {c.category === 'known-u' ? `U=${c.uValue}` : `${c.roofType || ''}${typeof c.insulThk === 'number' ? `, ${c.insulThk}mm` : ''} (≈ ${suggestCeilingUValue(c) ?? '—'})`}
+                </div>
+                <div>
+                  <button style={linkDanger} onClick={() => setModel((m) => ({ ...m, ceilings: m.ceilings.filter((_, idx) => idx !== i) }))}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Doors */}
+      <section style={{ ...card, marginTop: 16 }}>
+        <h2 style={h2}>Door Types</h2>
+
+        <div style={grid2}>
+          <div>
+            <Label>Door Category *</Label>
+            <Select value={dForm.category} onChange={(e) => setDForm({ ...dForm, category: e.target.value as DoorCategory })}>
+              <option value="external">External Door</option>
+              <option value="internal">Internal Door</option>
+              <option value="known-u">Known U-Value</option>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Door Name *</Label>
+            <Input value={dForm.name} onChange={(e) => setDForm({ ...dForm, name: e.target.value })} />
+          </div>
+
+          {dForm.category !== 'known-u' && (
+            <div>
+              <Label>Age Band</Label>
+              <Select value={dForm.ageBand || ''} onChange={(e) => setDForm({ ...dForm, ageBand: e.target.value as AgeBand })}>
+                <option value="">Select age band</option>
+                {AGE_BANDS.map((ab) => (
+                  <option key={ab} value={ab}>{ab}</option>
+                ))}
+              </Select>
+            </div>
+          )}
+
+          {dForm.category === 'known-u' && (
+            <div>
+              <Label>U-Value *</Label>
+              <Input type="number" step="0.01" value={dForm.uValue ?? ''} onChange={(e) => setDForm({ ...dForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })} />
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+          Suggested U-value: {dSuggestion ?? '—'} {typeof dSuggestion === 'number' ? 'W/m²K' : ''}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+          <button style={primaryBtn} onClick={addDoor}>Save Door Type</button>
+        </div>
+
+        {!!model.doors.length && (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={h3}>Saved Doors</h3>
+            {model.doors.map((d, i) => (
+              <div key={i} style={row}>
+                <div style={{ flex: 2 }}>{d.name}</div>
+                <div style={{ flex: 1 }}>{d.category === 'external' ? 'External' : d.category === 'internal' ? 'Internal' : 'Known U-Value'}</div>
+                <div style={{ flex: 2 }}>{d.category === 'known-u' ? `U=${d.uValue}` : d.ageBand || '—'}</div>
+                <div>
+                  <button style={linkDanger} onClick={() => setModel((m) => ({ ...m, doors: m.doors.filter((_, idx) => idx !== i) }))}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Windows */}
+      <section style={{ ...card, marginTop: 16 }}>
+        <h2 style={h2}>Window Types</h2>
+
+        <div style={grid2}>
+          <div>
+            <Label>Window Category *</Label>
+            <Select value={winForm.category} onChange={(e) => setWinForm({ ...winForm, category: e.target.value as WindowCategory })}>
+              <option value="external">External Window</option>
+              <option value="internal">Internal Window</option>
+              <option value="known-u">Known U-Value</option>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Window Name *</Label>
+            <Input value={winForm.name} onChange={(e) => setWinForm({ ...winForm, name: e.target.value })} />
+          </div>
+
+          {winForm.category !== 'known-u' && (
+            <>
+              <div>
+                <Label>Glazing Type</Label>
+                <Select value={winForm.glazingType || ''} onChange={(e) => setWinForm({ ...winForm, glazingType: e.target.value as any })}>
+                  <option value="">Select glazing</option>
+                  <option value="single">Single</option>
+                  <option value="double">Double</option>
+                  <option value="triple">Triple</option>
+                </Select>
+              </div>
+              <div>
+                <Label>Frame Type</Label>
+                <Select value={winForm.frameType || ''} onChange={(e) => setWinForm({ ...winForm, frameType: e.target.value as any })}>
+                  <option value="">Select frame</option>
+                  <option value="uPVC">uPVC</option>
+                  <option value="timber">Timber</option>
+                  <option value="aluminium">Aluminium</option>
+                </Select>
+              </div>
+              <div>
+                <Label>Age Band</Label>
+                <Select value={winForm.ageBand || ''} onChange={(e) => setWinForm({ ...winForm, ageBand: e.target.value as AgeBand })}>
+                  <option value="">Select age band</option>
+                  {AGE_BANDS.map((ab) => (
+                    <option key={ab} value={ab}>{ab}</option>
+                  ))}
+                </Select>
+              </div>
+            </>
+          )}
+
+          {winForm.category === 'known-u' && (
+            <div>
+              <Label>U-Value *</Label>
+              <Input type="number" step="0.01" value={winForm.uValue ?? ''} onChange={(e) => setWinForm({ ...winForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })} />
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+          Suggested U-value: {winSuggestion ?? '—'} {typeof winSuggestion === 'number' ? 'W/m²K' : ''}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+          <button style={primaryBtn} onClick={addWindow}>Save Window Type</button>
+        </div>
+
+        {!!model.windows.length && (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={h3}>Saved Windows</h3>
+            {model.windows.map((w, i) => (
+              <div key={i} style={row}>
+                <div style={{ flex: 2 }}>{w.name}</div>
+                <div style={{ flex: 1 }}>{w.category === 'external' ? 'External' : w.category === 'internal' ? 'Internal' : 'Known U-Value'}</div>
+                <div style={{ flex: 2 }}>{w.category === 'known-u' ? `U=${w.uValue}` : `${w.glazingType || '—'} · ${w.frameType || '—'} · ${w.ageBand || '—'}`}</div>
+                <div>
+                  <button style={linkDanger} onClick={() => setModel((m) => ({ ...m, windows: m.windows.filter((_, idx) => idx !== i) }))}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       {/* footer nav */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
         <Link href="/rooms" style={{ ...secondaryBtn, textDecoration: 'none' }}>
@@ -485,6 +901,7 @@ function prettyFloorCategory(c: FloorCategory): string {
     case 'ground-unknown': return 'Ground (unknown insulation)';
     case 'exposed': return 'Exposed';
     case 'internal': return 'Internal';
+    case 'party': return 'Party';
     case 'known-u': return 'Known U-Value';
   }
 }
@@ -540,3 +957,54 @@ const linkDanger: React.CSSProperties = {
   color: '#b00020', textDecoration: 'underline', background: 'none',
   border: 0, cursor: 'pointer',
 };
+
+/* ============================================================================
+   Dev quick tests (non-blocking, browser-only)
+============================================================================ */
+(() => {
+  if (typeof window === 'undefined') return;
+  const w = window as any;
+  if (w.__MCS_ELEMENTS_TESTS__) return; // ensure they run once per page load
+  w.__MCS_ELEMENTS_TESTS__ = true;
+
+  // --- readJSON / writeJSON safety ---
+  const TMP = '__TEST_JSON__';
+  const S = getStorage();
+  try { S?.removeItem?.(TMP as any); } catch {}
+  console.assert(readJSON(TMP) === null, 'readJSON should be null for missing key');
+  try { S?.setItem?.(TMP as any, 'null'); } catch {}
+  console.assert(readJSON(TMP) === null, 'readJSON should treat "null" string as null');
+  try { S?.setItem?.(TMP as any, 'undefined'); } catch {}
+  console.assert(readJSON(TMP) === null, 'readJSON should treat "undefined" string as null');
+  try { S?.setItem?.(TMP as any, '{"foo":1}'); } catch {}
+  console.assert((readJSON<any>(TMP) as any)?.foo === 1, 'readJSON should parse valid JSON');
+
+  // --- simulate blocked storage ---
+  const prev = w.__MCS_DISABLE_STORAGE__;
+  w.__MCS_DISABLE_STORAGE__ = true;
+  console.assert(readJSON(TMP) === null, 'readJSON should return null when storage is disabled');
+  // writeJSON should no-op without throwing
+  try { writeJSON(TMP, { a: 1 }); console.assert(true, 'writeJSON should not throw when storage disabled'); } catch { console.assert(false, 'writeJSON threw when storage disabled'); }
+  w.__MCS_DISABLE_STORAGE__ = prev;
+
+  // --- lerp sanity ---
+  console.assert(lerp([{ t: 0, u: 0 }, { t: 10, u: 10 }], 5) === 5, 'lerp mid-point failed');
+  console.assert(lerp([{ t: 0, u: 0 }], 5) === 0, 'lerp single-point clamp failed');
+
+  // --- floor suggestion internal/party => 0 ---
+  const fInt: FloorForm = { category: 'internal', name: 'x', construction: 'solid', insulThk: 50 };
+  const fParty: FloorForm = { category: 'party', name: 'y', construction: 'suspended', insulThk: 50 };
+  console.assert(suggestFloorUValue(fInt) === 0, 'internal floor should be 0');
+  console.assert(suggestFloorUValue(fParty) === 0, 'party floor should be 0');
+
+  // --- window defaults by glazing ---
+  const wDouble: WindowForm = { category: 'external', name: 'w', glazingType: 'double', frameType: 'uPVC', ageBand: '', uValue: '' };
+  console.assert(suggestWindowUValue(wDouble) === 3.1, 'double glazing default should be 3.1');
+
+  // --- ceiling RdSAP point check (270mm -> 0.16) ---
+  const c270: CeilingForm = { category: 'external-roof', name: 'roof', roofType: 'pitched', insulThk: 270, uValue: '' };
+  console.assert(suggestCeilingUValue(c270) === 0.16, 'ceiling 270mm should be 0.16');
+
+  // --- ClearDataButton is present ---
+  console.assert(typeof ClearDataButton === 'function', 'ClearDataButton component should exist');
+})();
