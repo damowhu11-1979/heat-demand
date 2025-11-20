@@ -53,33 +53,14 @@ const writeRooms = (zones: Zone[]) => {
   } catch {}
 };
 
-/* ------------------------------ AGE BAND ------------------------------ */
-/** Age Band written by the Property page */
-const AGE_BAND_KEY = 'mcs.AgeBand' as const;
-
-/** Map your Property page Age Bands -> default Design Temp (°C) */
-const DEFAULT_DESIGN_TEMP_BY_AGE: Record<string, number> = {
-  'pre-1900': 21, '1900-1929': 21, '1930-1949': 21, '1950-1966': 21,
-  '1967-1975': 21, '1976-1982': 21, '1983-1990': 21, '1991-1995': 21,
-  '1996-2002': 21, '2003-2006': 21, '2007-2011': 21, '2012-present': 20,
-};
-
-const defaultDesignTempFromAgeBand = (): number => {
-  if (typeof window === 'undefined') return 21;
-  const band = localStorage.getItem(AGE_BAND_KEY) as keyof typeof DEFAULT_DESIGN_TEMP_BY_AGE | null;
-  if (band && DEFAULT_DESIGN_TEMP_BY_AGE[band] !== undefined) {
-    return DEFAULT_DESIGN_TEMP_BY_AGE[band];
-  }
-  return 21;
-};
 /* ----------------------- AGE BAND → DEFAULTS ----------------------- */
 /** Age Band written by the Property page (page 1) */
 const AGE_BAND_KEY = 'mcs.AgeBand' as const;
 
-/** Reference: Internal room temperatures by Age Band (see PDF pgs 13–14). */
+/** Reference: Internal room temperatures for earlier bands (A)… */
 const RECOMMENDED_BY_ROOM_AGE_A: Record<string, number> = {
   Bathroom: 22,
-  'Bedroom': 18,
+  Bedroom: 18,
   'Bedroom with en-suite': 21,
   'Bedroom/study': 21,
   'Breakfast room': 21,
@@ -98,22 +79,16 @@ const RECOMMENDED_BY_ROOM_AGE_A: Record<string, number> = {
   Study: 21,
   Toilet: 18,
   'Utility room': 15,
-  Other: 21,       // sensible fallback
+  Other: 21, // sensible fallback
 };
 
+/** …and for newer, well-insulated bands (B onwards): 21 °C everywhere except bathrooms at 22 °C */
 const RECOMMENDED_BY_ROOM_AGE_B_ONWARDS: Record<string, number> = new Proxy({}, {
   get: (_t, k: string) => (k === 'Bathroom' || k === 'Shower room' ? 22 : 21),
 }) as Record<string, number>;
 
-/** Treat “newer, well-insulated” as Age Band B onwards. Adjust list as you refine. */
+/** Treat “newer, well-insulated” as Age Band B onwards. Adjust as your project defines bands. */
 const AGE_B_BANDS = new Set<string>(['2012-present']);
-
-/** For backward compatibility (used when no room type selected) */
-const DEFAULT_DESIGN_TEMP_BY_AGE: Record<string, number> = {
-  'pre-1900': 21, '1900-1929': 21, '1930-1949': 21, '1950-1966': 21,
-  '1967-1975': 21, '1976-1982': 21, '1983-1990': 21, '1991-1995': 21,
-  '1996-2002': 21, '2003-2006': 21, '2007-2011': 21, '2012-present': 21,
-};
 
 const readAgeBand = (): string | null => {
   if (typeof window === 'undefined') return null;
@@ -147,6 +122,7 @@ const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min)
 export default function RoomsPage(): React.JSX.Element {
   const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', Rooms: [] }]);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
+  const [userEditedDesignTemp, setUserEditedDesignTemp] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -157,7 +133,7 @@ export default function RoomsPage(): React.JSX.Element {
     type: '',
     name: '',
     maxCeiling: 2.4,
-    designTemp: defaultDesignTempFromAgeBand(),   // ← default from Age Band
+    designTemp: 21, // neutral; will set from room type + age band on selection
     airChangeRate: 1,
     internalAirVolume: undefined,
     intermittentHeatingPct: undefined,
@@ -180,18 +156,29 @@ export default function RoomsPage(): React.JSX.Element {
     return () => clearTimeout(t);
   }, [zones]);
 
-  /* Room type list */
+  /* Room type list (aligned with recommendation table keys) */
   const roomTypes = useMemo(
     () => [
-      'Bedroom',
-      'Living Room',
-      'Kitchen',
       'Bathroom',
-      'Hallway',
+      'Bedroom',
+      'Bedroom with en-suite',
+      'Bedroom/study',
+      'Breakfast room',
+      'Cloakroom/WC',
       'Dining Room',
+      'Family/morning room',
+      'Games room',
+      'Hall',
+      'Internal room/corridor',
+      'Kitchen',
+      'Landing',
+      'Lounge/sitting room',
+      'Living Room',
+      'Shower room',
+      'Store room',
       'Study',
-      'Garage',
-      'Porch',
+      'Toilet',
+      'Utility room',
       'Other',
     ],
     []
@@ -201,10 +188,11 @@ export default function RoomsPage(): React.JSX.Element {
   const onOpenAddRoom = () => {
     setIsEditing(false);
     setEditingIndices(null);
+    setUserEditedDesignTemp(false);
     setForm({
       ...emptyForm,
       zone: 0,
-      designTemp: defaultDesignTempFromAgeBand(), // ← fresh read each time
+      designTemp: 21, // neutral; will be set by room type + age band
     });
     setShowModal(true);
   };
@@ -214,6 +202,7 @@ export default function RoomsPage(): React.JSX.Element {
     const room = zones[zoneIdx].Rooms[roomIdx];
     setIsEditing(true);
     setEditingIndices({ zoneIdx, roomIdx });
+    setUserEditedDesignTemp(false);
     setForm({ ...room });
     setShowModal(true);
   };
@@ -256,7 +245,7 @@ export default function RoomsPage(): React.JSX.Element {
   const onSaveRoom = () => {
     const errs = validate(form);
     if (errs.length) {
-      alert(errs.join('\\n'));
+      alert(errs.join('\n'));
       return;
     }
     const copy = [...zones];
@@ -414,7 +403,14 @@ export default function RoomsPage(): React.JSX.Element {
                 <Label>Room Type *</Label>
                 <Select
                   value={form.type}
-                  onChange={(e) => setForm({ ...form, type: e.target.value })}
+                  onChange={(e) => {
+                    const nextType = e.target.value;
+                    const next = { ...form, type: nextType };
+                    if (!userEditedDesignTemp) {
+                      next.designTemp = recommendedTempFor(nextType);
+                    }
+                    setForm(next);
+                  }}
                 >
                   <option value="">Select room type</option>
                   {roomTypes.map((t) => (
@@ -451,13 +447,32 @@ export default function RoomsPage(): React.JSX.Element {
                   type="number"
                   inputMode="decimal"
                   value={form.designTemp}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      designTemp: Number(e.target.value),
-                    })
-                  }
+                  onChange={(e) => {
+                    setUserEditedDesignTemp(true);
+                    setForm({ ...form, designTemp: Number(e.target.value) });
+                  }}
                 />
+                {form.type && (
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
+                    Recommended for <strong>{form.type}</strong>{' '}
+                    ({isAgeBandBOnwards() ? 'Age Band B onwards' : 'Earlier age bands'})
+                    : <strong>{recommendedTempFor(form.type)}°C</strong>
+                    {!userEditedDesignTemp &&
+                      form.designTemp !== recommendedTempFor(form.type) && (
+                        <>
+                          {' '}
+                          <button
+                            style={{ ...linkBtn, marginLeft: 6 }}
+                            onClick={() =>
+                              setForm({ ...form, designTemp: recommendedTempFor(form.type) })
+                            }
+                          >
+                            Apply
+                          </button>
+                        </>
+                      )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -608,7 +623,7 @@ const input: React.CSSProperties = {
 const primaryBtn: React.CSSProperties = {
   background: '#111',
   color: '#fff',
-  border: '1px solid #111',
+  border: '1px solid '#111',
   padding: '10px 16px',
   borderRadius: 12,
   cursor: 'pointer',
