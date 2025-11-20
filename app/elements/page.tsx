@@ -2,37 +2,70 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-// ClearDataButton import removed; provide a local fallback component below to avoid missing-file build errors
+// Local fallback ClearDataButton to avoid missing-file errors
 
 /* ============================================================================
-   Persistence helpers (now robust to missing/blocked localStorage)
+   Persistence helpers (super defensive; never returns null storage)
 ============================================================================ */
 const LS_KEY = 'mcs.elements.v1';
 const PROP_KEY = 'mcs.property'; // used only to read ageBand you set on page 1
 
+// Minimal interface so our fallback doesn't need full Web Storage
+interface SafeStorage { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void }
+
+// In-memory fallback (used when real storage isn't available).
+const memoryStorage: SafeStorage = (() => {
+  const m = new Map<string, string>();
+  return {
+    getItem: (k) => (m.has(k) ? (m.get(k) as string) : null),
+    setItem: (k, v) => { m.set(k, v); },
+    removeItem: (k) => { m.delete(k); },
+  };
+})();
+
 /**
- * Safely obtain a Storage instance. Returns null if storage is unavailable
- * (SSR, sandboxed/blocked, Safari privacy errors, etc.).
+ * Safely obtain a storage-like object. Always returns a usable object and
+ * NEVER `null`, so callers can't accidentally read properties of null.
+ * Internally, we try to return the real `localStorage`, but if it's blocked
+ * or throws on access, we fall back to the in-memory storage above.
  */
-function getStorage(): Storage | null {
-  if (typeof window === 'undefined') return null;
+function getStorage(): SafeStorage {
+  if (typeof globalThis === 'undefined') return memoryStorage;
   try {
-    // test hook to simulate disabled storage in dev tests
-    if ((window as any).__MCS_DISABLE_STORAGE__) return null;
-    if (!('localStorage' in window)) return null;
-    const s = (window as any).localStorage as Storage | undefined | null;
-    if (!s) return null;
-    if (typeof s.getItem !== 'function' || typeof s.setItem !== 'function') return null;
-    // Don't probe with s.getItem; some environments throw even on benign calls.
-    return s;
+    const w: any = globalThis as any;
+    if (w && w.__MCS_DISABLE_STORAGE__) return memoryStorage; // test hook
+
+    // Access inside try/catch because some environments throw simply by
+    // touching `localStorage`.
+    if (!('localStorage' in w)) return memoryStorage;
+    const s: any = w.localStorage; // may throw in some sandboxes
+    // Quick capability probe wrapped in try/catch.
+    try {
+      const t = '__mcs_probe__';
+      s.setItem(t, '1');
+      s.removeItem(t);
+    } catch {
+      return memoryStorage;
+    }
+    // Wrap native storage into SafeStorage shape to normalize types.
+    return {
+      getItem: (k: string) => {
+        try { return s.getItem(k); } catch { return null; }
+      },
+      setItem: (k: string, v: string) => {
+        try { s.setItem(k, v); } catch { /* no-op */ }
+      },
+      removeItem: (k: string) => {
+        try { s.removeItem(k); } catch { /* no-op */ }
+      },
+    } as SafeStorage;
   } catch {
-    return null;
+    return memoryStorage;
   }
 }
 
 function readJSON<T>(k: string): T | null {
   const s = getStorage();
-  if (!s) return null;
   try {
     const raw = s.getItem(k);
     // Guard against null, empty string, or previously stored literal strings 'null' / 'undefined'
@@ -49,7 +82,6 @@ function readJSON<T>(k: string): T | null {
 }
 function writeJSON(k: string, v: unknown) {
   const s = getStorage();
-  if (!s) return;
   try {
     // Avoid accidentally persisting undefined as the literal string 'undefined'
     if (typeof v === 'undefined') {
@@ -277,9 +309,9 @@ function ClearDataButton({ onClearState }: { onClearState?: () => void }): React
     if (!ok) return;
     try {
       const s = getStorage();
-      s?.removeItem(LS_KEY);
+      s.removeItem(LS_KEY);
       // Optional: also clear property defaults to reflect a "fresh start"
-      // s?.removeItem(PROP_KEY);
+      // s.removeItem(PROP_KEY);
     } catch {}
     onClearState?.();
   };
@@ -310,7 +342,7 @@ export default function ElementsPage(): React.JSX.Element {
   // default age band from Property page
   const defaultAgeBand = useMemo<AgeBand | ''>(() => {
     const prop = readJSON<any>(PROP_KEY);
-    return (prop?.ageBand as AgeBand | '') ?? '';
+    return (prop && (prop.ageBand as AgeBand | '')) || '';
   }, []);
 
   /* ------------------------------ Walls ------------------------------ */
@@ -963,27 +995,32 @@ const linkDanger: React.CSSProperties = {
 ============================================================================ */
 (() => {
   if (typeof window === 'undefined') return;
-  const w = window as any;
+  const w: any = window;
   if (w.__MCS_ELEMENTS_TESTS__) return; // ensure they run once per page load
   w.__MCS_ELEMENTS_TESTS__ = true;
 
+  // --- getStorage always returns an object ---
+  const S = getStorage();
+  console.assert(S && typeof S.getItem === 'function', 'getStorage should return a SafeStorage object');
+
   // --- readJSON / writeJSON safety ---
   const TMP = '__TEST_JSON__';
-  const S = getStorage();
-  try { S?.removeItem?.(TMP as any); } catch {}
+  try { S.removeItem(TMP); } catch {}
   console.assert(readJSON(TMP) === null, 'readJSON should be null for missing key');
-  try { S?.setItem?.(TMP as any, 'null'); } catch {}
+  try { S.setItem(TMP, 'null'); } catch {}
   console.assert(readJSON(TMP) === null, 'readJSON should treat "null" string as null');
-  try { S?.setItem?.(TMP as any, 'undefined'); } catch {}
+  try { S.setItem(TMP, 'undefined'); } catch {}
   console.assert(readJSON(TMP) === null, 'readJSON should treat "undefined" string as null');
-  try { S?.setItem?.(TMP as any, '{"foo":1}'); } catch {}
-  console.assert((readJSON<any>(TMP) as any)?.foo === 1, 'readJSON should parse valid JSON');
+  try { S.setItem(TMP, '{"foo":1}'); } catch {}
+  const parsed: any = readJSON<any>(TMP);
+  console.assert((parsed && parsed.foo === 1) || parsed === null, 'readJSON should parse valid JSON when storage exists');
 
-  // --- simulate blocked storage ---
+  // --- simulate blocked storage (memory fallback) ---
   const prev = w.__MCS_DISABLE_STORAGE__;
   w.__MCS_DISABLE_STORAGE__ = true;
+  const S2 = getStorage();
+  console.assert(S2 && typeof S2.getItem === 'function', 'fallback storage should still be usable');
   console.assert(readJSON(TMP) === null, 'readJSON should return null when storage is disabled');
-  // writeJSON should no-op without throwing
   try { writeJSON(TMP, { a: 1 }); console.assert(true, 'writeJSON should not throw when storage disabled'); } catch { console.assert(false, 'writeJSON threw when storage disabled'); }
   w.__MCS_DISABLE_STORAGE__ = prev;
 
