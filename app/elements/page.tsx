@@ -581,13 +581,33 @@ export default function ElementsPage(): React.JSX.Element {
     });
   }
 
+  // Resets in-memory state and clears persisted data
+  function resetAll() {
+    try {
+      const s = getStorage();
+      s.removeItem(LS_KEY);
+      // Uncomment if you also want to clear property defaults
+      // s.removeItem(PROP_KEY);
+    } catch {}
+
+    const emptyModel: SavedModel = { walls: [], floors: [], ceilings: [], doors: [], windows: [] };
+    setModel(emptyModel);
+
+    // Reset forms to initial defaults
+    setWForm({ category: 'External', name: 'External Wall 1', ageBand: defaultAgeBand, construction: '', uValue: '' });
+    setFForm({ category: 'ground-known', name: 'Ground Floor 1', construction: 'suspended', insulThk: 0, uValue: '', groundContactAdjust: false, includesPsi: false });
+    setCForm({ category: 'external-roof', name: 'External Roof 1', roofType: 'pitched', insulThk: 0, uValue: '' });
+    setDForm({ category: 'external', name: 'External Door 1', ageBand: defaultAgeBand, uValue: '' });
+    setWinForm({ category: 'external', name: 'External Window 1', glazingType: '', frameType: '', ageBand: defaultAgeBand, uValue: '' });
+  }
+
   /* ------------------------------ Render ----------------------------- */
   return (
     <main style={wrap}>
       {/* header with Clear Data */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <h1 style={h1}>Building Elements</h1>
-        <ClearDataButton onClearState={() => {}} />
+        <ClearDataButton onClearState={resetAll} />
       </div>
       <p style={mutedText}>Define wall, floor, ceiling/roof, door and window types. Values are saved automatically.</p>
 
