@@ -180,7 +180,31 @@ interface DoorForm {
 interface WindowForm {
   category: WindowCategory;
   name: string;
-  glazingType?: 'single' | 'double' | 'triple' | '';
+  glazingType?: 'single' |const WINDOW_U_DEFAULTS: Record<'single' | 'double' | 'triple', number> = {
+  // RdSAP10 Table 25 (non-separated conservatory defaults) used as baseline
+  single: 4.8,
+  double: 3.1, // 6mm gap
+  triple: 2.4, // 6mm gaps
+};
+
+// Simple whole-window U-factor multipliers by frame type (illustrative):
+//  - uPVC ~ baseline
+//  - Timber slightly higher due to typical profiles
+//  - Aluminium (generic) higher unless thermally broken (future toggle)
+const WINDOW_FRAME_MULT: Record<'uPVC' | 'timber' | 'aluminium', number> = {
+  uPVC: 1.0,
+  timber: 1.05,
+  aluminium: 1.15,
+};
+
+function suggestWindowUValue(w: WindowForm): number | null {
+  if (w.category === 'known-u') return typeof w.uValue === 'number' ? w.uValue : null;
+  if (!w.glazingType) return null;
+  const base = WINDOW_U_DEFAULTS[w.glazingType as 'single' | 'double' | 'triple'];
+  const mult = w.frameType && (WINDOW_FRAME_MULT as any)[w.frameType] ? (WINDOW_FRAME_MULT as any)[w.frameType] : 1.0;
+  return +(base * mult).toFixed(2);
+}
+| 'triple' | '';
   frameType?: 'uPVC' | 'timber' | 'aluminium' | '';
   ageBand?: AgeBand | '';
   uValue?: number | '';
@@ -1335,7 +1359,11 @@ const dialogCard: React.CSSProperties = {
 
   // --- window defaults by glazing ---
   const wDouble: WindowForm = { category: 'external', name: 'w', glazingType: 'double', frameType: 'uPVC', ageBand: '', uValue: '' };
-  console.assert(suggestWindowUValue(wDouble) === 3.1, 'double glazing default should be 3.1');
+  console.assert(suggestWindowUValue(wDouble) === +(3.1 * 1.0).toFixed(2), 'double glazing default should match base with uPVC');
+  const wDoubleTimber: WindowForm = { ...wDouble, frameType: 'timber' };
+  const wDoubleAlu: WindowForm = { ...wDouble, frameType: 'aluminium' };
+  console.assert(suggestWindowUValue(wDoubleTimber)! > suggestWindowUValue(wDouble)!, 'timber multiplier should increase U vs uPVC');
+  console.assert(suggestWindowUValue(wDoubleAlu)! > suggestWindowUValue(wDoubleTimber)!, 'aluminium multiplier should be highest');
 
   // --- external insulation reduces U and graphite EPS < white EPS ---
   const wNoEI: WallForm = { category: 'External', name: 'ext', ageBand: '1950-1966', construction: 'Solid Brick or Stone', uValue: '', extInsulated: false };
