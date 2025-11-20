@@ -57,7 +57,7 @@ const writeRooms = (zones: Zone[]) => {
 /** Age Band written by the Property page (page 1) */
 const AGE_BAND_KEY = 'mcs.AgeBand' as const;
 
-/** Reference: Internal room temperatures for earlier bands (A)… */
+/** Earlier bands (A) — per-room recommendations */
 const RECOMMENDED_BY_ROOM_AGE_A: Record<string, number> = {
   Bathroom: 22,
   Bedroom: 18,
@@ -79,15 +79,15 @@ const RECOMMENDED_BY_ROOM_AGE_A: Record<string, number> = {
   Study: 21,
   Toilet: 18,
   'Utility room': 15,
-  Other: 21, // sensible fallback
+  Other: 21,
 };
 
-/** …and for newer, well-insulated bands (B onwards): 21 °C everywhere except bathrooms at 22 °C */
+/** Newer, well-insulated bands (B onwards): 21 °C everywhere except bathrooms at 22 °C */
 const RECOMMENDED_BY_ROOM_AGE_B_ONWARDS: Record<string, number> = new Proxy({}, {
   get: (_t, k: string) => (k === 'Bathroom' || k === 'Shower room' ? 22 : 21),
 }) as Record<string, number>;
 
-/** Treat “newer, well-insulated” as Age Band B onwards. Adjust as your project defines bands. */
+/** Adjust this to match your project’s “B onwards” mapping */
 const AGE_B_BANDS = new Set<string>(['2012-present']);
 
 const readAgeBand = (): string | null => {
@@ -623,7 +623,7 @@ const input: React.CSSProperties = {
 const primaryBtn: React.CSSProperties = {
   background: '#111',
   color: '#fff',
-  border: '1px solid '#111',
+  border: '1px solid #111',   // ✅ fixed
   padding: '10px 16px',
   borderRadius: 12,
   cursor: 'pointer',
