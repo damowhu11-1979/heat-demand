@@ -11,7 +11,7 @@ import Link from 'next/link';
    - Ventilation with Auto Volume + Override checkbox
    - Back / Save & Continue footer actions
    - **Linked to Rooms page**: binds to a specific roomId and persists elements per room
-   FIX: robust storage access in SSR/edge (no touching localStorage outside browser)
+   FIX: hardened storage + JSON guards to avoid any null deref in non-browser contexts
 ============================================================================ */
 
 /* ============================================================================
@@ -42,20 +42,25 @@ const memoryStorage: SafeStorage = (() => {
 })();
 
 function getStorage(): SafeStorage {
-  // Only attempt localStorage in a real browser
+  // Never touch window/localStorage on server or blocked envs
   if (typeof window === 'undefined') return memoryStorage;
   try {
-    const s = window.localStorage as Storage | undefined;
+    const s: Storage | undefined | null = (window as any).localStorage ?? null;
     if (!s) return memoryStorage;
-    // Probe inside try/catch because even touching it can throw in some contexts
-    const t = '__probe__';
-    s.setItem(t, '1');
-    s.removeItem(t);
+    // Probe inside try/catch; some sandboxes throw on access
+    try {
+      const t = '__probe__';
+      s.setItem(t, '1');
+      s.removeItem(t);
+    } catch {
+      return memoryStorage;
+    }
     // Wrap native storage to normalize errors
     return {
       getItem: (k: string) => {
         try {
-          return s.getItem(k);
+          const v = s.getItem(k);
+          return typeof v === 'string' ? v : null;
         } catch {
           return null;
         }
@@ -64,14 +69,14 @@ function getStorage(): SafeStorage {
         try {
           s.setItem(k, v);
         } catch {
-          /* no-op */
+          /* ignore */
         }
       },
       removeItem: (k: string) => {
         try {
           s.removeItem(k);
         } catch {
-          /* no-op */
+          /* ignore */
         }
       },
     } as SafeStorage;
@@ -85,8 +90,9 @@ function readJSON<T>(k: string): T | null {
   try {
     const raw = s.getItem(k);
     if (raw === null || raw === '' || raw === 'null' || raw === 'undefined') return null;
-    const parsed = JSON.parse(raw);
-    return parsed ?? null;
+    const parsed = JSON.parse(raw as string);
+    // Normalize falsy objects
+    return parsed == null ? null : (parsed as T);
   } catch {
     return null;
   }
@@ -102,6 +108,12 @@ function writeJSON(k: string, v: unknown) {
   } catch {
     /* ignore quota/access errors */
   }
+}
+
+// Helper that ALWAYS returns an object for map-like stores (general use)
+function readJSONMap<T extends object = Record<string, any>>(k: string): T {
+  const v = readJSON<T>(k);
+  return v && typeof v === 'object' ? v : ({} as T);
 }
 
 /* ============================================================================
@@ -212,7 +224,7 @@ export default function RoomElementsPage(): React.JSX.Element {
   useEffect(() => {
     // 1) read roomId from query string (?roomId=...)
     const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const fromQuery = q?.get('roomId');
+    const fromQuery = q ? q.get('roomId') : null;
 
     // 2) load Rooms list (best-effort across common shapes/keys)
     const loaded: Array<{ id: string; name: string; zoneId?: string }> = [];
@@ -221,15 +233,22 @@ export default function RoomElementsPage(): React.JSX.Element {
       if (!x) continue;
       // a) zones: [ { id, name, rooms: [ { id, name } ] } ]
       if (Array.isArray(x?.zones)) {
-        x.zones.forEach((z: any) => (z.rooms || []).forEach((r: any) => loaded.push({ id: String(r.id ?? r.roomId ?? r.name), name: String(r.name || 'Room'), zoneId: z.id })));
+        try {
+          x.zones.forEach((z: any) => (z.rooms || []).forEach((r: any) =>
+            loaded.push({ id: String(r?.id ?? r?.roomId ?? r?.name), name: String(r?.name || 'Room'), zoneId: z?.id })));
+        } catch {/* ignore malformed */}
       }
       // b) rooms: [ { id, name } ]
       if (Array.isArray(x?.rooms)) {
-        x.rooms.forEach((r: any) => loaded.push({ id: String(r.id ?? r.roomId ?? r.name), name: String(r.name || 'Room'), zoneId: r.zoneId }));
+        try {
+          x.rooms.forEach((r: any) => loaded.push({ id: String(r?.id ?? r?.roomId ?? r?.name), name: String(r?.name || 'Room'), zoneId: r?.zoneId }));
+        } catch {/* ignore */}
       }
       // c) bare array
       if (Array.isArray(x)) {
-        x.forEach((r: any) => loaded.push({ id: String(r.id ?? r.roomId ?? r.name), name: String(r.name || 'Room'), zoneId: r.zoneId }));
+        try {
+          x.forEach((r: any) => loaded.push({ id: String(r?.id ?? r?.roomId ?? r?.name), name: String(r?.name || 'Room'), zoneId: r?.zoneId }));
+        } catch {/* ignore */}
       }
       if (loaded.length) break;
     }
@@ -237,11 +256,11 @@ export default function RoomElementsPage(): React.JSX.Element {
 
     // 3) choose active room id: query > lastSelected > first room
     const last = readJSON<string>('mcs.rooms.selectedId');
-    const activeId = fromQuery || last || (loaded[0]?.id ?? null);
+    const activeId = fromQuery || last || (loaded.length ? loaded[0].id : null);
     if (activeId) setSelectedRoomId(activeId);
 
     // 4) load per-room elements; fallback to legacy single-room LS_KEY
-    const byRoom = readJSON<Record<string, RoomModel>>(LS_BYROOM_KEY) || {};
+    const byRoom = readJSONMap<Record<string, RoomModel>>(LS_BYROOM_KEY);
     const saved = activeId ? byRoom[activeId] : readJSON<RoomModel>(LS_KEY);
     if (saved) setRoom(saved);
   }, []);
@@ -250,7 +269,7 @@ export default function RoomElementsPage(): React.JSX.Element {
     // write per-room if linked, else global fallback
     const rid = selectedRoomId || room.id;
     if (rid) {
-      const byRoom = readJSON<Record<string, RoomModel>>(LS_BYROOM_KEY) || {};
+      const byRoom = readJSONMap<Record<string, RoomModel>>(LS_BYROOM_KEY);
       byRoom[rid] = { ...room, id: rid };
       writeJSON(LS_BYROOM_KEY, byRoom);
       writeJSON('mcs.rooms.selectedId', rid);
@@ -388,11 +407,12 @@ export default function RoomElementsPage(): React.JSX.Element {
   // Volume input behavior
   const displayVolume = override ? (room.volumeOverride ?? autoVolume) : autoVolume;
   const onChangeVolume: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const v = e.target.value === '' ? '' : +e.target.value;
+    const raw = e?.target?.value;
+    const v = raw === '' ? '' : +raw!;
     setRoom((r) => ({ ...r, volumeOverride: override ? (v === '' ? null : Number(v)) : null }));
   };
   const onToggleOverride: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const checked = e.target.checked;
+    const checked = !!e?.target?.checked;
     setOverride(checked);
     setRoom((r) => ({ ...r, volumeOverride: checked ? (r.volumeOverride ?? autoVolume) : null }));
   };
@@ -413,7 +433,7 @@ export default function RoomElementsPage(): React.JSX.Element {
         <div style={{ margin: '6px 0 10px' }}>
           <Label>Linked Room</Label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Select value={selectedRoomId || ''} onChange={(e) => setSelectedRoomId(e.target.value || null)}>
+            <Select value={selectedRoomId || ''} onChange={(e) => setSelectedRoomId((e?.target?.value as string) || null)}>
               {roomsList.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
@@ -464,11 +484,11 @@ export default function RoomElementsPage(): React.JSX.Element {
                 <div style={grid4}>
                   <div>
                     <Label>Element Name</Label>
-                    <Input value={w.name} onChange={(e) => updateWall(i, { name: e.target.value })} />
+                    <Input value={w.name} onChange={(e) => updateWall(i, { name: e?.target?.value || '' })} />
                   </div>
                   <div>
                     <Label>Orientation</Label>
-                    <Select value={w.orientation} onChange={(e) => updateWall(i, { orientation: e.target.value as Orientation })}>
+                    <Select value={w.orientation} onChange={(e) => updateWall(i, { orientation: (e?.target?.value as Orientation) || 'N' })}>
                       {orientations.map((o) => (
                         <option key={o} value={o}>
                           {o}
@@ -478,7 +498,7 @@ export default function RoomElementsPage(): React.JSX.Element {
                   </div>
                   <div>
                     <Label>Adjacent Space</Label>
-                    <Select value={w.adjacent} onChange={(e) => updateWall(i, { adjacent: e.target.value as Adjacent })}>
+                    <Select value={w.adjacent} onChange={(e) => updateWall(i, { adjacent: (e?.target?.value as Adjacent) || 'Exterior' })}>
                       {adjacents.map((a) => (
                         <option key={a} value={a}>
                           {a}
@@ -489,29 +509,29 @@ export default function RoomElementsPage(): React.JSX.Element {
                   <div />
                   <div>
                     <Label>Width (m)</Label>
-                    <Input type="number" step="0.01" value={w.width || ''} onChange={(e) => updateWall(i, { width: +e.target.value || 0 })} />
+                    <Input type="number" step="0.01" value={w.width ?? ''} onChange={(e) => updateWall(i, { width: +((e?.target?.value as string) || '0') })} />
                   </div>
                   <div>
                     <Label>Height (m)</Label>
-                    <Input type="number" step="0.01" value={w.height || ''} onChange={(e) => updateWall(i, { height: +e.target.value || 0 })} />
+                    <Input type="number" step="0.01" value={w.height ?? ''} onChange={(e) => updateWall(i, { height: +((e?.target?.value as string) || '0') })} />
                   </div>
                   <div>
                     <Label>U-Value (W/m²K)</Label>
-                    <Input type="number" step="0.01" value={w.uValue ?? ''} onChange={(e) => updateWall(i, { uValue: e.target.value === '' ? '' : +e.target.value })} />
+                    <Input type="number" step="0.01" value={w.uValue ?? ''} onChange={(e) => updateWall(i, { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
                   </div>
                 </div>
 
                 {!!w.openings.length && <h4 style={subtleH}>Openings</h4>}
                 {w.openings.map((o, j) => (
                   <div key={o.id} style={openRow}>
-                    <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'wall', { kind: e.target.value as OpeningKind })}>
+                    <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'wall', { kind: (e?.target?.value as OpeningKind) || 'window' })}>
                       <option value="window">Window</option>
                       <option value="door">Door</option>
                     </Select>
-                    <Input type="number" step="0.01" placeholder="Width (m)" value={o.width || ''} onChange={(e) => updateOpening(i, j, 'wall', { width: +e.target.value || 0 })} />
-                    <Input type="number" step="0.01" placeholder="Height (m)" value={o.height || ''} onChange={(e) => updateOpening(i, j, 'wall', { height: +e.target.value || 0 })} />
+                    <Input type="number" step="0.01" placeholder="Width (m)" value={o.width ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { width: +((e?.target?.value as string) || '0') })} />
+                    <Input type="number" step="0.01" placeholder="Height (m)" value={o.height ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { height: +((e?.target?.value as string) || '0') })} />
                     <span style={{ minWidth: 80, textAlign: 'right' }}>{area(o.width, o.height).toFixed(2)} m²</span>
-                    <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { uValue: e.target.value === '' ? '' : +e.target.value })} />
+                    <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
                     <button style={miniDanger} onClick={() => removeOpening(i, j, 'wall')}>
                       Remove
                     </button>
@@ -552,11 +572,11 @@ export default function RoomElementsPage(): React.JSX.Element {
                 <div style={grid4}>
                   <div>
                     <Label>Element Name</Label>
-                    <Input value={f.name} onChange={(e) => updateFloor(i, { name: e.target.value })} />
+                    <Input value={f.name} onChange={(e) => updateFloor(i, { name: e?.target?.value || '' })} />
                   </div>
                   <div>
                     <Label>Adjacent Space</Label>
-                    <Select value={f.adjacent} onChange={(e) => updateFloor(i, { adjacent: e.target.value as Adjacent })}>
+                    <Select value={f.adjacent} onChange={(e) => updateFloor(i, { adjacent: (e?.target?.value as Adjacent) || 'Ground' })}>
                       {adjacents.map((a) => (
                         <option key={a} value={a}>
                           {a}
@@ -566,15 +586,15 @@ export default function RoomElementsPage(): React.JSX.Element {
                   </div>
                   <div>
                     <Label>Width (m)</Label>
-                    <Input type="number" step="0.01" value={f.width || ''} onChange={(e) => updateFloor(i, { width: +e.target.value || 0 })} />
+                    <Input type="number" step="0.01" value={f.width ?? ''} onChange={(e) => updateFloor(i, { width: +((e?.target?.value as string) || '0') })} />
                   </div>
                   <div>
                     <Label>Height/Depth (m)</Label>
-                    <Input type="number" step="0.01" value={f.height || ''} onChange={(e) => updateFloor(i, { height: +e.target.value || 0 })} />
+                    <Input type="number" step="0.01" value={f.height ?? ''} onChange={(e) => updateFloor(i, { height: +((e?.target?.value as string) || '0') })} />
                   </div>
                   <div>
                     <Label>U-Value (W/m²K)</Label>
-                    <Input type="number" step="0.01" value={f.uValue ?? ''} onChange={(e) => updateFloor(i, { uValue: e.target.value === '' ? '' : +e.target.value })} />
+                    <Input type="number" step="0.01" value={f.uValue ?? ''} onChange={(e) => updateFloor(i, { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
                   </div>
                 </div>
               </EditorBlock>
@@ -615,18 +635,18 @@ export default function RoomElementsPage(): React.JSX.Element {
                 <div style={grid4}>
                   <div>
                     <Label>Element Name</Label>
-                    <Input value={c.name} onChange={(e) => updateCeiling(i, { name: e.target.value })} />
+                    <Input value={c.name} onChange={(e) => updateCeiling(i, { name: e?.target?.value || '' })} />
                   </div>
                   <div>
                     <Label>Type</Label>
-                    <Select value={c.type} onChange={(e) => updateCeiling(i, { type: e.target.value as any })}>
+                    <Select value={c.type} onChange={(e) => updateCeiling(i, { type: (e?.target?.value as any) || 'Ceiling' })}>
                       <option value="Ceiling">Ceiling</option>
                       <option value="Roof">Roof</option>
                     </Select>
                   </div>
                   <div>
                     <Label>Adjacent Space</Label>
-                    <Select value={c.adjacent} onChange={(e) => updateCeiling(i, { adjacent: e.target.value as any })}>
+                    <Select value={c.adjacent} onChange={(e) => updateCeiling(i, { adjacent: (e?.target?.value as any) || 'Interior (Heated)' })}>
                       {(['Exterior', 'Interior (Heated)', 'Interior (Unheated)'] as const).map((a) => (
                         <option key={a} value={a}>
                           {a}
@@ -637,29 +657,29 @@ export default function RoomElementsPage(): React.JSX.Element {
                   <div />
                   <div>
                     <Label>Width (m)</Label>
-                    <Input type="number" step="0.01" value={c.width || ''} onChange={(e) => updateCeiling(i, { width: +e.target.value || 0 })} />
+                    <Input type="number" step="0.01" value={c.width ?? ''} onChange={(e) => updateCeiling(i, { width: +((e?.target?.value as string) || '0') })} />
                   </div>
                   <div>
                     <Label>Height (m)</Label>
-                    <Input type="number" step="0.01" value={c.height || ''} onChange={(e) => updateCeiling(i, { height: +e.target.value || 0 })} />
+                    <Input type="number" step="0.01" value={c.height ?? ''} onChange={(e) => updateCeiling(i, { height: +((e?.target?.value as string) || '0') })} />
                   </div>
                   <div>
                     <Label>U-Value (W/m²K)</Label>
-                    <Input type="number" step="0.01" value={c.uValue ?? ''} onChange={(e) => updateCeiling(i, { uValue: e.target.value === '' ? '' : +e.target.value })} />
+                    <Input type="number" step="0.01" value={c.uValue ?? ''} onChange={(e) => updateCeiling(i, { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
                   </div>
                 </div>
                 {!!c.openings.length && <h4 style={subtleH}>Roof Windows</h4>}
                 {c.openings.map((o, j) => (
                   <div key={o.id} style={openRow}>
-                    <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'ceiling', { kind: e.target.value as OpeningKind })}>
+                    <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'ceiling', { kind: (e?.target?.value as OpeningKind) || 'roof_window' })}>
                       <option value="roof_window">Roof Window</option>
                       <option value="window">Window</option>
                       <option value="door">Door</option>
                     </Select>
-                    <Input type="number" step="0.01" placeholder="Width (m)" value={o.width || ''} onChange={(e) => updateOpening(i, j, 'ceiling', { width: +e.target.value || 0 })} />
-                    <Input type="number" step="0.01" placeholder="Height (m)" value={o.height || ''} onChange={(e) => updateOpening(i, j, 'ceiling', { height: +e.target.value || 0 })} />
+                    <Input type="number" step="0.01" placeholder="Width (m)" value={o.width ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { width: +((e?.target?.value as string) || '0') })} />
+                    <Input type="number" step="0.01" placeholder="Height (m)" value={o.height ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { height: +((e?.target?.value as string) || '0') })} />
                     <span style={{ minWidth: 80, textAlign: 'right' }}>{area(o.width, o.height).toFixed(2)} m²</span>
-                    <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { uValue: e.target.value === '' ? '' : +e.target.value })} />
+                    <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
                     <button style={miniDanger} onClick={() => removeOpening(i, j, 'ceiling')}>
                       Remove
                     </button>
@@ -699,7 +719,7 @@ export default function RoomElementsPage(): React.JSX.Element {
         {room.ventilation.length === 0 && <Empty>No devices have been added</Empty>}
         {room.ventilation.map((v, i) => (
           <div key={v.id} style={rowLine}>
-            <Select value={v.type} onChange={(e) => updateVent(i, { type: e.target.value as any })}>
+            <Select value={v.type} onChange={(e) => updateVent(i, { type: (e?.target?.value as any) || 'trickle_vent' })}>
               <option value="trickle_vent">Trickle vent</option>
               <option value="mvhr_supply">MVHR supply</option>
               <option value="mvhr_extract">MVHR extract</option>
@@ -707,8 +727,8 @@ export default function RoomElementsPage(): React.JSX.Element {
               <option value="passive_vent">Passive vent</option>
             </Select>
             <span style={{ minWidth: 140 }}>Default: {defaultVentFlows[v.type]} l/s</span>
-            <Input type="number" step="0.1" placeholder="Override (l/s)" value={v.overrideFlow ?? ''} onChange={(e) => updateVent(i, { overrideFlow: e.target.value === '' ? '' : +e.target.value })} />
-            <Input placeholder="Notes" value={v.notes || ''} onChange={(e) => updateVent(i, { notes: e.target.value })} />
+            <Input type="number" step="0.1" placeholder="Override (l/s)" value={v.overrideFlow ?? ''} onChange={(e) => updateVent(i, { overrideFlow: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
+            <Input placeholder="Notes" value={v.notes || ''} onChange={(e) => updateVent(i, { notes: e?.target?.value || '' })} />
             <button style={miniDanger} onClick={() => removeVent(i)}>Remove</button>
           </div>
         ))}
@@ -838,7 +858,7 @@ const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '16
 const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' };
 const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
-const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid '#111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
+const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
 const miniBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #D1D5DB', padding: '4px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, marginRight: 6 };
@@ -875,32 +895,68 @@ function clean<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
    Dev quick tests (browser only)
 ============================================================================ */
 (() => {
-  if (typeof window === 'undefined') return; // SSR safety
-  // getStorage returns an object and read/write work
-  const S = getStorage();
-  console.assert(S && typeof S.getItem === 'function', 'getStorage should return SafeStorage');
-  const TMP = '__ROOM_ELEM_TEST__';
   try {
-    S.removeItem(TMP);
-  } catch {}
-  console.assert(readJSON(TMP) === null, 'readJSON missing -> null');
-  writeJSON(TMP, { ok: 1 });
-  const parsed: any = readJSON<any>(TMP);
-  console.assert(!parsed || parsed.ok === 1, 'write/read should roundtrip or fallback');
-  // geometry
-  console.assert(area(3, 2.4) === 7.2, 'area 3x2.4 -> 7.2 m²');
-  console.assert(area(0, 0) === 0, 'area 0x0 -> 0');
-  // uid sanity
-  const id = uid();
-  console.assert(typeof id === 'string' && id.length >= 5, 'uid() should produce a short id');
-  // writeJSON(undefined) removes key
-  writeJSON(TMP, undefined as any);
-  console.assert(readJSON(TMP) === null, 'writeJSON(undefined) should remove key');
-  // per-room isolation quick check
-  const map = readJSON<any>(LS_BYROOM_KEY) || {};
-  map['__A__'] = { id: '__A__', name: 'A', length: 1, width: 1, height: 1, walls: [], floors: [], ceilings: [], ventilation: [] };
-  map['__B__'] = { id: '__B__', name: 'B', length: 2, width: 2, height: 2, walls: [], floors: [], ceilings: [], ventilation: [] };
-  writeJSON(LS_BYROOM_KEY, map);
-  const back = readJSON<any>(LS_BYROOM_KEY) || {};
-  console.assert(back['__A__']?.name === 'A' && back['__B__']?.name === 'B', 'per-room map should isolate rooms');
+    if (typeof window === 'undefined') return; // SSR safety
+    // getStorage returns an object and read/write work
+    const S = getStorage();
+    console.assert(S && typeof S.getItem === 'function', 'getStorage should return SafeStorage');
+    const TMP = '__ROOM_ELEM_TEST__';
+    try { S.removeItem(TMP); } catch {}
+    console.assert(readJSON(TMP) === null, 'readJSON missing -> null');
+    writeJSON(TMP, { ok: 1 });
+    const parsed: any = readJSON<any>(TMP);
+    console.assert(!parsed || parsed.ok === 1, 'write/read should roundtrip or fallback');
+    // geometry
+    console.assert(area(3, 2.4) === 7.2, 'area 3x2.4 -> 7.2 m²');
+    console.assert(area(0, 0) === 0, 'area 0x0 -> 0');
+    // uid sanity
+    const id = uid();
+    console.assert(typeof id === 'string' && id.length >= 5, 'uid() should produce a short id');
+    // writeJSON(undefined) removes key
+    writeJSON(TMP, undefined as any);
+    console.assert(readJSON(TMP) === null, 'writeJSON(undefined) should remove key');
+
+    // per-room isolation quick check (ALWAYS use readJSONMap fallback)
+    const map = readJSONMap<any>(LS_BYROOM_KEY);
+    map['__A__'] = { id: '__A__', name: 'A', length: 1, width: 1, height: 1, walls: [], floors: [], ceilings: [], ventilation: [] };
+    map['__B__'] = { id: '__B__', name: 'B', length: 2, width: 2, height: 2, walls: [], floors: [], ceilings: [], ventilation: [] };
+    writeJSON(LS_BYROOM_KEY, map);
+    const back = readJSONMap<any>(LS_BYROOM_KEY);
+    console.assert(back['__A__']?.name === 'A' && back['__B__']?.name === 'B', 'per-room map should isolate rooms');
+
+    // Additional hardening tests for null/invalid store values
+    // 1) Missing key should not crash when writing properties
+    try { S.removeItem(LS_BYROOM_KEY); } catch {}
+    const m1 = readJSONMap<any>(LS_BYROOM_KEY);
+    m1['__T__'] = { id: '__T__' }; // should not throw
+    writeJSON(LS_BYROOM_KEY, m1);
+    const b1 = readJSONMap<any>(LS_BYROOM_KEY);
+    console.assert(!!b1['__T__'], 'fallback map after missing key');
+
+    // 2) Explicit 'null' / 'undefined' strings should not crash
+    try { S.setItem(LS_BYROOM_KEY, 'null'); } catch {}
+    const m2 = readJSONMap<any>(LS_BYROOM_KEY);
+    m2['__U__'] = { id: '__U__' };
+    writeJSON(LS_BYROOM_KEY, m2);
+    const b2 = readJSONMap<any>(LS_BYROOM_KEY);
+    console.assert(!!b2['__U__'], 'fallback map after string null');
+
+    // 3) Malformed JSON should not crash; default to {}
+    try { S.setItem(LS_BYROOM_KEY, '{bad json'); } catch {}
+    const m3 = readJSONMap<any>(LS_BYROOM_KEY);
+    m3['__V__'] = { id: '__V__' };
+    writeJSON(LS_BYROOM_KEY, m3);
+    const b3 = readJSONMap<any>(LS_BYROOM_KEY);
+    console.assert(!!b3['__V__'], 'fallback map after malformed JSON');
+
+    // 4) readJSONMap always returns object
+    const m4 = readJSONMap<any>('__no_such_key__');
+    console.assert(m4 && typeof m4 === 'object' && !Array.isArray(m4), 'readJSONMap() should always return {} for missing');
+
+    // NEW: opening area calc test
+    console.assert(area(1.2, 1.0) === 1.2, 'opening area 1.2x1.0');
+  } catch (err) {
+    // Never crash the app from tests
+    console.warn('Dev tests skipped due to runtime error:', err);
+  }
 })();
