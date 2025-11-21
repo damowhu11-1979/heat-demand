@@ -19,7 +19,7 @@ import Link from 'next/link';
 ============================================================================ */
 const LS_KEY = 'mcs.room.elements.v2'; // legacy single-room fallback
 const LS_BYROOM_KEY = 'mcs.room.elements.byRoom.v1'; // per-room map { [roomId]: RoomModel }
-const LS_ROOMS_KEYS = ['mcs.rooms.v2', 'mcs.rooms.v1', 'mcs.rooms', 'rooms.v1']; // likely keys from Rooms page
+const LS_ROOMS_KEYS = ['mcs.Rooms.v2', 'mcs.Rooms.v1', 'mcs.rooms.v2', 'mcs.rooms.v1', 'mcs.rooms', 'rooms.v1']; // likely keys from Rooms page
 
 interface SafeStorage {
   getItem(k: string): string | null;
@@ -229,25 +229,42 @@ export default function RoomElementsPage(): React.JSX.Element {
     // 2) load Rooms list (best-effort across common shapes/keys)
     const loaded: Array<{ id: string; name: string; zoneId?: string }> = [];
     for (const key of LS_ROOMS_KEYS) {
-      const x = readJSON<any>(key);
-      if (!x) continue;
-      // a) zones: [ { id, name, rooms: [ { id, name } ] } ]
+      const raw = readJSON<any>(key);
+      if (!raw) continue;
+      const x = raw; // may be {version, zones} or a direct array
+      // a) object with zones (Rooms property is capitalized in your Rooms page)
       if (Array.isArray(x?.zones)) {
         try {
-          x.zones.forEach((z: any) => (z.rooms || []).forEach((r: any) =>
-            loaded.push({ id: String(r?.id ?? r?.roomId ?? r?.name), name: String(r?.name || 'Room'), zoneId: z?.id })));
+          x.zones.forEach((z: any, zi: number) => (z.Rooms || z.rooms || []).forEach((r: any, ri: number) => {
+            const rid = String(r?.id ?? r?.roomId ?? r?.name ?? `${zi}:${ri}`);
+            loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: String(z?.id ?? zi) });
+          }));
         } catch {/* ignore malformed */}
       }
-      // b) rooms: [ { id, name } ]
+      // b) object with rooms (fallback, any casing)
+      if (Array.isArray(x?.Rooms)) {
+        try {
+          x.Rooms.forEach((r: any, ri: number) => {
+            const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
+            loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
+          });
+        } catch {/* ignore */}
+      }
       if (Array.isArray(x?.rooms)) {
         try {
-          x.rooms.forEach((r: any) => loaded.push({ id: String(r?.id ?? r?.roomId ?? r?.name), name: String(r?.name || 'Room'), zoneId: r?.zoneId }));
+          x.rooms.forEach((r: any, ri: number) => {
+            const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
+            loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
+          });
         } catch {/* ignore */}
       }
       // c) bare array
       if (Array.isArray(x)) {
         try {
-          x.forEach((r: any) => loaded.push({ id: String(r?.id ?? r?.roomId ?? r?.name), name: String(r?.name || 'Room'), zoneId: r?.zoneId }));
+          x.forEach((r: any, ri: number) => {
+            const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
+            loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
+          });
         } catch {/* ignore */}
       }
       if (loaded.length) break;
@@ -263,6 +280,7 @@ export default function RoomElementsPage(): React.JSX.Element {
     const byRoom = readJSONMap<Record<string, RoomModel>>(LS_BYROOM_KEY);
     const saved = activeId ? byRoom[activeId] : readJSON<RoomModel>(LS_KEY);
     if (saved) setRoom(saved);
+    else if (activeId) setRoom((r) => ({ ...r, id: activeId }));
   }, []);
 
   useEffect(() => {
@@ -955,6 +973,12 @@ function clean<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
 
     // NEW: opening area calc test
     console.assert(area(1.2, 1.0) === 1.2, 'opening area 1.2x1.0');
+
+    // Fixture for Rooms page shape (mcs.Rooms.v2)
+    const ROOMS_FIXTURE = { version: 2, zones: [ { name: 'Zone 1', Rooms: [ { name: 'Room A' }, { name: 'Room B' } ] } ] };
+    writeJSON('mcs.Rooms.v2', ROOMS_FIXTURE as any);
+    const candidate = readJSON<any>('mcs.Rooms.v2');
+    console.assert(Array.isArray(candidate?.zones) && Array.isArray(candidate.zones[0]?.Rooms), 'should read Rooms fixture');
   } catch (err) {
     // Never crash the app from tests
     console.warn('Dev tests skipped due to runtime error:', err);
