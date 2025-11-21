@@ -10,13 +10,16 @@ import Link from 'next/link';
    - Total Area footer rows (gross areas)
    - Ventilation with Auto Volume + Override checkbox
    - Back / Save & Continue footer actions
+   - **Linked to Rooms page**: binds to a specific roomId and persists elements per room
    FIX: robust storage access in SSR/edge (no touching localStorage outside browser)
 ============================================================================ */
 
 /* ============================================================================
    Persistence helpers (safe localStorage wrapper)
 ============================================================================ */
-const LS_KEY = 'mcs.room.elements.v2';
+const LS_KEY = 'mcs.room.elements.v2'; // legacy single-room fallback
+const LS_BYROOM_KEY = 'mcs.room.elements.byRoom.v1'; // per-room map { [roomId]: RoomModel }
+const LS_ROOMS_KEYS = ['mcs.rooms.v2', 'mcs.rooms.v1', 'mcs.rooms', 'rooms.v1']; // likely keys from Rooms page
 
 interface SafeStorage {
   getItem(k: string): string | null;
@@ -150,6 +153,8 @@ export interface VentDevice {
   notes?: string;
 }
 export interface RoomModel {
+  id?: string; // when linked to Rooms page
+  zoneId?: string; // optional, if Rooms page groups by zones
   name: string;
   length: number;
   width: number;
@@ -182,6 +187,8 @@ const area = (w: number, h: number) => +(num(w) * num(h)).toFixed(2); // 2dp lik
 export default function RoomElementsPage(): React.JSX.Element {
   // Main model
   const [room, setRoom] = useState<RoomModel>({
+    id: undefined,
+    zoneId: undefined,
     name: 'Bedroom 1',
     length: 0,
     width: 0,
@@ -193,18 +200,64 @@ export default function RoomElementsPage(): React.JSX.Element {
     ventilation: [],
   });
 
+  // Linking to Rooms page
+  const [roomsList, setRoomsList] = useState<Array<{ id: string; name: string; zoneId?: string }>>([]);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+
   // UI state (keep hooks at the top and stable order)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [override, setOverride] = useState(false);
 
   // Load / persist only on client
   useEffect(() => {
-    const saved = readJSON<RoomModel>(LS_KEY);
+    // 1) read roomId from query string (?roomId=...)
+    const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const fromQuery = q?.get('roomId');
+
+    // 2) load Rooms list (best-effort across common shapes/keys)
+    const loaded: Array<{ id: string; name: string; zoneId?: string }> = [];
+    for (const key of LS_ROOMS_KEYS) {
+      const x = readJSON<any>(key);
+      if (!x) continue;
+      // a) zones: [ { id, name, rooms: [ { id, name } ] } ]
+      if (Array.isArray(x?.zones)) {
+        x.zones.forEach((z: any) => (z.rooms || []).forEach((r: any) => loaded.push({ id: String(r.id ?? r.roomId ?? r.name), name: String(r.name || 'Room'), zoneId: z.id })));
+      }
+      // b) rooms: [ { id, name } ]
+      if (Array.isArray(x?.rooms)) {
+        x.rooms.forEach((r: any) => loaded.push({ id: String(r.id ?? r.roomId ?? r.name), name: String(r.name || 'Room'), zoneId: r.zoneId }));
+      }
+      // c) bare array
+      if (Array.isArray(x)) {
+        x.forEach((r: any) => loaded.push({ id: String(r.id ?? r.roomId ?? r.name), name: String(r.name || 'Room'), zoneId: r.zoneId }));
+      }
+      if (loaded.length) break;
+    }
+    setRoomsList(loaded);
+
+    // 3) choose active room id: query > lastSelected > first room
+    const last = readJSON<string>('mcs.rooms.selectedId');
+    const activeId = fromQuery || last || (loaded[0]?.id ?? null);
+    if (activeId) setSelectedRoomId(activeId);
+
+    // 4) load per-room elements; fallback to legacy single-room LS_KEY
+    const byRoom = readJSON<Record<string, RoomModel>>(LS_BYROOM_KEY) || {};
+    const saved = activeId ? byRoom[activeId] : readJSON<RoomModel>(LS_KEY);
     if (saved) setRoom(saved);
   }, []);
+
   useEffect(() => {
-    writeJSON(LS_KEY, room);
-  }, [room]);
+    // write per-room if linked, else global fallback
+    const rid = selectedRoomId || room.id;
+    if (rid) {
+      const byRoom = readJSON<Record<string, RoomModel>>(LS_BYROOM_KEY) || {};
+      byRoom[rid] = { ...room, id: rid };
+      writeJSON(LS_BYROOM_KEY, byRoom);
+      writeJSON('mcs.rooms.selectedId', rid);
+    } else {
+      writeJSON(LS_KEY, room);
+    }
+  }, [room, selectedRoomId]);
 
   const autoVolume = useMemo(
     () => +(num(room.length) * num(room.width) * num(room.height)).toFixed(1),
@@ -306,14 +359,21 @@ export default function RoomElementsPage(): React.JSX.Element {
   };
 
   const exportJSON = () => {
-    const data = JSON.stringify({ room }, null, 2);
+    const rid = selectedRoomId || room.id || 'room';
+    const data = JSON.stringify({ room: { ...room, id: rid } }, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${room.name || 'room'}-elements.json`;
+    a.download = `${(roomsList.find((r) => r.id === rid)?.name || room.name || 'room')}-elements.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const onSaveAndContinue = () => {
+    exportJSON();
+    // Navigate back to Rooms (GitHub Pages-friendly relative link)
+    if (typeof window !== 'undefined') window.location.href = '../rooms/';
   };
 
   /* -------------------- Derived totals -------------------- */
@@ -337,14 +397,33 @@ export default function RoomElementsPage(): React.JSX.Element {
     setRoom((r) => ({ ...r, volumeOverride: checked ? (r.volumeOverride ?? autoVolume) : null }));
   };
 
+  const activeRoom = roomsList.find((r) => r.id === (selectedRoomId || room.id));
+
   return (
     <main style={wrap}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Link href="/rooms" style={backLink} aria-label="Back">
+        <Link href="../rooms/" style={backLink} aria-label="Back">
           ◀
         </Link>
-        <h1 style={title}>{room.name}</h1>
+        <h1 style={title}>{activeRoom?.name || room.name}</h1>
       </div>
+
+      {/* Room selector if Rooms list exists */}
+      {roomsList.length > 0 && (
+        <div style={{ margin: '6px 0 10px' }}>
+          <Label>Linked Room</Label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Select value={selectedRoomId || ''} onChange={(e) => setSelectedRoomId(e.target.value || null)}>
+              {roomsList.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </Select>
+            <button style={secondaryBtn} onClick={() => setRoom((r) => ({ ...r, id: selectedRoomId || r.id }))}>Bind</button>
+          </div>
+        </div>
+      )}
 
       {/* W A L L S */}
       <Section
@@ -637,11 +716,11 @@ export default function RoomElementsPage(): React.JSX.Element {
 
       {/* Footer nav */}
       <div style={footerNav}>
-        <Link href="/rooms" style={btnGhost}>
+        <Link href="../rooms/" style={btnGhost}>
           ◀ Back
         </Link>
         <div style={{ flex: 1 }} />
-        <button style={btnPrimary} onClick={exportJSON}>
+        <button style={btnPrimary} onClick={onSaveAndContinue}>
           Save & Continue ▶
         </button>
       </div>
@@ -759,7 +838,7 @@ const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '16
 const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' };
 const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
-const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' };
+const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid '#111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
 const miniBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #D1D5DB', padding: '4px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, marginRight: 6 };
@@ -817,4 +896,11 @@ function clean<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
   // writeJSON(undefined) removes key
   writeJSON(TMP, undefined as any);
   console.assert(readJSON(TMP) === null, 'writeJSON(undefined) should remove key');
+  // per-room isolation quick check
+  const map = readJSON<any>(LS_BYROOM_KEY) || {};
+  map['__A__'] = { id: '__A__', name: 'A', length: 1, width: 1, height: 1, walls: [], floors: [], ceilings: [], ventilation: [] };
+  map['__B__'] = { id: '__B__', name: 'B', length: 2, width: 2, height: 2, walls: [], floors: [], ceilings: [], ventilation: [] };
+  writeJSON(LS_BYROOM_KEY, map);
+  const back = readJSON<any>(LS_BYROOM_KEY) || {};
+  console.assert(back['__A__']?.name === 'A' && back['__B__']?.name === 'B', 'per-room map should isolate rooms');
 })();
