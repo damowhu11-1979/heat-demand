@@ -974,14 +974,17 @@ function clean<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
     // NEW: opening area calc test
     console.assert(area(1.2, 1.0) === 1.2, 'opening area 1.2x1.0');
 
-    // Fixture for Rooms page shape (mcs.Rooms.v2)
-    const ROOMS_FIXTURE = { version: 2, zones: [ { name: 'Zone 1', Rooms: [ { name: 'Room A' }, { name: 'Room B' } ] } ] };
-    writeJSON('mcs.Rooms.v2', ROOMS_FIXTURE as any);
-    const candidate = readJSON<any>('mcs.Rooms.v2');
-    console.assert(Array.isArray(candidate?.zones) && Array.isArray(candidate.zones[0]?.Rooms), 'should read Rooms fixture');
+    // Read-only sanity (no writes): if Rooms data exists, its shape shouldn't crash
+    try {
+      const candidate = readJSON<any>('mcs.Rooms.v2') || readJSON<any>('mcs.rooms.v2');
+      if (candidate) {
+        const ok = Array.isArray(candidate?.zones);
+        console.assert(ok, 'rooms: zones array should exist');
+      }
+    } catch {}
+
   } catch (err) {
     // Never crash the app from tests
     console.warn('Dev tests skipped due to runtime error:', err);
   }
 })();
-
