@@ -3,6 +3,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
+// --- Base path helper so links work on GitHub Pages (e.g. /heat-demand)
+function computeBasePath(): string {
+  // Prefer a build-time env var if provided
+  // e.g. NEXT_PUBLIC_BASE_PATH="/heat-demand"
+  // Note: process.env is inlined at build time in Next.js
+  const envBase = process.env.NEXT_PUBLIC_BASE_PATH || '';
+  if (envBase) return envBase;
+  // Runtime heuristic (client only): first path segment looks like repo name
+  if (typeof window !== 'undefined') {
+    const injected = (window as any).__BASE_PATH__ || '';
+    if (injected) return injected;
+    const m = window.location.pathname.match(/^\/[^\/]+/);
+    return m ? m[0] : '';
+  }
+  return '';
+}
+
 /* ============================================================================
    Persistence helpers (super defensive; never expose null storage to callers)
 ============================================================================ */
@@ -476,6 +493,7 @@ function ClearDataButton({ onClearState }: { onClearState?: () => void }): React
    UI component (SINGLE DEFAULT EXPORT)
 ============================================================================ */
 export default function ElementsPage(): React.JSX.Element {
+  const basePath = useMemo(() => computeBasePath(), []);
   const [model, setModel] = useState<SavedModel>({ walls: [], floors: [], ceilings: [], doors: [], windows: [] });
 
   // Load saved model
@@ -1109,10 +1127,10 @@ export default function ElementsPage(): React.JSX.Element {
 
       {/* footer nav */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
-        <Link href="/rooms" style={{ ...secondaryBtn, textDecoration: 'none' }}>
+        <Link href={`${basePath}/rooms`} style={{ ...secondaryBtn, textDecoration: 'none' }}>
           ← Back: Heated Rooms
         </Link>
-        <Link href="/room-elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
+        <Link href={`${basePath}/room-elements`} style={{ ...primaryBtn, textDecoration: 'none' }}>
           Next: Room Elements →
         </Link>
       </div>
