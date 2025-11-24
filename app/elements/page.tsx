@@ -4,19 +4,35 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 // --- Base path helper so links work on GitHub Pages (e.g. /heat-demand)
+// Hardened to never throw even if window/location is weird or missing.
+function firstPathSegmentFrom(pathname: string): string {
+  if (typeof pathname !== 'string' || pathname.length === 0 || pathname === '/') return '';
+  // Expect a leading '/segment/...'; return '/segment' or '' if not found
+  const m = /^\/[^/]+/.exec(pathname);
+  return m ? m[0] : '';
+}
 function computeBasePath(): string {
-  // Prefer a build-time env var if provided
-  // e.g. NEXT_PUBLIC_BASE_PATH="/heat-demand"
-  // Note: process.env is inlined at build time in Next.js
-  const envBase = process.env.NEXT_PUBLIC_BASE_PATH || '';
-  if (envBase) return envBase;
-  // Runtime heuristic (client only): first path segment looks like repo name
-  if (typeof window !== 'undefined') {
-    const injected = (window as any).__BASE_PATH__ || '';
-    if (injected) return injected;
-    const m = window.location.pathname.match(/^\/[^\/]+/);
-    return m ? m[0] : '';
+  // 1) Build-time env (preferred)
+  try {
+    // In Next.js, process.env is statically replaced; guard anyway
+    const envBase = (typeof process !== 'undefined' && (process as any).env && (process as any).env.NEXT_PUBLIC_BASE_PATH) || '';
+    if (typeof envBase === 'string' && envBase) return envBase;
+  } catch {
+    // ignore
   }
+  // 2) Runtime injection hook (optional): window.__BASE_PATH__ = '/heat-demand'
+  if (typeof window !== 'undefined') {
+    try {
+      const injected = (window as any).__BASE_PATH__;
+      if (typeof injected === 'string' && injected) return injected;
+      const loc = (window as any).location || null;
+      const pathname = loc && typeof loc.pathname === 'string' ? loc.pathname : '';
+      return firstPathSegmentFrom(pathname);
+    } catch {
+      return '';
+    }
+  }
+  // 3) SSR/unknown
   return '';
 }
 
@@ -242,8 +258,7 @@ const U_TABLE: {
   ground: {
     solid: [
       { t: 0, u: 1.3 },
-      { t: 50, u: 0.45 },
-      { t: 100, u: 0.25 },
+      { t: 50, u: 0.45 },\      { t: 100, u: 0.25 },
     ],
     suspended: [
       { t: 0, u: 1.6 },
@@ -1285,7 +1300,7 @@ const input: React.CSSProperties = {
 const primaryBtn: React.CSSProperties = {
   background: '#111',
   color: '#fff',
-  border: '1px solid #111',
+  border: '1px solid '#111',
   padding: '10px 16px',
   borderRadius: 12,
   cursor: 'pointer',
@@ -1331,6 +1346,13 @@ const dialogCard: React.CSSProperties = {
   const w: any = window;
   if (w.__MCS_ELEMENTS_TESTS__) return; // ensure they run once per page load
   w.__MCS_ELEMENTS_TESTS__ = true;
+
+  // --- computeBasePath/firstPathSegmentFrom should be safe ---
+  console.assert(firstPathSegmentFrom('') === '', 'empty path -> ""');
+  console.assert(firstPathSegmentFrom('/') === '', '"/" -> ""');
+  console.assert(firstPathSegmentFrom('/heat-demand') === '/heat-demand', 'repo root segment');
+  console.assert(firstPathSegmentFrom('/heat-demand/room-elements') === '/heat-demand', 'first segment only');
+  console.assert(firstPathSegmentFrom('not/a/path') === '', 'non-leading-slash string returns empty');
 
   // --- getStorage always returns an object ---
   const S = getStorage();
