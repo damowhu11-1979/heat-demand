@@ -297,8 +297,6 @@ function ClearDataButton({ onClearState }: { onClearState?: () => void }): React
 
 /* *************************** Pretty labels ***************************/
 
-}
-
 /********************************* UI *********************************/
 export default function ElementsPage(): React.JSX.Element {
   const [model, setModel] = useState<SavedModel>({ walls: [], floors: [], ceilings: [], doors: [], windows: [] });
