@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-
+<Link href="/room-elements">Next: Room Elements →</Link>
 // --- Base path helper so links work on GitHub Pages (e.g. /heat-demand)
 // Hardened to never throw even if window/location is weird or missing.
 function firstPathSegmentFrom(pathname: string): string {
