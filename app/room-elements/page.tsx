@@ -1,5 +1,27 @@
 'use client';
-import React from 'react';
+import React, { useMemo } from 'react';
+
+const LS_KEY = 'mcs.elements.v1';
+
+function getStorage(): Storage | { getItem: (k:string)=>string|null } {
+  try {
+    if (typeof window !== 'undefined' && 'localStorage' in window) return window.localStorage;
+  } catch {}
+  return { getItem: () => null };
+}
+function readJSON<T>(k: string): T | null {
+  const s = getStorage();
+  try {
+    const raw = s.getItem(k);
+    if (raw === null || raw === '' || raw === 'null' || raw === 'undefined') return null;
+    const parsed = JSON.parse(raw);
+    return parsed ?? null;
+  } catch { return null; }
+}
+
+type SavedModel = {
+  walls: any[]; floors: any[]; ceilings: any[]; doors: any[]; windows: any[];
+};
 import Link from 'next/link';
 
 export default function RoomElementsPage() {
