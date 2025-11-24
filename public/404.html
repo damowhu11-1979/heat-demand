@@ -8,7 +8,6 @@
       (function () {
         var base = "/heat-demand";
         var l = window.location;
-        // Preserve path/query in the hash; your app boots at /heat-demand/
         var path = l.pathname.replace(base, "").replace(/^\/+/, "");
         var target = base + "/#" + path + (l.search || "");
         l.replace(target);
