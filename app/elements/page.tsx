@@ -295,6 +295,10 @@ function ClearDataButton({ onClearState }: { onClearState?: () => void }): React
   );
 }
 
+/* *************************** Pretty labels ***************************/
+
+}
+
 /********************************* UI *********************************/
 export default function ElementsPage(): React.JSX.Element {
   const [model, setModel] = useState<SavedModel>({ walls: [], floors: [], ceilings: [], doors: [], windows: [] });
@@ -799,6 +803,19 @@ const WALL_CONS = [
   'Cob', 'Cavity (Filled)', 'Cavity (Unfilled)', 'Solid Brick or Stone', 'Stone (Granite/Whinstone)', 'Stone (Sandstone/Limestone)', 'System Built', 'Timber Frame',
 ] as const;
 
+/*************************** Pretty labels ***************************/
+function prettyFloorCategory(c: FloorCategory): string {
+  switch (c) {
+    case 'ground-known': return 'Ground (known insulation)';
+    case 'ground-unknown': return 'Ground (unknown insulation)';
+    case 'exposed': return 'Exposed';
+    case 'internal': return 'Internal';
+    case 'party': return 'Party';
+    case 'known-u': return 'Known U-Value';
+    default: return String(c);
+  }
+}
+
 /****************************** Search Dialog ******************************/
 function WallSearchDialog({ rows, onClose, onPick }: { rows: Array<{ age: AgeBand; cons: string; u: number }>; onClose: () => void; onPick: (row: { age: AgeBand; cons: string; u: number }) => void; }){
   const [q, setQ] = useState('');
@@ -861,3 +878,14 @@ const dlgCard: React.CSSProperties = { width: 560, background: '#fff', border: '
     console.warn('Dev tests skipped:', e);
   }
 })();
+
+/********************************** Extra Tests (build regression guard) **********************************/
+(() => {
+  try {
+    if (typeof window === 'undefined') return;
+    console.assert(typeof prettyFloorCategory === 'function', 'prettyFloorCategory should be defined');
+    console.assert(prettyFloorCategory('exposed') === 'Exposed', 'prettyFloorCategory("exposed") -> Exposed');
+    console.assert(prettyFloorCategory('ground-known').startsWith('Ground'), 'prettyFloorCategory ground-known label');
+  } catch {}
+})();
+
