@@ -1,7 +1,20 @@
 'use client';
-
-import React, { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
+
+export default function RoomElementsPage() {
+  return (
+    <main style={{ padding: 24 }}>
+      <h1>Room Elements</h1>
+      <p>Configure the elements per room here.</p>
+      <Link href="/elements">← Back: Building Elements</Link>
+    </main>
+  );
+}
+
+// ❌ Do NOT include these on GitHub Pages static export:
+// export const dynamic = 'force-dynamic';
+// export const revalidate = 0;
 
 /* ============================================================================
    Room Elements – list layout (matches provided screenshots)
