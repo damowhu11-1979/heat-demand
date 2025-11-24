@@ -258,7 +258,8 @@ const U_TABLE: {
   ground: {
     solid: [
       { t: 0, u: 1.3 },
-      { t: 50, u: 0.45 },\      { t: 100, u: 0.25 },
+      { t: 50, u: 0.45 },
+      { t: 100, u: 0.25 },
     ],
     suspended: [
       { t: 0, u: 1.6 },
@@ -1300,7 +1301,7 @@ const input: React.CSSProperties = {
 const primaryBtn: React.CSSProperties = {
   background: '#111',
   color: '#fff',
-  border: '1px solid '#111',
+  border: '1px solid #111',
   padding: '10px 16px',
   borderRadius: 12,
   cursor: 'pointer',
@@ -1393,6 +1394,8 @@ const dialogCard: React.CSSProperties = {
   w.__MCS_DISABLE_STORAGE__ = prev;
 
   // --- lerp sanity ---
+  // Ensure our U_TABLE numeric literals compile and are correct (CI caught a stray backslash earlier)
+  console.assert(U_TABLE.ground.solid[1].u === 0.45 && U_TABLE.ground.solid[2].u === 0.25, 'U_TABLE ground.solid values should be 0.45 and 0.25');
   console.assert(lerp([{ t: 0, u: 0 }, { t: 10, u: 10 }], 5) === 5, 'lerp mid-point failed');
   console.assert(lerp([{ t: 0, u: 0 }], 5) === 0, 'lerp single-point clamp failed');
 
