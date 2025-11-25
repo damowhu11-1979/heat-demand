@@ -1,24 +1,16 @@
 // app/lib/calc.ts
-export type Orientation = 'N'|'NE'|'E'|'SE'|'S'|'SW'|'W'|'NW';
-export type Adjacent = 'Exterior'|'Interior (Heated)'|'Interior (Unheated)'|'Ground';
-export type OpeningKind = 'window'|'door'|'roof_window';
+import type { RoomModel, Adjacent, OpeningKind } from './types-local';
+import { getBaseVentRate_lps, AgeBand, RoomType } from './vent-rates';
 
-export interface Opening { id:string; kind:OpeningKind; width:number; height:number; uValue?: number|''; }
-export interface Wall { id:string; name:string; orientation:Orientation; adjacent:Adjacent; width:number; height:number; uValue?:number|''; openings:Opening[]; }
-export interface FloorEl { id:string; name:string; adjacent:Adjacent; width:number; height:number; uValue?:number|''; }
-export interface CeilingEl { id:string; name:string; type:'Ceiling'|'Roof'; adjacent:Exclude<Adjacent,'Ground'>; width:number; height:number; uValue?:number|''; openings:Opening[]; }
-export interface VentDevice { id:string; type:'trickle_vent'|'mvhr_supply'|'mvhr_extract'|'mechanical_extract'|'passive_vent'; overrideFlow?:number|''; notes?:string; }
-
-export interface RoomModel {
-  id?:string; zoneId?:string; name:string;
-  length:number; width:number; height:number;
-  volumeOverride?: number|''|null;
-  walls: Wall[]; floors: FloorEl[]; ceilings: CeilingEl[]; ventilation: VentDevice[];
+export interface CalcInputs {
+  room: RoomModel;
+  indoorC: number;
+  outdoorC: number;
+  volumeM3?: number;
+  ageBand: AgeBand;
+  roomType: RoomType;
+  policy?: 'max' | 'sum';
 }
-
-export const defaultVentFlows_lps: Record<VentDevice['type'], number> = {
-  trickle_vent: 5, mvhr_supply: 8, mvhr_extract: 13, mechanical_extract: 8, passive_vent: 5,
-};
 
 const defaultOpeningU: Record<OpeningKind, number> = { window: 1.3, roof_window: 1.4, door: 1.8 };
 
@@ -38,13 +30,6 @@ export const adjFactor = (adjacent: Adjacent): number => {
   }
 };
 
-export interface CalcInputs {
-  room: RoomModel;
-  indoorC: number;
-  outdoorC: number;
-  volumeM3?: number;
-}
-
 export interface RoomLossBreakdown {
   qTransmission_W: number;
   qVent_W: number;
@@ -55,9 +40,12 @@ export interface RoomLossBreakdown {
   qOpenings_W: number;
   ach: number;
   flow_m3h: number;
+  flowBase_lps: number;
+  flowDevices_lps: number;
 }
 
-export function computeRoomLoss({ room, indoorC, outdoorC, volumeM3 }: CalcInputs): RoomLossBreakdown {
+export function computeRoomLoss(input: CalcInputs): RoomLossBreakdown {
+  const { room, indoorC, outdoorC, volumeM3, ageBand, roomType } = input;
   const delta = dT(indoorC, outdoorC);
   const vol = typeof room.volumeOverride === 'number'
     ? room.volumeOverride
@@ -99,12 +87,18 @@ export function computeRoomLoss({ room, indoorC, outdoorC, volumeM3 }: CalcInput
 
   const qTrans = qWalls + qFloors + qCeilings + qOpenings;
 
-  const total_lps = (room.ventilation || []).reduce((s, v) => {
-    const val = typeof v.overrideFlow === 'number' ? v.overrideFlow : defaultVentFlows_lps[v.type];
+  const base_lps = getBaseVentRate_lps(ageBand, roomType);
+
+  const device_lps = (room.ventilation || []).reduce((s, v) => {
+    const val = typeof v.overrideFlow === 'number' ? v.overrideFlow : 0;
     return s + (Number(val) || 0);
   }, 0);
-  const flow_m3h = total_lps * 3.6;
-  const qVent = 0.33 * flow_m3h * ((delta));
+
+  const policy = input.policy ?? 'max';
+  const effective_lps = policy === 'sum' ? (base_lps + device_lps) : Math.max(base_lps, device_lps);
+
+  const flow_m3h = effective_lps * 3.6;
+  const qVent = 0.33 * flow_m3h * delta;
   const ach = vol > 0 ? (flow_m3h / vol) : 0;
 
   return {
@@ -116,5 +110,7 @@ export function computeRoomLoss({ room, indoorC, outdoorC, volumeM3 }: CalcInput
     qCeilings_W: qCeilings,
     qOpenings_W: qOpenings,
     ach, flow_m3h,
+    flowBase_lps: base_lps,
+    flowDevices_lps: device_lps,
   };
 }
