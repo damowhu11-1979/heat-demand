@@ -136,8 +136,16 @@ const defaultVentFlows: Record<VentDevice['type'], number> = {
   trickle_vent: 5, mvhr_supply: 8, mvhr_extract: 13, mechanical_extract: 8, passive_vent: 5,
 };
 const uid = () => Math.random().toString(36).slice(2, 9);
-const num = (v: any) => (typeof v === 'number' ? v : parseFloat(v)) || 0;
+const toNum = (v: any) => (typeof v === 'number' ? v : parseFloat(String(v)));
+const num = (v: any) => {
+  const n = toNum(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
 const area = (w: number, h: number) => +(num(w) * num(h)).toFixed(2);
+const clampNumber = (v: any) => {
+  const n = toNum(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
 
 /* ============================================================================
    Component
@@ -249,9 +257,12 @@ export default function RoomElementsPage(): React.JSX.Element {
   }));
   const addVent = () => setRoom((r) => ({ ...r, ventilation: [...r.ventilation, { id: uid(), type: 'trickle_vent', overrideFlow: '', notes: '' }] }));
 
-  /* -------------------- Updaters -------------------- */
+  /* -------------------- Updaters (with basic numeric guarding) -------------------- */
   const updateWall = (i: number, patch: Partial<Wall>) =>
-    setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, ...clean(patch) } : w)) }));
+    setRoom((r) => ({
+      ...r,
+      walls: r.walls.map((w, idx) => (idx === i ? { ...w, ...cleanNumberPatch(patch) } : w)),
+    }));
   const removeWall = (i: number) => setRoom((r) => ({ ...r, walls: r.walls.filter((_, idx) => idx !== i) }));
   const duplicateWall = (i: number) =>
     setRoom((r) => ({ ...r, walls: [...r.walls.slice(0, i + 1), { ...r.walls[i], id: uid(), name: r.walls[i].name + ' (copy)' }, ...r.walls.slice(i + 1)] }));
@@ -260,11 +271,11 @@ export default function RoomElementsPage(): React.JSX.Element {
   const addDoor = (i: number) => addOpening(i, 'wall', 'door');
 
   const updateFloor = (i: number, patch: Partial<FloorEl>) =>
-    setRoom((r) => ({ ...r, floors: r.floors.map((f, idx) => (idx === i ? { ...f, ...clean(patch) } : f)) }));
+    setRoom((r) => ({ ...r, floors: r.floors.map((f, idx) => (idx === i ? { ...f, ...cleanNumberPatch(patch) } : f)) }));
   const removeFloor = (i: number) => setRoom((r) => ({ ...r, floors: r.floors.filter((_, idx) => idx !== i) }));
 
   const updateCeiling = (i: number, patch: Partial<CeilingEl>) =>
-    setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, ...clean(patch) } : c)) }));
+    setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, ...cleanNumberPatch(patch) } : c)) }));
   const removeCeiling = (i: number) => setRoom((r) => ({ ...r, ceilings: r.ceilings.filter((_, idx) => idx !== i) }));
   const addRoofWindow = (i: number) => addOpening(i, 'ceiling', 'roof_window');
 
@@ -276,10 +287,11 @@ export default function RoomElementsPage(): React.JSX.Element {
       setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, openings: [...(c.openings || []), o] } : c)) }));
   }
   const updateOpening = (i: number, j: number, owner: 'wall' | 'ceiling', patch: Partial<Opening>) => {
+    const patchClean = cleanNumberPatch(patch);
     if (owner === 'wall')
-      setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, openings: w.openings.map((o, k) => (k === j ? { ...o, ...clean(patch) } : o)) } : w)) }));
+      setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, openings: w.openings.map((o, k) => (k === j ? { ...o, ...patchClean } : o)) } : w)) }));
     else
-      setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, openings: c.openings.map((o, k) => (k === j ? { ...o, ...clean(patch) } : o)) } : c)) }));
+      setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, openings: c.openings.map((o, k) => (k === j ? { ...o, ...patchClean } : o)) } : c)) }));
   };
   const removeOpening = (i: number, j: number, owner: 'wall' | 'ceiling') => {
     if (owner === 'wall') setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, openings: w.openings.filter((_, k) => k !== j) } : w)) }));
@@ -304,10 +316,31 @@ export default function RoomElementsPage(): React.JSX.Element {
     if (typeof window !== 'undefined') window.location.href = '/rooms/';
   };
 
-  /* -------------------- Derived totals -------------------- */
-  const wallsGross = useMemo(() => room.walls.reduce((s, w) => s + area(w.width, w.height), 0), [room.walls]);
-  const floorsArea = useMemo(() => room.floors.reduce((s, f) => s + area(f.width, f.height), 0), [room.floors]);
-  const ceilingsGross = useMemo(() => room.ceilings.reduce((s, c) => s + area(c.width, c.height), 0), [room.ceilings]);
+  /* -------------------- Derived totals (gross, openings, net) -------------------- */
+  const wallsGross = useMemo(
+    () => room.walls.reduce((s, w) => s + area(w.width, w.height), 0),
+    [room.walls]
+  );
+  const wallsOpenings = useMemo(
+    () => room.walls.reduce((s, w) => s + (w.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
+    [room.walls]
+  );
+  const wallsNet = useMemo(() => Math.max(+(wallsGross - wallsOpenings).toFixed(2), 0), [wallsGross, wallsOpenings]);
+
+  const floorsArea = useMemo(
+    () => room.floors.reduce((s, f) => s + area(f.width, f.height), 0),
+    [room.floors]
+  );
+
+  const ceilingsGross = useMemo(
+    () => room.ceilings.reduce((s, c) => s + area(c.width, c.height), 0),
+    [room.ceilings]
+  );
+  const ceilingsOpenings = useMemo(
+    () => room.ceilings.reduce((s, c) => s + (c.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
+    [room.ceilings]
+  );
+  const ceilingsNet = useMemo(() => Math.max(+(ceilingsGross - ceilingsOpenings).toFixed(2), 0), [ceilingsGross, ceilingsOpenings]);
 
   /* -------------------- Render -------------------- */
   const orientations: Orientation[] = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -350,59 +383,71 @@ export default function RoomElementsPage(): React.JSX.Element {
       {/* W A L L S */}
       <Section title="WALLS" subtitle="List all walls of this room, including any doors/windows on each wall." actionLabel="+ ADD WALL" onAction={addWall}>
         <ListHeader cols={['#','Adjacent Space','Element Name','Dimensions','Actions']} />
-        {room.walls.map((w, i) => (
-          <div key={w.id}>
-            <ListRow>
-              <Cell narrow>{i + 1}</Cell>
-              <Cell><strong>{w.adjacent}</strong></Cell>
-              <Cell>{w.name}</Cell>
-              <Cell>{(w.width || 0).toFixed(2)} × {(w.height || 0).toFixed(2)} m</Cell>
-              <Cell>
-                <button style={miniBtn} onClick={() => addDoor(i)}>+ DOOR</button>
-                <button style={miniBtn} onClick={() => addWindow(i)}>+ WINDOW</button>
-                <button style={miniBtn} onClick={() => toggle(w.id)}>✎ EDIT</button>
-                <button style={miniDanger} onClick={() => removeWall(i)}>🗑 DELETE</button>
-              </Cell>
-            </ListRow>
-            {expanded[w.id] && (
-              <EditorBlock>
-                <div style={grid4}>
-                  <div><Label>Element Name</Label><Input value={w.name} onChange={(e) => updateWall(i, { name: e?.target?.value || '' })} /></div>
-                  <div><Label>Orientation</Label>
-                    <Select value={w.orientation} onChange={(e) => updateWall(i, { orientation: (e?.target?.value as Orientation) || 'N' })}>
-                      {orientations.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </Select>
+        {room.walls.map((w, i) => {
+          const gross = area(w.width, w.height);
+          const openingsArea = (w.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0);
+          const net = Math.max(+(gross - openingsArea).toFixed(2), 0);
+          return (
+            <div key={w.id}>
+              <ListRow>
+                <Cell narrow>{i + 1}</Cell>
+                <Cell><strong>{w.adjacent}</strong></Cell>
+                <Cell>{w.name}</Cell>
+                <Cell>
+                  {(w.width || 0).toFixed(2)} × {(w.height || 0).toFixed(2)} m
+                  <div style={{ fontSize: 12, color: '#555' }}>
+                    Gross: {gross.toFixed(2)} m² • Openings: {openingsArea.toFixed(2)} m² • Net: <strong>{net.toFixed(2)} m²</strong>
                   </div>
-                  <div><Label>Adjacent Space</Label>
-                    <Select value={w.adjacent} onChange={(e) => updateWall(i, { adjacent: (e?.target?.value as Adjacent) || 'Exterior' })}>
-                      {adjacents.map((a) => <option key={a} value={a}>{a}</option>)}
-                    </Select>
+                </Cell>
+                <Cell>
+                  <button style={miniBtn} onClick={() => addDoor(i)}>+ DOOR</button>
+                  <button style={miniBtn} onClick={() => addWindow(i)}>+ WINDOW</button>
+                  <button style={miniBtn} onClick={() => toggle(w.id)}>✎ EDIT</button>
+                  <button style={miniDanger} onClick={() => removeWall(i)}>🗑 DELETE</button>
+                </Cell>
+              </ListRow>
+              {expanded[w.id] && (
+                <EditorBlock>
+                  <div style={grid4}>
+                    <div><Label>Element Name</Label><Input value={w.name} onChange={(e) => updateWall(i, { name: e?.target?.value || '' })} /></div>
+                    <div><Label>Orientation</Label>
+                      <Select value={w.orientation} onChange={(e) => updateWall(i, { orientation: (e?.target?.value as Orientation) || 'N' })}>
+                        {orientations.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </Select>
+                    </div>
+                    <div><Label>Adjacent Space</Label>
+                      <Select value={w.adjacent} onChange={(e) => updateWall(i, { adjacent: (e?.target?.value as Adjacent) || 'Exterior' })}>
+                        {adjacents.map((a) => <option key={a} value={a}>{a}</option>)}
+                      </Select>
+                    </div>
+                    <div />
+                    <div><Label>Width (m)</Label><Input type="number" step="0.01" value={w.width ?? ''} onChange={(e) => updateWall(i, { width: clampNumber(e?.target?.value) })} /></div>
+                    <div><Label>Height (m)</Label><Input type="number" step="0.01" value={w.height ?? ''} onChange={(e) => updateWall(i, { height: clampNumber(e?.target?.value) })} /></div>
+                    <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={w.uValue ?? ''} onChange={(e) => updateWall(i, { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} /></div>
                   </div>
-                  <div />
-                  <div><Label>Width (m)</Label><Input type="number" step="0.01" value={w.width ?? ''} onChange={(e) => updateWall(i, { width: +((e?.target?.value as string) || '0') })} /></div>
-                  <div><Label>Height (m)</Label><Input type="number" step="0.01" value={w.height ?? ''} onChange={(e) => updateWall(i, { height: +((e?.target?.value as string) || '0') })} /></div>
-                  <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={w.uValue ?? ''} onChange={(e) => updateWall(i, { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} /></div>
-                </div>
 
-                {!!w.openings.length && <h4 style={subtleH}>Openings</h4>}
-                {w.openings.map((o, j) => (
-                  <div key={o.id} style={openRow}>
-                    <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'wall', { kind: (e?.target?.value as OpeningKind) || 'window' })}>
-                      <option value="window">Window</option>
-                      <option value="door">Door</option>
-                    </Select>
-                    <Input type="number" step="0.01" placeholder="Width (m)" value={o.width ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { width: +((e?.target?.value as string) || '0') })} />
-                    <Input type="number" step="0.01" placeholder="Height (m)" value={o.height ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { height: +((e?.target?.value as string) || '0') })} />
-                    <span style={{ minWidth: 80, textAlign: 'right' }}>{area(o.width, o.height).toFixed(2)} m²</span>
-                    <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
-                    <button style={miniDanger} onClick={() => removeOpening(i, j, 'wall')}>Remove</button>
-                  </div>
-                ))}
-              </EditorBlock>
-            )}
-          </div>
-        ))}
-        <TotalRow label="Total Area:" value={`${wallsGross.toFixed(2)} m²`} />
+                  {!!w.openings.length && <h4 style={subtleH}>Openings</h4>}
+                  {w.openings.map((o, j) => (
+                    <div key={o.id} style={openRow}>
+                      <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'wall', { kind: (e?.target?.value as OpeningKind) || 'window' })}>
+                        <option value="window">Window</option>
+                        <option value="door">Door</option>
+                      </Select>
+                      <Input type="number" step="0.01" placeholder="Width (m)" value={o.width ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { width: clampNumber(e?.target?.value) })} />
+                      <Input type="number" step="0.01" placeholder="Height (m)" value={o.height ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { height: clampNumber(e?.target?.value) })} />
+                      <span style={{ minWidth: 80, textAlign: 'right' }}>{area(o.width, o.height).toFixed(2)} m²</span>
+                      <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} />
+                      <button style={miniDanger} onClick={() => removeOpening(i, j, 'wall')}>Remove</button>
+                    </div>
+                  ))}
+                </EditorBlock>
+              )}
+            </div>
+          );
+        })}
+        <TotalRow label="Totals:" value={
+          `Gross ${wallsGross.toFixed(2)} m² • Openings ${wallsOpenings.toFixed(2)} m² • Net ${wallsNet.toFixed(2)} m²`
+        } />
       </Section>
 
       {/* F L O O R S */}
@@ -429,9 +474,9 @@ export default function RoomElementsPage(): React.JSX.Element {
                       {adjacents.map((a) => <option key={a} value={a}>{a}</option>)}
                     </Select>
                   </div>
-                  <div><Label>Width (m)</Label><Input type="number" step="0.01" value={f.width ?? ''} onChange={(e) => updateFloor(i, { width: +((e?.target?.value as string) || '0') })} /></div>
-                  <div><Label>Height/Depth (m)</Label><Input type="number" step="0.01" value={f.height ?? ''} onChange={(e) => updateFloor(i, { height: +((e?.target?.value as string) || '0') })} /></div>
-                  <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={f.uValue ?? ''} onChange={(e) => updateFloor(i, { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} /></div>
+                  <div><Label>Width (m)</Label><Input type="number" step="0.01" value={f.width ?? ''} onChange={(e) => updateFloor(i, { width: clampNumber(e?.target?.value) })} /></div>
+                  <div><Label>Height/Depth (m)</Label><Input type="number" step="0.01" value={f.height ?? ''} onChange={(e) => updateFloor(i, { height: clampNumber(e?.target?.value) })} /></div>
+                  <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={f.uValue ?? ''} onChange={(e) => updateFloor(i, { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} /></div>
                 </div>
               </EditorBlock>
             )}
@@ -443,59 +488,71 @@ export default function RoomElementsPage(): React.JSX.Element {
       {/* C E I L I N G S */}
       <Section title="CEILINGS" subtitle="List all ceilings of this room." actionLabel="+ ADD CEILING" onAction={addCeiling}>
         <ListHeader cols={['#','Adjacent Space','Element Name','Dimensions','Actions']} />
-        {room.ceilings.map((c, i) => (
-          <div key={c.id}>
-            <ListRow>
-              <Cell narrow>{i + 1}</Cell>
-              <Cell><strong>{c.adjacent}</strong></Cell>
-              <Cell>{c.name}</Cell>
-              <Cell>{(c.width || 0).toFixed(2)} × {(c.height || 0).toFixed(2)} m</Cell>
-              <Cell>
-                <button style={miniBtn} onClick={() => addRoofWindow(i)}>+ ROOF WINDOW</button>
-                <button style={miniBtn} onClick={() => toggle(c.id)}>✎ EDIT</button>
-                <button style={miniDanger} onClick={() => removeCeiling(i)}>🗑 DELETE</button>
-              </Cell>
-            </ListRow>
-            {expanded[c.id] && (
-              <EditorBlock>
-                <div style={grid4}>
-                  <div><Label>Element Name</Label><Input value={c.name} onChange={(e) => updateCeiling(i, { name: e?.target?.value || '' })} /></div>
-                  <div><Label>Type</Label>
-                    <Select value={c.type} onChange={(e) => updateCeiling(i, { type: (e?.target?.value as any) || 'Ceiling' })}>
-                      <option value="Ceiling">Ceiling</option>
-                      <option value="Roof">Roof</option>
-                    </Select>
+        {room.ceilings.map((c, i) => {
+          const gross = area(c.width, c.height);
+          const openingsArea = (c.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0);
+          const net = Math.max(+(gross - openingsArea).toFixed(2), 0);
+          return (
+            <div key={c.id}>
+              <ListRow>
+                <Cell narrow>{i + 1}</Cell>
+                <Cell><strong>{c.adjacent}</strong></Cell>
+                <Cell>{c.name}</Cell>
+                <Cell>
+                  {(c.width || 0).toFixed(2)} × {(c.height || 0).toFixed(2)} m
+                  <div style={{ fontSize: 12, color: '#555' }}>
+                    Gross: {gross.toFixed(2)} m² • Openings: {openingsArea.toFixed(2)} m² • Net: <strong>{net.toFixed(2)} m²</strong>
                   </div>
-                  <div><Label>Adjacent Space</Label>
-                    <Select value={c.adjacent} onChange={(e) => updateCeiling(i, { adjacent: (e?.target?.value as any) || 'Interior (Heated)' })}>
-                      {(['Exterior', 'Interior (Heated)', 'Interior (Unheated)'] as const).map((a) => <option key={a} value={a}>{a}</option>)}
-                    </Select>
+                </Cell>
+                <Cell>
+                  <button style={miniBtn} onClick={() => addRoofWindow(i)}>+ ROOF WINDOW</button>
+                  <button style={miniBtn} onClick={() => toggle(c.id)}>✎ EDIT</button>
+                  <button style={miniDanger} onClick={() => removeCeiling(i)}>🗑 DELETE</button>
+                </Cell>
+              </ListRow>
+              {expanded[c.id] && (
+                <EditorBlock>
+                  <div style={grid4}>
+                    <div><Label>Element Name</Label><Input value={c.name} onChange={(e) => updateCeiling(i, { name: e?.target?.value || '' })} /></div>
+                    <div><Label>Type</Label>
+                      <Select value={c.type} onChange={(e) => updateCeiling(i, { type: (e?.target?.value as any) || 'Ceiling' })}>
+                        <option value="Ceiling">Ceiling</option>
+                        <option value="Roof">Roof</option>
+                      </Select>
+                    </div>
+                    <div><Label>Adjacent Space</Label>
+                      <Select value={c.adjacent} onChange={(e) => updateCeiling(i, { adjacent: (e?.target?.value as any) || 'Interior (Heated)' })}>
+                        {(['Exterior', 'Interior (Heated)', 'Interior (Unheated)'] as const).map((a) => <option key={a} value={a}>{a}</option>)}
+                      </Select>
+                    </div>
+                    <div />
+                    <div><Label>Width (m)</Label><Input type="number" step="0.01" value={c.width ?? ''} onChange={(e) => updateCeiling(i, { width: clampNumber(e?.target?.value) })} /></div>
+                    <div><Label>Height (m)</Label><Input type="number" step="0.01" value={c.height ?? ''} onChange={(e) => updateCeiling(i, { height: clampNumber(e?.target?.value) })} /></div>
+                    <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={c.uValue ?? ''} onChange={(e) => updateCeiling(i, { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} /></div>
                   </div>
-                  <div />
-                  <div><Label>Width (m)</Label><Input type="number" step="0.01" value={c.width ?? ''} onChange={(e) => updateCeiling(i, { width: +((e?.target?.value as string) || '0') })} /></div>
-                  <div><Label>Height (m)</Label><Input type="number" step="0.01" value={c.height ?? ''} onChange={(e) => updateCeiling(i, { height: +((e?.target?.value as string) || '0') })} /></div>
-                  <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={c.uValue ?? ''} onChange={(e) => updateCeiling(i, { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} /></div>
-                </div>
-                {!!c.openings.length && <h4 style={subtleH}>Roof Windows</h4>}
-                {c.openings.map((o, j) => (
-                  <div key={o.id} style={openRow}>
-                    <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'ceiling', { kind: (e?.target?.value as OpeningKind) || 'roof_window' })}>
-                      <option value="roof_window">Roof Window</option>
-                      <option value="window">Window</option>
-                      <option value="door">Door</option>
-                    </Select>
-                    <Input type="number" step="0.01" placeholder="Width (m)" value={o.width ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { width: +((e?.target?.value as string) || '0') })} />
-                    <Input type="number" step="0.01" placeholder="Height (m)" value={o.height ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { height: +((e?.target?.value as string) || '0') })} />
-                    <span style={{ minWidth: 80, textAlign: 'right' }}>{area(o.width, o.height).toFixed(2)} m²</span>
-                    <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { uValue: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
-                    <button style={miniDanger} onClick={() => removeOpening(i, j, 'ceiling')}>Remove</button>
-                  </div>
-                ))}
-              </EditorBlock>
-            )}
-          </div>
-        ))}
-        <TotalRow label="Total Area:" value={`${ceilingsGross.toFixed(2)} m²`} />
+                  {!!c.openings.length && <h4 style={subtleH}>Roof Windows</h4>}
+                  {c.openings.map((o, j) => (
+                    <div key={o.id} style={openRow}>
+                      <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'ceiling', { kind: (e?.target?.value as OpeningKind) || 'roof_window' })}>
+                        <option value="roof_window">Roof Window</option>
+                        <option value="window">Window</option>
+                        <option value="door">Door</option>
+                      </Select>
+                      <Input type="number" step="0.01" placeholder="Width (m)" value={o.width ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { width: clampNumber(e?.target?.value) })} />
+                      <Input type="number" step="0.01" placeholder="Height (m)" value={o.height ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { height: clampNumber(e?.target?.value) })} />
+                      <span style={{ minWidth: 80, textAlign: 'right' }}>{area(o.width, o.height).toFixed(2)} m²</span>
+                      <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} />
+                      <button style={miniDanger} onClick={() => removeOpening(i, j, 'ceiling')}>Remove</button>
+                    </div>
+                  ))}
+                </EditorBlock>
+              )}
+            </div>
+          );
+        })}
+        <TotalRow label="Totals:" value={
+          `Gross ${ceilingsGross.toFixed(2)} m² • Openings ${ceilingsOpenings.toFixed(2)} m² • Net ${ceilingsNet.toFixed(2)} m²`
+        } />
       </Section>
 
       {/* V E N T I L A T I O N */}
@@ -531,7 +588,7 @@ export default function RoomElementsPage(): React.JSX.Element {
               <option value="passive_vent">Passive vent</option>
             </Select>
             <span style={{ minWidth: 140 }}>Default: {defaultVentFlows[v.type]} l/s</span>
-            <Input type="number" step="0.1" placeholder="Override (l/s)" value={v.overrideFlow ?? ''} onChange={(e) => updateVent(i, { overrideFlow: (e?.target?.value as string) === '' ? '' : +(e?.target?.value as string) })} />
+            <Input type="number" step="0.1" placeholder="Override (l/s)" value={v.overrideFlow ?? ''} onChange={(e) => updateVent(i, { overrideFlow: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} />
             <Input placeholder="Notes" value={v.notes || ''} onChange={(e) => updateVent(i, { notes: e?.target?.value || '' })} />
             <button style={miniDanger} onClick={() => removeVent(i)}>Remove</button>
           </div>
@@ -548,7 +605,7 @@ export default function RoomElementsPage(): React.JSX.Element {
   );
 
   function updateVent(i: number, patch: Partial<VentDevice>) {
-    setRoom((r) => ({ ...r, ventilation: r.ventilation.map((v, idx) => (idx === i ? { ...v, ...clean(patch) } : v)) }));
+    setRoom((r) => ({ ...r, ventilation: r.ventilation.map((v, idx) => (idx === i ? { ...v, ...cleanNumberPatch(patch) } : v)) }));
   }
   function removeVent(i: number) {
     setRoom((r) => ({ ...r, ventilation: r.ventilation.filter((_, idx) => idx !== i) }));
@@ -606,7 +663,7 @@ const editor: React.CSSProperties = { background: '#FAFAFA', borderTop: '1px sol
 const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 };
 const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '160px 140px 140px 100px 120px 90px', gap: 8, alignItems: 'center', padding: '6px 0' };
 const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
-const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' };
+const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid '#D1D5DB', boxSizing: 'border-box' } as any;
 const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
 const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
@@ -630,6 +687,18 @@ function clean<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
   Object.keys(patch).forEach((k) => {
     const v: any = (patch as any)[k];
     out[k] = typeof v === 'number' && Number.isNaN(v) ? 0 : v;
+  });
+  return out as Partial<T>;
+}
+
+// Like clean(), but clamps numeric-ish fields to >= 0
+function cleanNumberPatch<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
+  const out: Record<string, any> = {};
+  Object.keys(patch).forEach((k) => {
+    const v: any = (patch as any)[k];
+    if (typeof v === 'number') out[k] = v > 0 && Number.isFinite(v) ? v : 0;
+    else if (typeof v === 'string' && v !== '') out[k] = clampNumber(v);
+    else out[k] = v;
   });
   return out as Partial<T>;
 }
