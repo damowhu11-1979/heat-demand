@@ -157,6 +157,36 @@ export default function RoomElementsPage(): React.JSX.Element {
     length: 0, width: 0, height: 0, volumeOverride: null,
     walls: [], floors: [], ceilings: [], ventilation: [],
   });
+// ...inside RoomElementsPage component, near other useState hooks:
+const [quickIntWidth, setQuickIntWidth] = useState<number | ''>('');
+const [quickIntHeight, setQuickIntHeight] = useState<number | ''>('');
+const [quickIntAdj, setQuickIntAdj] = useState<Adjacent>('Interior (Heated)');
+
+function addInternalWallQuick() {
+  const width = typeof quickIntWidth === 'number' ? quickIntWidth : parseFloat(String(quickIntWidth)) || 0;
+  const height = typeof quickIntHeight === 'number' ? quickIntHeight : parseFloat(String(quickIntHeight)) || 0;
+  if (width <= 0 || height <= 0) return; // guard
+  setRoom((r) => ({
+    ...r,
+    walls: [
+      ...r.walls,
+      {
+        id: uid(),
+        name: `Internal Wall ${r.walls.length + 1}`,
+        orientation: 'N',                 // orientation not critical for internal
+        adjacent: quickIntAdj,            // 'Interior (Heated)' or 'Interior (Unheated)'
+        width,
+        height,
+        uValue: '',                       // optional; user can edit later
+        openings: [],
+      },
+    ],
+  }));
+  // reset inputs
+  setQuickIntWidth('');
+  setQuickIntHeight('');
+  setQuickIntAdj('Interior (Heated)');
+}
 
   // Linking to Rooms page
   const [roomsList, setRoomsList] = useState<Array<{ id: string; name: string; zoneId?: string }>>([]);
@@ -448,6 +478,32 @@ export default function RoomElementsPage(): React.JSX.Element {
         <TotalRow label="Totals:" value={
           `Gross ${wallsGross.toFixed(2)} m² • Openings ${wallsOpenings.toFixed(2)} m² • Net ${wallsNet.toFixed(2)} m²`
         } />
+         {/* Quick add: INTERNAL WALL */}
+<div style={panel}>
+  <h3 style={{ margin: 0, fontSize: 16 }}>Quick Add Internal Wall</h3>
+  <p style={muted}>(For partitions inside the dwelling—choose Heated for zero-loss partitions, Unheated for e.g. halls/lofts.)</p>
+  <div style={{ display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 140px', gap: 10, alignItems: 'center' }}>
+    <div><Label>Adjacent</Label>
+      <Select value={quickIntAdj} onChange={(e) => setQuickIntAdj((e.target.value as Adjacent) || 'Interior (Heated)')}>
+        <option value="Interior (Heated)">Interior (Heated)</option>
+        <option value="Interior (Unheated)">Interior (Unheated)</option>
+      </Select>
+    </div>
+    <div><Label>Length (m)</Label>
+      <Input type="number" step="0.01" value={quickIntWidth}
+        onChange={(e) => setQuickIntWidth(e.target.value === '' ? '' : Math.max(0, +e.target.value))} />
+    </div>
+    <div><Label>Height (m)</Label>
+      <Input type="number" step="0.01" value={quickIntHeight}
+        onChange={(e) => setQuickIntHeight(e.target.value === '' ? '' : Math.max(0, +e.target.value))} />
+    </div>
+    <div style={{ fontSize: 12, color: '#555' }}>
+      Area: {((+quickIntWidth || 0) * (+quickIntHeight || 0)).toFixed(2)} m²
+    </div>
+    <button style={secondaryBtn} onClick={addInternalWallQuick}>+ Add Internal Wall</button>
+  </div>
+</div>
+
       </Section>
 
       {/* F L O O R S */}
