@@ -150,10 +150,21 @@ export default function RoomElementsPage(): React.JSX.Element {
   const ceilingsOpenings = useMemo(()=> room.ceilings.reduce((s,c)=> s + (c.openings||[]).reduce((ss,o)=> ss + area(o.width,o.height),0),0), [room.ceilings]);
   const ceilingsNet = useMemo(()=> Math.max(+(ceilingsGross - ceilingsOpenings).toFixed(2),0), [ceilingsGross,ceilingsOpenings]);
 
-  const INDOOR_C = 21, OUTDOOR_C = -3;
-  const autoVolume = useMemo(()=> +(num(room.length) * num(room.width) * num(room.height)).toFixed(1), [room.length, room.width, room.height]);
-  const displayVolume = override ? (room.volumeOverride ?? autoVolume) : autoVolume;
-  const results = useMemo(()=> computeRoomLoss({ room, indoorC: INDOOR_C, outdoorC: OUTDOOR_C, volumeM3: displayVolume, ageBand, roomType, policy }), [room, displayVolume, ageBand, roomType, policy]);
+ const INDOOR_C = 21, OUTDOOR_C = -3;
+// (no autoVolume here — keep the earlier one you already have)
+const displayVolume = override ? (room.volumeOverride ?? autoVolume) : autoVolume;
+const results = useMemo(() =>
+  computeRoomLoss({
+    room,
+    indoorC: INDOOR_C,
+    outdoorC: OUTDOOR_C,
+    volumeM3: displayVolume,
+    ageBand,
+    roomType,
+    policy,
+  }),
+  [room, displayVolume, ageBand, roomType, policy]
+);
 
   const onChangeVolume: React.ChangeEventHandler<HTMLInputElement> = (e)=>{ const raw=e?.target?.value; const v = raw === '' ? '' : +raw!; setRoom(r=>({...r, volumeOverride: override ? (v === '' ? null : Number(v)) : null })); };
   const onToggleOverride: React.ChangeEventHandler<HTMLInputElement> = (e)=>{ const checked=!!e?.target?.checked; setOverride(checked); setRoom(r=>({...r, volumeOverride: checked ? (r.volumeOverride ?? autoVolume) : null })); };
