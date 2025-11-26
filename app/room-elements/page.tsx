@@ -419,8 +419,8 @@ const results = useMemo(() => computeRoomLoss({
   return (
     <main style={wrap}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Link href="/rooms/" style={backLink} aria-label="Back">◀</Link>
-        <h1 style={title}>{activeRoom?.name || room.name}</h1>
+      - <Link href="/rooms/" style={btnGhost}>◀ Back</Link>
++ <Link href="/building-elements/" style={btnGhost}>◀ Back</Link>
       </div>
 
       {/* Room selector */}
