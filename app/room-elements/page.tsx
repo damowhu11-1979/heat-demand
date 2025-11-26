@@ -384,18 +384,23 @@ export default function RoomElementsPage(): React.JSX.Element {
   const ceilingsNet = useMemo(() => Math.max(+(ceilingsGross - ceilingsOpenings).toFixed(2), 0), [ceilingsGross, ceilingsOpenings]);
 
   /* -------------------- Heat Loss Results -------------------- */
-  const INDOOR_C = 21, OUTDOOR_C = -3;
-  const displayVolume = override ? (room.volumeOverride ?? autoVolume) : autoVolume;
+const INDOOR_C = 21, OUTDOOR_C = -3;
 
-  const results = useMemo(() => computeRoomLoss({
-    room,
-    indoorC: INDOOR_C,
-    outdoorC: OUTDOOR_C,
-    volumeM3: displayVolume,
-    ageBand,
-    roomType,
-    policy
-  }), [room, displayVolume, ageBand, roomType, policy]);
+// Force to a number for calc
+const displayVolume: number = useMemo(() => {
+  const cand = override ? room.volumeOverride : null;
+  return (typeof cand === 'number' && Number.isFinite(cand)) ? cand : autoVolume;
+}, [override, room.volumeOverride, autoVolume]);
+
+const results = useMemo(() => computeRoomLoss({
+  room,
+  indoorC: INDOOR_C,
+  outdoorC: OUTDOOR_C,
+  volumeM3: displayVolume,   // strictly number
+  ageBand,
+  roomType,
+  policy,
+}), [room, displayVolume, ageBand, roomType, policy]);
 
   /* -------------------- Volume override handlers -------------------- */
   const onChangeVolume: React.ChangeEventHandler<HTMLInputElement> = (e) => {
