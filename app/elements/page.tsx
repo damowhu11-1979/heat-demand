@@ -515,12 +515,18 @@ export default function ElementsPage(): React.JSX.Element {
         </div>
 
         {showWallSearch && (
-          <WallSearchDialog
-            rows={wallLookup}  {/* fixed: no hook call inside JSX */}
-            onClose={() => setShowWallSearch(false)}
-            onPick={(row) => { setWForm({ ...wForm, ageBand: row.age, construction: row.cons }); setShowWallSearch(false); }}
-          />
-        )}
+  <>
+    {/* fixed: no hook call inside JSX */}
+    <WallSearchDialog
+      rows={wallLookup}
+      onClose={() => setShowWallSearch(false)}
+      onPick={(row) => {
+        setWForm({ ...wForm, ageBand: row.age, construction: row.cons });
+        setShowWallSearch(false);
+      }}
+    />
+  </>
+)}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
           <button style={primaryBtn} onClick={addWall}>Save Wall Type</button>
