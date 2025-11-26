@@ -147,8 +147,7 @@ const clampNumber = (v: any) => {
 };
 
 /* ============================================================================
-   *** ROOMS IMPORT HELPERS ***
-   Reads the /rooms payload, finds a room by id, and extracts basic fields.
+   ROOMS IMPORT HELPERS (now includes roomType + designTemp)
 ============================================================================ */
 type Any = any;
 
@@ -195,13 +194,53 @@ function pickNum(x: Any, ...keys: string[]): number {
   return 0;
 }
 
-function basicsFromSourceRoom(r: Any): Partial<RoomModel> {
+function pickStr(x: Any, ...keys: string[]): string | '' {
+  for (const k of keys) {
+    const v = x?.[k];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s) return s;
+  }
+  return '';
+}
+
+function normalizeRoomType(s: string): RoomType | null {
+  const v = s.toLowerCase();
+  if (/(bed|bedroom)/.test(v)) return 'bedroom';
+  if (/(living|lounge|sitting)/.test(v)) return 'living';
+  if (/(kitchen)/.test(v)) return 'kitchen';
+  if (/(utility)/.test(v)) return 'utility';
+  if (/(bath|shower)/.test(v)) return 'bathroom';
+  if (/(wc|toilet|cloak)/.test(v)) return 'wc';
+  if (/(habitable|study|office|dining|play)/.test(v)) return 'habitable';
+  return null;
+}
+
+function basicsFromSourceRoom(r: Any): {
+  name?: string;
+  length?: number;
+  width?: number;
+  height?: number;
+  roomType?: RoomType;
+  designTempC?: number;
+} {
   if (!r) return {};
   const name = String(r?.name ?? r?.label ?? r?.title ?? 'Room');
   const length = pickNum(r, 'length','Length','L','len');
   const width  = pickNum(r, 'width','Width','W');
   const height = pickNum(r, 'height','Height','H');
-  return { name, length, width, height };
+
+  // Room type from several common fields
+  const rtRaw = pickStr(r, 'roomType','type','category','use','kind');
+  const rt = normalizeRoomType(rtRaw) ?? undefined;
+
+  // Design temperature in °C from common fields
+  const designTempC = pickNum(
+    r,
+    'designTempC','design_temperature_c','designTemp','heatingSetpointC','heatingSetpoint','setpointC','setpoint'
+  ) || undefined;
+
+  return { name, length, width, height, roomType: rt, designTempC };
 }
 
 /* ============================================================================
@@ -219,10 +258,11 @@ export default function RoomElementsPage(): React.JSX.Element {
     walls: [], floors: [], ceilings: [], ventilation: [],
   });
 
-  // Age band & room type / combine rule
+  // Config (age band, room type, policy, design temp)
   const [ageBand, setAgeBand] = useState<AgeBand>('y2021_plus');
   const [roomType, setRoomType] = useState<RoomType>('bedroom');
   const [policy, setPolicy] = useState<'max'|'sum'>('max');
+  const [designTempC, setDesignTempC] = useState<number | ''>(''); // '' means use default
 
   // Quick add internal wall inputs
   const [quickIntWidth, setQuickIntWidth] = useState<number | ''>('');
@@ -251,17 +291,27 @@ export default function RoomElementsPage(): React.JSX.Element {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [override, setOverride] = useState(false);
 
-  // Import logic: prefer saved Elements model; else pull basics from /rooms
+  // Import logic: prefer saved Elements model; else pull basics from /rooms (now includes type & design temp)
   function importSelectedRoom(targetId?: string | null) {
     const rid = String(targetId ?? selectedRoomId ?? room.id ?? '');
     if (!rid) return;
 
     const byRoom = readJSONMap<Record<string, RoomModel>>(LS_BYROOM_KEY);
     const saved = byRoom[rid];
-    if (saved) { setRoom(saved); return; }
+    if (saved) {
+      setRoom(saved);
+      // also restore any per-room metadata we keep outside the model
+      const meta = readJSON<Record<string, { roomType?: RoomType; designTempC?: number }>>('mcs.room.meta.byRoom.v1') || {};
+      const m = meta[rid] || {};
+      if (m.roomType) setRoomType(m.roomType);
+      if (typeof m.designTempC === 'number') setDesignTempC(m.designTempC);
+      return;
+    }
 
     const srcRoom = findSourceRoomById(rid);
     const basics = basicsFromSourceRoom(srcRoom);
+
+    // hydrate the page state
     setRoom((r) => ({
       ...r,
       id: rid,
@@ -271,6 +321,8 @@ export default function RoomElementsPage(): React.JSX.Element {
         return acc;
       }, {} as Partial<RoomModel>),
     }));
+    if (basics.roomType) setRoomType(basics.roomType);
+    if (typeof basics.designTempC === 'number') setDesignTempC(basics.designTempC);
   }
 
   // Load Rooms list & initial selection
@@ -278,7 +330,6 @@ export default function RoomElementsPage(): React.JSX.Element {
     const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const fromQuery = q ? q.get('roomId') : null;
 
-    // Build rooms list from common shapes
     const loaded: Array<{ id: string; name: string; zoneId?: string }>= [];
     for (const key of LS_ROOMS_KEYS) {
       const raw = readJSON<any>(key);
@@ -331,7 +382,7 @@ export default function RoomElementsPage(): React.JSX.Element {
     if (selectedRoomId) importSelectedRoom(selectedRoomId);
   }, [selectedRoomId]);
 
-  // Persist per-room Elements model
+  // Persist per-room Elements model + meta
   useEffect(() => {
     const rid = selectedRoomId || room.id;
     if (rid) {
@@ -339,19 +390,100 @@ export default function RoomElementsPage(): React.JSX.Element {
       byRoom[rid] = { ...room, id: rid };
       writeJSON(LS_BYROOM_KEY, byRoom);
       writeJSON('mcs.rooms.selectedId', rid);
+
+      // Save meta (roomType + designTempC) per room id
+      const meta = readJSON<Record<string, { roomType?: RoomType; designTempC?: number }>>('mcs.room.meta.byRoom.v1') || {};
+      meta[rid] = {
+        roomType,
+        designTempC: typeof designTempC === 'number' ? designTempC : undefined,
+      };
+      writeJSON('mcs.room.meta.byRoom.v1', meta);
     } else {
       writeJSON(LS_KEY, room);
     }
-  }, [room, selectedRoomId]);
+  }, [room, selectedRoomId, roomType, designTempC]);
 
+  /* -------------------- Derived totals -------------------- */
   const autoVolume = useMemo(
     () => +(num(room.length) * num(room.width) * num(room.height)).toFixed(1),
     [room.length, room.width, room.height]
   );
-
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
 
-  /* -------------------- Adders -------------------- */
+  const wallsGross = useMemo(
+    () => room.walls.reduce((s, w) => s + area(w.width, w.height), 0),
+    [room.walls]
+  );
+  const wallsOpenings = useMemo(
+    () => room.walls.reduce((s, w) => s + (w.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
+    [room.walls]
+  );
+  const wallsNet = useMemo(() => Math.max(+(wallsGross - wallsOpenings).toFixed(2), 0), [wallsGross, wallsOpenings]);
+
+  const floorsArea = useMemo(
+    () => room.floors.reduce((s, f) => s + area(f.width, f.height), 0),
+    [room.floors]
+  );
+
+  const ceilingsGross = useMemo(
+    () => room.ceilings.reduce((s, c) => s + area(c.width, c.height), 0),
+    [room.ceilings]
+  );
+  const ceilingsOpenings = useMemo(
+    () => room.ceilings.reduce((s, c) => s + (c.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
+    [room.ceilings]
+  );
+  const ceilingsNet = useMemo(() => Math.max(+(ceilingsGross - ceilingsOpenings).toFixed(2), 0), [ceilingsGross, ceilingsOpenings]);
+
+  /* -------------------- Heat Loss Results -------------------- */
+  const OUTDOOR_C = -3;
+
+  // strictly a number for calc
+  const displayVolume: number = useMemo(() => {
+    const cand = override ? room.volumeOverride : null;
+    return (typeof cand === 'number' && Number.isFinite(cand)) ? cand : autoVolume;
+  }, [override, room.volumeOverride, autoVolume]);
+
+  // Indoor design temp: use imported value if provided, else default 21°C
+  const indoorC = useMemo(() => {
+    if (typeof designTempC === 'number' && Number.isFinite(designTempC) && designTempC > 0) return designTempC;
+    return 21;
+  }, [designTempC]);
+
+  const results = useMemo(() => computeRoomLoss({
+    room,
+    indoorC,
+    outdoorC: OUTDOOR_C,
+    volumeM3: displayVolume,
+    ageBand,
+    roomType,
+    policy
+  }), [room, displayVolume, ageBand, roomType, policy, indoorC]);
+
+  /* -------------------- Volume + design temp handlers -------------------- */
+  const onChangeVolume: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const raw = e?.target?.value;
+    const v = raw === '' ? '' : +raw!;
+    setRoom((r) => ({ ...r, volumeOverride: override ? (v === '' ? null : Number(v)) : null }));
+  };
+  const onToggleOverride: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const checked = !!e?.target?.checked;
+    setOverride(checked);
+    setRoom((r) => ({ ...r, volumeOverride: checked ? (r.volumeOverride ?? autoVolume) : null }));
+  };
+  const onChangeDesignTemp: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const raw = e?.target?.value;
+    if (raw === '' || raw == null) { setDesignTempC(''); return; }
+    const n = +raw;
+    setDesignTempC(Number.isFinite(n) ? n : '');
+  };
+
+  const activeRoom = roomsList.find((r) => r.id === (selectedRoomId || room.id));
+
+  /* -------------------- Adders/Updaters (UI sections)
+     (unchanged except for the config panel showing room type + design temp)
+  -------------------- */
+
   const addWall = () => setRoom((r) => ({
     ...r,
     walls: [...r.walls, { id: uid(), name: `External Wall ${r.walls.length + 1}`, orientation: 'N', adjacent: 'Exterior', width: 0, height: 0, uValue: '', openings: [] }],
@@ -366,12 +498,8 @@ export default function RoomElementsPage(): React.JSX.Element {
   }));
   const addVent = () => setRoom((r) => ({ ...r, ventilation: [...r.ventilation, { id: uid(), type: 'trickle_vent', overrideFlow: '', notes: '' }] }));
 
-  /* -------------------- Updaters -------------------- */
   const updateWall = (i: number, patch: Partial<Wall>) =>
-    setRoom((r) => ({
-      ...r,
-      walls: r.walls.map((w, idx) => (idx === i ? { ...w, ...cleanNumberPatch(patch) } : w)),
-    }));
+    setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, ...cleanNumberPatch(patch) } : w)) }));
   const removeWall = (i: number) => setRoom((r) => ({ ...r, walls: r.walls.filter((_, idx) => idx !== i) }));
   const duplicateWall = (i: number) =>
     setRoom((r) => ({ ...r, walls: [...r.walls.slice(0, i + 1), { ...r.walls[i], id: uid(), name: r.walls[i].name + ' (copy)' }, ...r.walls.slice(i + 1)] }));
@@ -424,64 +552,6 @@ export default function RoomElementsPage(): React.JSX.Element {
     router.push(`${BP}/rooms/`);
   };
 
-  /* -------------------- Derived totals -------------------- */
-  const wallsGross = useMemo(
-    () => room.walls.reduce((s, w) => s + area(w.width, w.height), 0),
-    [room.walls]
-  );
-  const wallsOpenings = useMemo(
-    () => room.walls.reduce((s, w) => s + (w.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
-    [room.walls]
-  );
-  const wallsNet = useMemo(() => Math.max(+(wallsGross - wallsOpenings).toFixed(2), 0), [wallsGross, wallsOpenings]);
-
-  const floorsArea = useMemo(
-    () => room.floors.reduce((s, f) => s + area(f.width, f.height), 0),
-    [room.floors]
-  );
-
-  const ceilingsGross = useMemo(
-    () => room.ceilings.reduce((s, c) => s + area(c.width, c.height), 0),
-    [room.ceilings]
-  );
-  const ceilingsOpenings = useMemo(
-    () => room.ceilings.reduce((s, c) => s + (c.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
-    [room.ceilings]
-  );
-  const ceilingsNet = useMemo(() => Math.max(+(ceilingsGross - ceilingsOpenings).toFixed(2), 0), [ceilingsGross, ceilingsOpenings]);
-
-  /* -------------------- Heat Loss Results -------------------- */
-  const INDOOR_C = 21, OUTDOOR_C = -3;
-
-  const displayVolume: number = useMemo(() => {
-    const cand = override ? room.volumeOverride : null;
-    return (typeof cand === 'number' && Number.isFinite(cand)) ? cand : autoVolume;
-  }, [override, room.volumeOverride, autoVolume]);
-
-  const results = useMemo(() => computeRoomLoss({
-    room,
-    indoorC: INDOOR_C,
-    outdoorC: OUTDOOR_C,
-    volumeM3: displayVolume,
-    ageBand,
-    roomType,
-    policy
-  }), [room, displayVolume, ageBand, roomType, policy]);
-
-  /* -------------------- Volume override handlers -------------------- */
-  const onChangeVolume: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const raw = e?.target?.value;
-    const v = raw === '' ? '' : +raw!;
-    setRoom((r) => ({ ...r, volumeOverride: override ? (v === '' ? null : Number(v)) : null }));
-  };
-  const onToggleOverride: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const checked = !!e?.target?.checked;
-    setOverride(checked);
-    setRoom((r) => ({ ...r, volumeOverride: checked ? (r.volumeOverride ?? autoVolume) : null }));
-  };
-
-  const activeRoom = roomsList.find((r) => r.id === (selectedRoomId || room.id));
-
   return (
     <main style={wrap}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -507,9 +577,9 @@ export default function RoomElementsPage(): React.JSX.Element {
         </div>
       )}
 
-      {/* CONFIG: Age band / room type / policy */}
+      {/* CONFIG: Age band / room type / policy / design temp */}
       <div style={panel}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
           <div>
             <Label>Dwelling Age Band</Label>
             <Select value={ageBand} onChange={(e)=> setAgeBand((e.target.value as AgeBand) || 'y2021_plus')}>
@@ -537,6 +607,17 @@ export default function RoomElementsPage(): React.JSX.Element {
               <option value="max">Use max(base, devices)</option>
               <option value="sum">Sum base + devices</option>
             </Select>
+          </div>
+          <div>
+            <Label>Design Temperature (°C)</Label>
+            <Input
+              type="number"
+              step="0.5"
+              placeholder="21"
+              value={designTempC === '' ? '' : designTempC}
+              onChange={onChangeDesignTemp}
+            />
+            <div style={help}>If blank, defaults to 21°C. Imported from Rooms when available.</div>
           </div>
         </div>
       </div>
@@ -790,7 +871,7 @@ export default function RoomElementsPage(): React.JSX.Element {
         </div>
 
         <ResultsCard
-          title="Room Heat Loss"
+          title={`Room Heat Loss${typeof designTempC === 'number' ? ` @ ${designTempC}°C` : ''}`}
           rows={[
             ['Base vent rate', `${results.flowBase_lps.toFixed(1)} l/s`],
             ['Device override', `${results.flowDevices_lps.toFixed(1)} l/s`],
@@ -875,7 +956,7 @@ const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, heigh
 const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
-const miniBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #D1D5DB', padding: '4px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, marginRight: 6 };
+const miniBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid '#D1D5DB', padding: '4px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, marginRight: 6 };
 const miniDanger: React.CSSProperties = { ...miniBtn, color: '#b00020', border: '1px solid #f0b3bd' } as React.CSSProperties;
 const footerNav: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, marginTop: 22 };
 const panel: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, background: '#fff', marginBottom: 12 };
