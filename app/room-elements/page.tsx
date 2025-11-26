@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 import ResultsCard from '../components/ResultsCard';
 import { computeRoomLoss } from '../lib/calc';
@@ -23,7 +23,6 @@ interface SafeStorage {
   removeItem(k: string): void;
 }
 
-// In-memory fallback storage (used when localStorage is unavailable)
 const memoryStorage: SafeStorage = (() => {
   const m = new Map<string, string>();
   return {
@@ -142,9 +141,15 @@ const defaultVentFlows: Record<VentDevice['type'], number> = {
 };
 const uid = () => Math.random().toString(36).slice(2, 9);
 const toNum = (v: any) => (typeof v === 'number' ? v : parseFloat(String(v)));
-const num = (v: any) => (Number.isFinite(toNum(v)) && toNum(v) > 0 ? toNum(v) : 0);
+const num = (v: any) => {
+  const n = toNum(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
 const area = (w: number, h: number) => +(num(w) * num(h)).toFixed(2);
-const clampNumber = (v: any) => (Number.isFinite(toNum(v)) && toNum(v) > 0 ? toNum(v) : 0);
+const clampNumber = (v: any) => {
+  const n = toNum(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
 
 /* ============================================================================
    Component
@@ -177,7 +182,16 @@ export default function RoomElementsPage(): React.JSX.Element {
       ...r,
       walls: [
         ...r.walls,
-        { id: uid(), name: `Internal Wall ${r.walls.length + 1}`, orientation: 'N', adjacent: quickIntAdj, width, height, uValue: '', openings: [] },
+        {
+          id: uid(),
+          name: `Internal Wall ${r.walls.length + 1}`,
+          orientation: 'N',
+          adjacent: quickIntAdj,
+          width,
+          height,
+          uValue: '',
+          openings: [],
+        },
       ],
     }));
     setQuickIntWidth('');
@@ -339,24 +353,40 @@ export default function RoomElementsPage(): React.JSX.Element {
 
   const onSaveAndContinue = () => {
     exportJSON();
-    router.push('/rooms/'); // continue flow (still respects basePath)
+    // go to rooms (kept as-is); change here if you want a different next step
+    router.push('/rooms/');
   };
 
-  /* -------------------- Derived totals (gross, openings, net) -------------------- */
-  const wallsGross = useMemo(() => room.walls.reduce((s, w) => s + area(w.width, w.height), 0), [room.walls]);
-  const wallsOpenings = useMemo(() => room.walls.reduce((s, w) => s + (w.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0), [room.walls]);
+  /* -------------------- Derived totals -------------------- */
+  const wallsGross = useMemo(
+    () => room.walls.reduce((s, w) => s + area(w.width, w.height), 0),
+    [room.walls]
+  );
+  const wallsOpenings = useMemo(
+    () => room.walls.reduce((s, w) => s + (w.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
+    [room.walls]
+  );
   const wallsNet = useMemo(() => Math.max(+(wallsGross - wallsOpenings).toFixed(2), 0), [wallsGross, wallsOpenings]);
 
-  const floorsArea = useMemo(() => room.floors.reduce((s, f) => s + area(f.width, f.height), 0), [room.floors]);
+  const floorsArea = useMemo(
+    () => room.floors.reduce((s, f) => s + area(f.width, f.height), 0),
+    [room.floors]
+  );
 
-  const ceilingsGross = useMemo(() => room.ceilings.reduce((s, c) => s + area(c.width, c.height), 0), [room.ceilings]);
-  const ceilingsOpenings = useMemo(() => room.ceilings.reduce((s, c) => s + (c.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0), [room.ceilings]);
+  const ceilingsGross = useMemo(
+    () => room.ceilings.reduce((s, c) => s + area(c.width, c.height), 0),
+    [room.ceilings]
+  );
+  const ceilingsOpenings = useMemo(
+    () => room.ceilings.reduce((s, c) => s + (c.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
+    [room.ceilings]
+  );
   const ceilingsNet = useMemo(() => Math.max(+(ceilingsGross - ceilingsOpenings).toFixed(2), 0), [ceilingsGross, ceilingsOpenings]);
 
   /* -------------------- Heat Loss Results -------------------- */
   const INDOOR_C = 21, OUTDOOR_C = -3;
 
-  // ALWAYS a number for the calc
+  // strictly a number for calc
   const displayVolume: number = useMemo(() => {
     const cand = override ? room.volumeOverride : null;
     return (typeof cand === 'number' && Number.isFinite(cand)) ? cand : autoVolume;
@@ -389,7 +419,7 @@ export default function RoomElementsPage(): React.JSX.Element {
   return (
     <main style={wrap}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {/* header back: go to Building Elements */}
+        {/* Back to Building Elements via router (basePath-aware) */}
         <button
           type="button"
           onClick={() => router.push('/building-elements/')}
@@ -712,8 +742,12 @@ export default function RoomElementsPage(): React.JSX.Element {
 
       {/* Footer nav */}
       <div style={footerNav}>
-        {/* footer back: go to Building Elements */}
-        <button type="button" onClick={() => router.push('/building-elements/')} style={btnGhost}>
+        {/* Back to Building Elements via router */}
+        <button
+          type="button"
+          onClick={() => router.push('/building-elements/')}
+          style={btnGhost}
+        >
           ◀ Back
         </button>
         <div style={{ flex: 1 }} />
@@ -773,7 +807,6 @@ const wrap: React.CSSProperties = { maxWidth: 1120, margin: '0 auto', padding: 2
 const title: React.CSSProperties = { fontSize: 28, letterSpacing: 0.5, margin: '0 0 6px' };
 const sectionTitle: React.CSSProperties = { margin: '0 0 6px', fontSize: 14, letterSpacing: 1.5, textTransform: 'uppercase' };
 const muted: React.CSSProperties = { color: '#666', fontSize: 13, margin: '0 0 10px' };
-
 const listBox: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' };
 const headerRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '40px 1fr 1fr 1fr 1fr', gap: 12, padding: '10px 12px', background: '#ECEDEF', color: '#222' } as React.CSSProperties;
 const dataRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '40px 1fr 1fr 1fr 1fr', gap: 12, padding: '12px', alignItems: 'center', borderTop: '1px solid #F1F1F1', background: '#fff' } as React.CSSProperties;
@@ -782,7 +815,6 @@ const editor: React.CSSProperties = { background: '#FAFAFA', borderTop: '1px sol
 const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 };
 const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '160px 140px 140px 100px 120px 90px', gap: 8, alignItems: 'center', padding: '6px 0' };
 const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
-
 const input: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
@@ -790,10 +822,9 @@ const input: React.CSSProperties = {
   border: '1px solid #D1D5DB',
   boxSizing: 'border-box',
 };
-
-const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111', background: '#fff' };
+const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
 const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
-const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none', cursor: 'pointer' };
+const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
 const miniBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #D1D5DB', padding: '4px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, marginRight: 6 };
 const miniDanger: React.CSSProperties = { ...miniBtn, color: '#b00020', border: '1px solid #f0b3bd' } as React.CSSProperties;
