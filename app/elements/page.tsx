@@ -547,22 +547,40 @@ export default function ElementsPage(): React.JSX.Element {
             </>
           )}
 
-          {fForm.category === 'known-u' && (
-            <div>
-              <Label>U-Value *</Label>
-              <Input type="number" step="0.01" value={fForm.uValue ?? ''} onChange={(e) => setFForm({ ...fForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })} />
-              <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
-                <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#555' }}>
-                  <input type="checkbox" checked={!!fForm.groundContactAdjust} onChange={(e) => setFForm({ ...fForm, groundContactAdjust: e.target.checked })} />
-                  U-value accounts for ground contact (solid floors only)
-                </label>
-                <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#555' }}>
-                  <input type="checkbox" checked={!!fForm.includesPsi} onChange={(e) => setFForm({ ...fForm, includesPsi: e.target.checked })} />
-                  U-value includes thermal bridging factor
-                </label>
-              </div>
-            </div>
-          )}
+      {fForm.category === 'known-u' && (
+  <div>
+    <Label>U-Value *</Label>
+    <Input
+      type="number"
+      step="0.01"
+      value={fForm.uValue ?? ''}
+      onChange={(e) => {
+        const n = Number(e.target.value);
+        setFForm({ ...fForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : fForm.uValue) });
+      }}
+    />
+    <div style={{ display:'flex', gap:12, marginTop:6 }}>
+      {fForm.construction === 'solid' && (
+        <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:12, color:'#555' }}>
+          <input
+            type="checkbox"
+            checked={!!fForm.groundContactAdjust}
+            onChange={(e) => setFForm({ ...fForm, groundContactAdjust: e.target.checked })}
+          />
+          U-value accounts for ground contact (solid floors only)
+        </label>
+      )}
+      <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:12, color:'#555' }}>
+        <input
+          type="checkbox"
+          checked={!!fForm.includesPsi}
+          onChange={(e) => setFForm({ ...fForm, includesPsi: e.target.checked })}
+        />
+        U-value includes thermal bridging factor
+      </label>
+    </div>
+  </div>
+)}
         </div>
 
         <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
