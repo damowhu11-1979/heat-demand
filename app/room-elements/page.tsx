@@ -147,6 +147,64 @@ const clampNumber = (v: any) => {
 };
 
 /* ============================================================================
+   *** ROOMS IMPORT HELPERS ***
+   Reads the /rooms payload, finds a room by id, and extracts basic fields.
+============================================================================ */
+type Any = any;
+
+function loadRoomsRaw(): Any | null {
+  for (const key of LS_ROOMS_KEYS) {
+    const raw = readJSON<any>(key);
+    if (raw) return raw;
+  }
+  return null;
+}
+
+function findSourceRoomById(id: string): Any | null {
+  const src = loadRoomsRaw();
+  if (!src) return null;
+
+  if (Array.isArray(src?.zones)) {
+    for (const z of src.zones) {
+      const arr = z?.Rooms || z?.rooms || [];
+      const hit = arr.find((r: Any) => String(r?.id ?? r?.roomId ?? r?.name) === String(id));
+      if (hit) return hit;
+    }
+  }
+  if (Array.isArray(src?.Rooms)) {
+    const hit = src.Rooms.find((r: Any) => String(r?.id ?? r?.roomId ?? r?.name) === String(id));
+    if (hit) return hit;
+  }
+  if (Array.isArray(src?.rooms)) {
+    const hit = src.rooms.find((r: Any) => String(r?.id ?? r?.roomId ?? r?.name) === String(id));
+    if (hit) return hit;
+  }
+  if (Array.isArray(src)) {
+    const hit = src.find((r: Any) => String(r?.id ?? r?.roomId ?? r?.name) === String(id));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function pickNum(x: Any, ...keys: string[]): number {
+  for (const k of keys) {
+    const v = x?.[k];
+    const n = typeof v === 'number' ? v : parseFloat(String(v));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
+function basicsFromSourceRoom(r: Any): Partial<RoomModel> {
+  if (!r) return {};
+  const name = String(r?.name ?? r?.label ?? r?.title ?? 'Room');
+  const length = pickNum(r, 'length','Length','L','len');
+  const width  = pickNum(r, 'width','Width','W');
+  const height = pickNum(r, 'height','Height','H');
+  return { name, length, width, height };
+}
+
+/* ============================================================================
    Component
 ============================================================================ */
 export default function RoomElementsPage(): React.JSX.Element {
@@ -185,7 +243,7 @@ export default function RoomElementsPage(): React.JSX.Element {
     setQuickIntWidth(''); setQuickIntHeight(''); setQuickIntAdj('Interior (Heated)');
   }
 
-  // Linking to Rooms page
+  // Rooms list UI
   const [roomsList, setRoomsList] = useState<Array<{ id: string; name: string; zoneId?: string }>>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
 
@@ -193,19 +251,43 @@ export default function RoomElementsPage(): React.JSX.Element {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [override, setOverride] = useState(false);
 
-  // Load / persist only on client
+  // Import logic: prefer saved Elements model; else pull basics from /rooms
+  function importSelectedRoom(targetId?: string | null) {
+    const rid = String(targetId ?? selectedRoomId ?? room.id ?? '');
+    if (!rid) return;
+
+    const byRoom = readJSONMap<Record<string, RoomModel>>(LS_BYROOM_KEY);
+    const saved = byRoom[rid];
+    if (saved) { setRoom(saved); return; }
+
+    const srcRoom = findSourceRoomById(rid);
+    const basics = basicsFromSourceRoom(srcRoom);
+    setRoom((r) => ({
+      ...r,
+      id: rid,
+      ...(['name','length','width','height'] as const).reduce((acc, k) => {
+        const v = (basics as Any)[k];
+        if (typeof v === 'number' ? v > 0 : v) (acc as Any)[k] = v;
+        return acc;
+      }, {} as Partial<RoomModel>),
+    }));
+  }
+
+  // Load Rooms list & initial selection
   useEffect(() => {
     const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const fromQuery = q ? q.get('roomId') : null;
 
-    const loaded: Array<{ id: string; name: string; zoneId?: string }> = [];
+    // Build rooms list from common shapes
+    const loaded: Array<{ id: string; name: string; zoneId?: string }>= [];
     for (const key of LS_ROOMS_KEYS) {
       const raw = readJSON<any>(key);
       if (!raw) continue;
       const x = raw;
+
       if (Array.isArray(x?.zones)) {
         try {
-          x.zones.forEach((z: any, zi: number) => (z.Rooms || z.rooms || []).forEach((r: any, ri: number) => {
+          x.zones.forEach((z: Any, zi: number) => (z.Rooms || z.rooms || []).forEach((r: Any, ri: number) => {
             const rid = String(r?.id ?? r?.roomId ?? r?.name ?? `${zi}:${ri}`);
             loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: String(z?.id ?? zi) });
           }));
@@ -213,7 +295,7 @@ export default function RoomElementsPage(): React.JSX.Element {
       }
       if (Array.isArray(x?.Rooms)) {
         try {
-          x.Rooms.forEach((r: any, ri: number) => {
+          x.Rooms.forEach((r: Any, ri: number) => {
             const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
             loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
           });
@@ -221,7 +303,7 @@ export default function RoomElementsPage(): React.JSX.Element {
       }
       if (Array.isArray(x?.rooms)) {
         try {
-          x.rooms.forEach((r: any, ri: number) => {
+          x.rooms.forEach((r: Any, ri: number) => {
             const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
             loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
           });
@@ -229,7 +311,7 @@ export default function RoomElementsPage(): React.JSX.Element {
       }
       if (Array.isArray(x)) {
         try {
-          x.forEach((r: any, ri: number) => {
+          x.forEach((r: Any, ri: number) => {
             const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
             loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
           });
@@ -242,13 +324,14 @@ export default function RoomElementsPage(): React.JSX.Element {
     const last = readJSON<string>('mcs.rooms.selectedId');
     const activeId = fromQuery || last || (loaded.length ? loaded[0].id : null);
     if (activeId) setSelectedRoomId(activeId);
-
-    const byRoom = readJSONMap<Record<string, RoomModel>>(LS_BYROOM_KEY);
-    const saved = activeId ? byRoom[activeId] : readJSON<RoomModel>(LS_KEY);
-    if (saved) setRoom(saved);
-    else if (activeId) setRoom((r) => ({ ...r, id: activeId }));
   }, []);
 
+  // When selection changes, import that room (saved elements or basics)
+  useEffect(() => {
+    if (selectedRoomId) importSelectedRoom(selectedRoomId);
+  }, [selectedRoomId]);
+
+  // Persist per-room Elements model
   useEffect(() => {
     const rid = selectedRoomId || room.id;
     if (rid) {
@@ -370,7 +453,6 @@ export default function RoomElementsPage(): React.JSX.Element {
   /* -------------------- Heat Loss Results -------------------- */
   const INDOOR_C = 21, OUTDOOR_C = -3;
 
-  // strictly a number for calc
   const displayVolume: number = useMemo(() => {
     const cand = override ? room.volumeOverride : null;
     return (typeof cand === 'number' && Number.isFinite(cand)) ? cand : autoVolume;
@@ -413,10 +495,14 @@ export default function RoomElementsPage(): React.JSX.Element {
         <div style={{ margin: '6px 0 10px' }}>
           <Label>Linked Room</Label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Select value={selectedRoomId || ''} onChange={(e) => setSelectedRoomId((e?.target?.value as string) || null)}>
+            <select
+              value={selectedRoomId || ''}
+              onChange={(e) => setSelectedRoomId((e?.target?.value as string) || null)}
+              style={input}
+            >
               {roomsList.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </Select>
-            <button style={secondaryBtn} onClick={() => setRoom((r) => ({ ...r, id: selectedRoomId || r.id }))}>Bind</button>
+            </select>
+            <button style={secondaryBtn} onClick={() => importSelectedRoom(selectedRoomId)}>Bind</button>
           </div>
         </div>
       )}
@@ -784,13 +870,7 @@ const editor: React.CSSProperties = { background: '#FAFAFA', borderTop: '1px sol
 const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 };
 const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '160px 140px 140px 100px 120px 90px', gap: 8, alignItems: 'center', padding: '6px 0' };
 const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
-const input: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 8,
-  border: '1px solid #D1D5DB',
-  boxSizing: 'border-box',
-};
+const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' };
 const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
 const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
