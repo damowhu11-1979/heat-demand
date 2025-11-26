@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 
 import ResultsCard from '../components/ResultsCard';
 import { computeRoomLoss } from '../lib/calc';
@@ -11,11 +10,11 @@ import type { AgeBand, RoomType } from '../lib/vent-rates';
 /* ============================================================================
    Persistence helpers (safe localStorage wrapper)
 ============================================================================ */
-const LS_KEY = 'mcs.room.elements.v2';                // legacy single-room fallback
-const LS_BYROOM_KEY = 'mcs.room.elements.byRoom.v1';  // per-room map { [roomId]: RoomModel }
+const LS_KEY = 'mcs.room.elements.v2';
+const LS_BYROOM_KEY = 'mcs.room.elements.byRoom.v1';
 const LS_ROOMS_KEYS = [
   'mcs.Rooms.v2', 'mcs.Rooms.v1', 'mcs.rooms.v2', 'mcs.rooms.v1', 'mcs.rooms', 'rooms.v1'
-]; // likely keys from Rooms page
+];
 
 interface SafeStorage {
   getItem(k: string): string | null;
@@ -43,9 +42,7 @@ function getStorage(): SafeStorage {
       setItem: (k,v) => { try { s.setItem(k,v); } catch {} },
       removeItem: (k) => { try { s.removeItem(k); } catch {} },
     };
-  } catch {
-    return memoryStorage;
-  }
+  } catch { return memoryStorage; }
 }
 
 function readJSON<T>(k: string): T | null {
@@ -55,9 +52,7 @@ function readJSON<T>(k: string): T | null {
     if (raw === null || raw === '' || raw === 'null' || raw === 'undefined') return null;
     const parsed = JSON.parse(raw as string);
     return parsed == null ? null : (parsed as T);
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 function writeJSON(k: string, v: unknown) {
   const s = getStorage();
@@ -156,6 +151,8 @@ const clampNumber = (v: any) => {
 ============================================================================ */
 export default function RoomElementsPage(): React.JSX.Element {
   const router = useRouter();
+  const BP = process.env.NEXT_PUBLIC_BASE_PATH || '';
+  const goElements = () => router.push(`${BP}/elements/`);
 
   // Main model
   const [room, setRoom] = useState<RoomModel>({
@@ -180,23 +177,12 @@ export default function RoomElementsPage(): React.JSX.Element {
     if (width <= 0 || height <= 0) return;
     setRoom((r) => ({
       ...r,
-      walls: [
-        ...r.walls,
-        {
-          id: uid(),
-          name: `Internal Wall ${r.walls.length + 1}`,
-          orientation: 'N',
-          adjacent: quickIntAdj,
-          width,
-          height,
-          uValue: '',
-          openings: [],
-        },
-      ],
+      walls: [...r.walls, {
+        id: uid(), name: `Internal Wall ${r.walls.length + 1}`,
+        orientation: 'N', adjacent: quickIntAdj, width, height, uValue: '', openings: [],
+      }],
     }));
-    setQuickIntWidth('');
-    setQuickIntHeight('');
-    setQuickIntAdj('Interior (Heated)');
+    setQuickIntWidth(''); setQuickIntHeight(''); setQuickIntAdj('Interior (Heated)');
   }
 
   // Linking to Rooms page
@@ -212,7 +198,6 @@ export default function RoomElementsPage(): React.JSX.Element {
     const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const fromQuery = q ? q.get('roomId') : null;
 
-    // load Rooms list (best-effort across common shapes/keys)
     const loaded: Array<{ id: string; name: string; zoneId?: string }> = [];
     for (const key of LS_ROOMS_KEYS) {
       const raw = readJSON<any>(key);
@@ -298,7 +283,7 @@ export default function RoomElementsPage(): React.JSX.Element {
   }));
   const addVent = () => setRoom((r) => ({ ...r, ventilation: [...r.ventilation, { id: uid(), type: 'trickle_vent', overrideFlow: '', notes: '' }] }));
 
-  /* -------------------- Updaters (with numeric guarding) -------------------- */
+  /* -------------------- Updaters -------------------- */
   const updateWall = (i: number, patch: Partial<Wall>) =>
     setRoom((r) => ({
       ...r,
@@ -353,8 +338,7 @@ export default function RoomElementsPage(): React.JSX.Element {
 
   const onSaveAndContinue = () => {
     exportJSON();
-    // go to rooms (kept as-is); change here if you want a different next step
-    router.push('/rooms/');
+    router.push(`${BP}/rooms/`);
   };
 
   /* -------------------- Derived totals -------------------- */
@@ -419,15 +403,8 @@ export default function RoomElementsPage(): React.JSX.Element {
   return (
     <main style={wrap}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {/* Back to Building Elements via router (basePath-aware) */}
-        <button
-          type="button"
-          onClick={() => router.push('/building-elements/')}
-          style={backLink}
-          aria-label="Back"
-        >
-          ◀
-        </button>
+        {/* Back to Elements (basePath-aware) */}
+        <button type="button" onClick={goElements} style={backLink} aria-label="Back">◀</button>
         <h1 style={title}>{activeRoom?.name || room.name}</h1>
       </div>
 
@@ -726,7 +703,6 @@ export default function RoomElementsPage(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Results sidebar */}
         <ResultsCard
           title="Room Heat Loss"
           rows={[
@@ -742,14 +718,7 @@ export default function RoomElementsPage(): React.JSX.Element {
 
       {/* Footer nav */}
       <div style={footerNav}>
-        {/* Back to Building Elements via router */}
-        <button
-          type="button"
-          onClick={() => router.push('/building-elements/')}
-          style={btnGhost}
-        >
-          ◀ Back
-        </button>
+        <button type="button" onClick={goElements} style={btnGhost}>◀ Back</button>
         <div style={{ flex: 1 }} />
         <button style={btnPrimary} onClick={onSaveAndContinue}>Save & Continue ▶</button>
       </div>
@@ -848,8 +817,6 @@ function clean<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
   });
   return out as Partial<T>;
 }
-
-// Like clean(), but clamps numeric-ish fields to >= 0 and preserves '' for cleared inputs
 function cleanNumberPatch<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
   const out: Record<string, any> = {};
   Object.keys(patch).forEach((k) => {
