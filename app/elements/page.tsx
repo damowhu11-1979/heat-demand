@@ -900,7 +900,13 @@ const h3: React.CSSProperties = { fontSize: 16, margin: '10px 0 6px' };
 const mutedText: React.CSSProperties = { color: '#666', fontSize: 13, marginBottom: 12 };
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 };
-const row: React.CSSProperties = { display: 'flex', gap: 8, padding: '8px 4px', alignItems: 'center', borderBottom: '1px solid '#f2f2f2'" as any }; // slight TS appeasement
+const row: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  padding: '8px 4px',
+  alignItems: 'center',
+  borderBottom: '1px solid #f2f2f2',
+};
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box' };
 const primaryBtn: React.CSSProperties = { background: '#111', color: '#fff', border: '1px solid #111', padding: '10px 16px', borderRadius: 12, cursor: 'pointer' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #ddd', padding: '10px 16px', borderRadius: 12, cursor: 'pointer' };
