@@ -7,10 +7,9 @@ import Link from 'next/link';
    Elements Page (Walls, Floors, Ceilings, Doors, Windows)
    - Safe storage w/ in-memory fallback
    - Guard JSON parsing & bad values
-   - No duplicate declarations / clean single default export
    - External insulation option on walls with U-value recalculation
    - Known-U flags for ground contact (walls/floors) + UI fixes
-   - Removed hook call in JSX props (WallSearchDialog rows)
+   - Auto-naming: "<Category Label> N"
    - Tiny self-tests (at module scope)
 ============================================================================= */
 
@@ -80,8 +79,6 @@ function writeJSON(k: string, v: unknown) {
 
 /******************************** Types ********************************/
 
-type SectionKey = 'walls' | 'floors' | 'ceilings' | 'doors' | 'windows';
-
 type AgeBand =
   | 'pre-1900' | '1900-1929' | '1930-1949' | '1950-1966'
   | '1967-1975' | '1976-1982' | '1983-1990' | '1991-1995'
@@ -89,7 +86,6 @@ type AgeBand =
 
 type WallCategory = 'External' | 'Internal' | 'Party' | 'Known U-Value';
 type FloorCategory = 'ground-unknown' | 'ground-known' | 'exposed' | 'internal' | 'party' | 'known-u';
-
 type CeilingCategory = 'external-roof' | 'internal' | 'party' | 'known-u';
 type DoorCategory = 'external' | 'internal' | 'known-u';
 type WindowCategory = 'external' | 'internal' | 'known-u';
@@ -98,14 +94,12 @@ interface WallForm {
   category: WallCategory;
   name: string;
   ageBand: AgeBand | '';
-  construction: string; // e.g., Cavity (Filled), Solid Brick etc.
+  construction: string;
   uValue?: number | '';
-  // External insulation (optional)
   extInsulated?: boolean;
   extInsulThk?: number | '';
   extInsulMat?: keyof typeof INSULATION_LAMBDA | '';
-  // NEW: for Known-U walls, indicates input U already includes ground (basement) effects
-  knownUGroundContact?: boolean;
+  knownUGroundContact?: boolean; // Known-U walls only
 }
 
 interface FloorForm {
@@ -114,7 +108,7 @@ interface FloorForm {
   construction: 'solid' | 'suspended';
   insulThk?: number | '';
   uValue?: number | '';
-  groundContactAdjust?: boolean; // when true, U already includes ground for solid floors
+  groundContactAdjust?: boolean; // Known-U solid floors only
   includesPsi?: boolean; // cosmetic flag only
 }
 
@@ -230,7 +224,6 @@ function suggestWallUValue(f: WallForm): number | null {
   const table = WALL_U_BY_AGE[f.ageBand as Exclude<AgeBand, ''>];
   const base = table?.[f.construction];
   if (typeof base !== 'number') return null;
-  // External insulation adjustment (simple series R approach; ignores bridging)
   if (
     f.extInsulated && typeof f.extInsulThk === 'number' && f.extInsulThk > 0 &&
     f.extInsulMat && INSULATION_LAMBDA[f.extInsulMat as keyof typeof INSULATION_LAMBDA]
@@ -285,6 +278,46 @@ function wallLookupRows(): Array<{ age: AgeBand; cons: string; u: number }>{
   return rows;
 }
 
+/*************************** Auto-naming helpers ***************************/
+const WALL_LABEL: Record<WallCategory, string> = {
+  'External': 'External Wall',
+  'Internal': 'Internal Wall',
+  'Party': 'Party Wall',
+  'Known U-Value': 'Known U-Value Wall',
+};
+const FLOOR_LABEL: Record<FloorCategory, string> = {
+  'ground-known': 'Ground Floor',
+  'ground-unknown': 'Ground Floor',
+  'exposed': 'Exposed Floor',
+  'internal': 'Internal Floor',
+  'party': 'Party Floor',
+  'known-u': 'Known U-Value Floor',
+};
+const CEILING_LABEL: Record<CeilingCategory, string> = {
+  'external-roof': 'External Roof',
+  'internal': 'Internal Ceiling',
+  'party': 'Party Ceiling',
+  'known-u': 'Known U-Value Ceiling',
+};
+const DOOR_LABEL: Record<DoorCategory, string> = {
+  'external': 'External Door',
+  'internal': 'Internal Door',
+  'known-u': 'Known U-Value Door',
+};
+const WINDOW_LABEL: Record<WindowCategory, string> = {
+  'external': 'External Window',
+  'internal': 'Internal Window',
+  'known-u': 'Known U-Value Window',
+};
+function nextOrdinalName<T extends { category: any }>(
+  items: ReadonlyArray<T>,
+  category: T['category'],
+  label: string
+): string {
+  const count = items.filter(x => x.category === category).length + 1;
+  return `${label} ${count}`;
+}
+
 /************************* Local Clear Data Button *************************/
 function ClearDataButton({ onClearState }: { onClearState?: () => void }): React.JSX.Element {
   const handleClick = () => {
@@ -319,7 +352,7 @@ export default function ElementsPage(): React.JSX.Element {
   /* ------------------------------ Walls ------------------------------ */
   const [wForm, setWForm] = useState<WallForm>({
     category: 'External',
-    name: 'External Wall 1',
+    name: nextOrdinalName<{category: WallCategory}>([], 'External', WALL_LABEL['External']),
     ageBand: defaultAgeBand,
     construction: '',
     uValue: '',
@@ -334,10 +367,8 @@ export default function ElementsPage(): React.JSX.Element {
   function addWall() {
     setModel((m) => ({ ...m, walls: [...m.walls, wForm] }));
     setWForm({
-      category: wForm.category,
-      name: 'External Wall ' + (model.walls.length + 2),
-      ageBand: defaultAgeBand,
-      construction: '',
+      ...wForm,
+      name: nextOrdinalName(model.walls.concat([wForm]), wForm.category, WALL_LABEL[wForm.category]),
       uValue: '',
       extInsulated: false,
       extInsulThk: '',
@@ -349,7 +380,7 @@ export default function ElementsPage(): React.JSX.Element {
   /* ------------------------------ Floors ----------------------------- */
   const [fForm, setFForm] = useState<FloorForm>({
     category: 'ground-known',
-    name: 'Ground Floor 1',
+    name: nextOrdinalName<{category: FloorCategory}>([], 'ground-known', FLOOR_LABEL['ground-known']),
     construction: 'suspended',
     insulThk: 0,
     uValue: '',
@@ -359,42 +390,108 @@ export default function ElementsPage(): React.JSX.Element {
   const fSuggestion = suggestFloorUValue(fForm);
   function addFloor() {
     setModel((m) => ({ ...m, floors: [...m.floors, fForm] }));
-    setFForm({ ...fForm, name: 'Ground Floor ' + (model.floors.length + 2) });
+    setFForm({
+      ...fForm,
+      name: nextOrdinalName(model.floors.concat([fForm]), fForm.category, FLOOR_LABEL[fForm.category]),
+    });
   }
 
   /* ------------------------------ Ceilings --------------------------- */
-  const [cForm, setCForm] = useState<CeilingForm>({ category: 'external-roof', name: 'External Roof 1', roofType: 'pitched', insulThk: 0, uValue: '' });
+  const [cForm, setCForm] = useState<CeilingForm>({
+    category: 'external-roof',
+    name: nextOrdinalName<{category: CeilingCategory}>([], 'external-roof', CEILING_LABEL['external-roof']),
+    roofType: 'pitched',
+    insulThk: 0,
+    uValue: '',
+  });
   const cSuggestion = suggestCeilingUValue(cForm);
   function addCeiling() {
     setModel((m) => ({ ...m, ceilings: [...m.ceilings, cForm] }));
-    setCForm({ ...cForm, name: 'External Roof ' + (model.ceilings.length + 2) });
+    setCForm({
+      ...cForm,
+      name: nextOrdinalName(model.ceilings.concat([cForm]), cForm.category, CEILING_LABEL[cForm.category]),
+    });
   }
 
   /* ------------------------------ Doors ------------------------------ */
-  const [dForm, setDForm] = useState<DoorForm>({ category: 'external', name: 'External Door 1', ageBand: defaultAgeBand, uValue: '' });
+  const [dForm, setDForm] = useState<DoorForm>({
+    category: 'external',
+    name: nextOrdinalName<{category: DoorCategory}>([], 'external', DOOR_LABEL['external']),
+    ageBand: defaultAgeBand,
+    uValue: '',
+  });
   const dSuggestion = suggestDoorUValue(dForm);
   function addDoor() {
     setModel((m) => ({ ...m, doors: [...m.doors, dForm] }));
-    setDForm({ ...dForm, name: (dForm.category === 'external' ? 'External Door ' : 'Internal Door ') + (model.doors.length + 2) });
+    setDForm({
+      ...dForm,
+      name: nextOrdinalName(model.doors.concat([dForm]), dForm.category, DOOR_LABEL[dForm.category]),
+    });
   }
 
   /* ------------------------------ Windows ---------------------------- */
-  const [winForm, setWinForm] = useState<WindowForm>({ category: 'external', name: 'External Window 1', glazingType: '', frameType: '', ageBand: defaultAgeBand, uValue: '' });
+  const [winForm, setWinForm] = useState<WindowForm>({
+    category: 'external',
+    name: nextOrdinalName<{category: WindowCategory}>([], 'external', WINDOW_LABEL['external']),
+    glazingType: '',
+    frameType: '',
+    ageBand: defaultAgeBand,
+    uValue: '',
+  });
   const winSuggestion = suggestWindowUValue(winForm);
   function addWindow() {
     setModel((m) => ({ ...m, windows: [...m.windows, winForm] }));
-    setWinForm({ ...winForm, name: (winForm.category === 'external' ? 'External Window ' : 'Internal Window ') + (model.windows.length + 2) });
+    setWinForm({
+      ...winForm,
+      name: nextOrdinalName(model.windows.concat([winForm]), winForm.category, WINDOW_LABEL[winForm.category]),
+    });
   }
 
   function resetAll() {
     try { const s = getStorage(); s.removeItem(LS_KEY); } catch {}
     const empty: SavedModel = { walls: [], floors: [], ceilings: [], doors: [], windows: [] };
     setModel(empty);
-    setWForm({ category: 'External', name: 'External Wall 1', ageBand: defaultAgeBand, construction: '', uValue: '', extInsulated: false, extInsulThk: '', extInsulMat: '', knownUGroundContact: false });
-    setFForm({ category: 'ground-known', name: 'Ground Floor 1', construction: 'suspended', insulThk: 0, uValue: '', groundContactAdjust: false, includesPsi: false });
-    setCForm({ category: 'external-roof', name: 'External Roof 1', roofType: 'pitched', insulThk: 0, uValue: '' });
-    setDForm({ category: 'external', name: 'External Door 1', ageBand: defaultAgeBand, uValue: '' });
-    setWinForm({ category: 'external', name: 'External Window 1', glazingType: '', frameType: '', ageBand: defaultAgeBand, uValue: '' });
+    setWForm({
+      category: 'External',
+      name: nextOrdinalName(empty.walls, 'External', WALL_LABEL['External']),
+      ageBand: defaultAgeBand,
+      construction: '',
+      uValue: '',
+      extInsulated: false,
+      extInsulThk: '',
+      extInsulMat: '',
+      knownUGroundContact: false,
+    });
+    setFForm({
+      category: 'ground-known',
+      name: nextOrdinalName(empty.floors, 'ground-known', FLOOR_LABEL['ground-known']),
+      construction: 'suspended',
+      insulThk: 0,
+      uValue: '',
+      groundContactAdjust: false,
+      includesPsi: false,
+    });
+    setCForm({
+      category: 'external-roof',
+      name: nextOrdinalName(empty.ceilings, 'external-roof', CEILING_LABEL['external-roof']),
+      roofType: 'pitched',
+      insulThk: 0,
+      uValue: '',
+    });
+    setDForm({
+      category: 'external',
+      name: nextOrdinalName(empty.doors, 'external', DOOR_LABEL['external']),
+      ageBand: defaultAgeBand,
+      uValue: '',
+    });
+    setWinForm({
+      category: 'external',
+      name: nextOrdinalName(empty.windows, 'external', WINDOW_LABEL['external']),
+      glazingType: '',
+      frameType: '',
+      ageBand: defaultAgeBand,
+      uValue: '',
+    });
   }
 
   /* ------------------------------ Render ----------------------------- */
@@ -414,7 +511,17 @@ export default function ElementsPage(): React.JSX.Element {
         <div style={grid2}>
           <div>
             <Label>Wall Category *</Label>
-            <Select value={wForm.category} onChange={(e) => setWForm({ ...wForm, category: e.target.value as WallCategory })}>
+            <Select
+              value={wForm.category}
+              onChange={(e) => {
+                const cat = e.target.value as WallCategory;
+                setWForm({
+                  ...wForm,
+                  category: cat,
+                  name: nextOrdinalName(model.walls, cat, WALL_LABEL[cat]),
+                });
+              }}
+            >
               <option value="External">External Wall</option>
               <option value="Internal">Internal Wall</option>
               <option value="Party">Party Wall</option>
@@ -515,18 +622,12 @@ export default function ElementsPage(): React.JSX.Element {
         </div>
 
         {showWallSearch && (
-  <>
-    {/* fixed: no hook call inside JSX */}
-    <WallSearchDialog
-      rows={wallLookup}
-      onClose={() => setShowWallSearch(false)}
-      onPick={(row) => {
-        setWForm({ ...wForm, ageBand: row.age, construction: row.cons });
-        setShowWallSearch(false);
-      }}
-    />
-  </>
-)}
+          <WallSearchDialog
+            rows={wallLookup}
+            onClose={() => setShowWallSearch(false)}
+            onPick={(row) => { setWForm({ ...wForm, ageBand: row.age, construction: row.cons }); setShowWallSearch(false); }}
+          />
+        )}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
           <button style={primaryBtn} onClick={addWall}>Save Wall Type</button>
@@ -560,7 +661,17 @@ export default function ElementsPage(): React.JSX.Element {
         <div style={grid2}>
           <div>
             <Label>Floor Category *</Label>
-            <Select value={fForm.category} onChange={(e) => setFForm({ ...fForm, category: e.target.value as FloorCategory })}>
+            <Select
+              value={fForm.category}
+              onChange={(e) => {
+                const cat = e.target.value as FloorCategory;
+                setFForm({
+                  ...fForm,
+                  category: cat,
+                  name: nextOrdinalName(model.floors, cat, FLOOR_LABEL[cat]),
+                });
+              }}
+            >
               <option value="ground-known">Ground Floor (known insulation)</option>
               <option value="exposed">Exposed Floor</option>
               <option value="internal">Internal Floor</option>
@@ -665,7 +776,17 @@ export default function ElementsPage(): React.JSX.Element {
         <div style={grid2}>
           <div>
             <Label>Ceiling Category *</Label>
-            <Select value={cForm.category} onChange={(e) => setCForm({ ...cForm, category: e.target.value as CeilingCategory })}>
+            <Select
+              value={cForm.category}
+              onChange={(e) => {
+                const cat = e.target.value as CeilingCategory;
+                setCForm({
+                  ...cForm,
+                  category: cat,
+                  name: nextOrdinalName(model.ceilings, cat, CEILING_LABEL[cat]),
+                });
+              }}
+            >
               <option value="external-roof">External Roof</option>
               <option value="internal">Internal Ceiling</option>
               <option value="party">Party Ceiling</option>
@@ -746,7 +867,17 @@ export default function ElementsPage(): React.JSX.Element {
         <div style={grid2}>
           <div>
             <Label>Door Category *</Label>
-            <Select value={dForm.category} onChange={(e) => setDForm({ ...dForm, category: e.target.value as DoorCategory })}>
+            <Select
+              value={dForm.category}
+              onChange={(e) => {
+                const cat = e.target.value as DoorCategory;
+                setDForm({
+                  ...dForm,
+                  category: cat,
+                  name: nextOrdinalName(model.doors, cat, DOOR_LABEL[cat]),
+                });
+              }}
+            >
               <option value="external">External Door</option>
               <option value="internal">Internal Door</option>
               <option value="known-u">Known U-Value</option>
@@ -805,7 +936,17 @@ export default function ElementsPage(): React.JSX.Element {
         <div style={grid2}>
           <div>
             <Label>Window Category *</Label>
-            <Select value={winForm.category} onChange={(e) => setWinForm({ ...winForm, category: e.target.value as WindowCategory })}>
+            <Select
+              value={winForm.category}
+              onChange={(e) => {
+                const cat = e.target.value as WindowCategory;
+                setWinForm({
+                  ...winForm,
+                  category: cat,
+                  name: nextOrdinalName(model.windows, cat, WINDOW_LABEL[cat]),
+                });
+              }}
+            >
               <option value="external">External Window</option>
               <option value="internal">Internal Window</option>
               <option value="known-u">Known U-Value</option>
@@ -900,13 +1041,7 @@ const h3: React.CSSProperties = { fontSize: 16, margin: '10px 0 6px' };
 const mutedText: React.CSSProperties = { color: '#666', fontSize: 13, marginBottom: 12 };
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 };
-const row: React.CSSProperties = {
-  display: 'flex',
-  gap: 8,
-  padding: '8px 4px',
-  alignItems: 'center',
-  borderBottom: '1px solid #f2f2f2',
-};
+const row: React.CSSProperties = { display: 'flex', gap: 8, padding: '8px 4px', alignItems: 'center', borderBottom: '1px solid #f2f2f2' };
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box' };
 const primaryBtn: React.CSSProperties = { background: '#111', color: '#fff', border: '1px solid #111', padding: '10px 16px', borderRadius: 12, cursor: 'pointer' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #ddd', padding: '10px 16px', borderRadius: 12, cursor: 'pointer' };
@@ -934,7 +1069,10 @@ function prettyFloorCategory(c: FloorCategory): string {
 }
 
 /****************************** Search Dialog ******************************/
-function WallSearchDialog({ rows, onClose, onPick }: { rows: Array<{ age: AgeBand; cons: string; u: number }>; onClose: () => void; onPick: (row: { age: AgeBand; cons: string; u: number }) => void; }){
+function WallSearchDialog(
+  { rows, onClose, onPick }:
+  { rows: Array<{ age: AgeBand; cons: string; u: number }>; onClose: () => void; onPick: (row: { age: AgeBand; cons: string; u: number }) => void; }
+){
   const [q, setQ] = useState('');
   const filtered = rows.filter(r => {
     const s = `${r.age} ${r.cons} ${r.u}`.toLowerCase();
