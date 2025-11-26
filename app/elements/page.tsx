@@ -5,11 +5,13 @@ import Link from 'next/link';
 
 /* =============================================================================
    Elements Page (Walls, Floors, Ceilings, Doors, Windows)
-   - Fix: eliminate any possibility of `null` storage leaking to callers
-   - Fix: guard JSON parsing & bad values ('null', 'undefined', malformed)
-   - Fix: no duplicate declarations / clean single default export
-   - Adds: external insulation option on walls with U-value recalculation
-   - Adds: tiny self-tests so CI catches regressions
+   - Safe storage w/ in-memory fallback
+   - Guard JSON parsing & bad values
+   - No duplicate declarations / clean single default export
+   - External insulation option on walls with U-value recalculation
+   - Known-U flags for ground contact (walls/floors) + UI fixes
+   - Removed hook call in JSX props (WallSearchDialog rows)
+   - Tiny self-tests (at module scope)
 ============================================================================= */
 
 /**************************** Safe Persistence ****************************/
@@ -33,18 +35,17 @@ const memoryStorage: SafeStorage = (() => {
 })();
 
 function getStorage(): SafeStorage {
-  // Never return null; always return an object that implements SafeStorage
   if (typeof globalThis === 'undefined') return memoryStorage;
   try {
     const w: any = globalThis as any;
     if (!('localStorage' in w)) return memoryStorage;
-    const s: Storage = w.localStorage as Storage; // may throw on access in some sandboxes
+    const s: Storage = w.localStorage as Storage;
     try {
       const t = '__probe__';
       s.setItem(t, '1');
       s.removeItem(t);
     } catch {
-      return memoryStorage; // access blocked (Safari private, sandbox, etc.)
+      return memoryStorage;
     }
     return {
       getItem: (k: string) => {
@@ -66,7 +67,7 @@ function readJSON<T>(k: string): T | null {
     const parsed = JSON.parse(raw);
     return parsed == null ? null : (parsed as T);
   } catch {
-    return null; // malformed JSON or access errors -> treat as missing
+    return null;
   }
 }
 function writeJSON(k: string, v: unknown) {
@@ -103,7 +104,8 @@ interface WallForm {
   extInsulated?: boolean;
   extInsulThk?: number | '';
   extInsulMat?: keyof typeof INSULATION_LAMBDA | '';
-   
+  // NEW: for Known-U walls, indicates input U already includes ground (basement) effects
+  knownUGroundContact?: boolean;
 }
 
 interface FloorForm {
@@ -112,7 +114,7 @@ interface FloorForm {
   construction: 'solid' | 'suspended';
   insulThk?: number | '';
   uValue?: number | '';
-  groundContactAdjust?: boolean; // cosmetic flag only
+  groundContactAdjust?: boolean; // when true, U already includes ground for solid floors
   includesPsi?: boolean; // cosmetic flag only
 }
 
@@ -263,7 +265,7 @@ function suggestCeilingUValue(c: CeilingForm): number | null {
 function suggestDoorUValue(d: DoorForm): number | null {
   if (d.category === 'known-u') return typeof d.uValue === 'number' ? d.uValue : null;
   if (d.category === 'internal') return 0;
-  return null; // simple MVP until style table added
+  return null;
 }
 function suggestWindowUValue(w: WindowForm): number | null {
   if (w.category === 'known-u') return typeof w.uValue === 'number' ? w.uValue : null;
@@ -296,8 +298,6 @@ function ClearDataButton({ onClearState }: { onClearState?: () => void }): React
   );
 }
 
-/* *************************** Pretty labels ***************************/
-
 /********************************* UI *********************************/
 export default function ElementsPage(): React.JSX.Element {
   const [model, setModel] = useState<SavedModel>({ walls: [], floors: [], ceilings: [], doors: [], windows: [] });
@@ -317,17 +317,45 @@ export default function ElementsPage(): React.JSX.Element {
   }, []);
 
   /* ------------------------------ Walls ------------------------------ */
-  const [wForm, setWForm] = useState<WallForm>({ category: 'External', name: 'External Wall 1', ageBand: defaultAgeBand, construction: '', uValue: '', extInsulated: false, extInsulThk: '', extInsulMat: '' });
+  const [wForm, setWForm] = useState<WallForm>({
+    category: 'External',
+    name: 'External Wall 1',
+    ageBand: defaultAgeBand,
+    construction: '',
+    uValue: '',
+    extInsulated: false,
+    extInsulThk: '',
+    extInsulMat: '',
+    knownUGroundContact: false,
+  });
   const wSuggestion = suggestWallUValue(wForm);
   const [showWallSearch, setShowWallSearch] = useState(false);
   const wallLookup = useMemo(() => wallLookupRows(), []);
   function addWall() {
     setModel((m) => ({ ...m, walls: [...m.walls, wForm] }));
-    setWForm({ category: wForm.category, name: 'External Wall ' + (model.walls.length + 2), ageBand: defaultAgeBand, construction: '', uValue: '', extInsulated: false, extInsulThk: '', extInsulMat: '' });
+    setWForm({
+      category: wForm.category,
+      name: 'External Wall ' + (model.walls.length + 2),
+      ageBand: defaultAgeBand,
+      construction: '',
+      uValue: '',
+      extInsulated: false,
+      extInsulThk: '',
+      extInsulMat: '',
+      knownUGroundContact: false,
+    });
   }
 
   /* ------------------------------ Floors ----------------------------- */
-  const [fForm, setFForm] = useState<FloorForm>({ category: 'ground-known', name: 'Ground Floor 1', construction: 'suspended', insulThk: 0, uValue: '', groundContactAdjust: false, includesPsi: false });
+  const [fForm, setFForm] = useState<FloorForm>({
+    category: 'ground-known',
+    name: 'Ground Floor 1',
+    construction: 'suspended',
+    insulThk: 0,
+    uValue: '',
+    groundContactAdjust: false,
+    includesPsi: false,
+  });
   const fSuggestion = suggestFloorUValue(fForm);
   function addFloor() {
     setModel((m) => ({ ...m, floors: [...m.floors, fForm] }));
@@ -362,7 +390,7 @@ export default function ElementsPage(): React.JSX.Element {
     try { const s = getStorage(); s.removeItem(LS_KEY); } catch {}
     const empty: SavedModel = { walls: [], floors: [], ceilings: [], doors: [], windows: [] };
     setModel(empty);
-    setWForm({ category: 'External', name: 'External Wall 1', ageBand: defaultAgeBand, construction: '', uValue: '', extInsulated: false, extInsulThk: '', extInsulMat: '' });
+    setWForm({ category: 'External', name: 'External Wall 1', ageBand: defaultAgeBand, construction: '', uValue: '', extInsulated: false, extInsulThk: '', extInsulMat: '', knownUGroundContact: false });
     setFForm({ category: 'ground-known', name: 'Ground Floor 1', construction: 'suspended', insulThk: 0, uValue: '', groundContactAdjust: false, includesPsi: false });
     setCForm({ category: 'external-roof', name: 'External Roof 1', roofType: 'pitched', insulThk: 0, uValue: '' });
     setDForm({ category: 'external', name: 'External Door 1', ageBand: defaultAgeBand, uValue: '' });
@@ -422,28 +450,29 @@ export default function ElementsPage(): React.JSX.Element {
             </>
           )}
 
-        {wForm.category === 'Known U-Value' && (
-  <div>
-    <Label>U-Value *</Label>
-    <Input
-      type="number"
-      step="0.01"
-      value={wForm.uValue ?? ''}
-      onChange={(e) => {
-        const n = Number(e.target.value);
-        setWForm({ ...wForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : wForm.uValue) });
-      }}
-    />
-    <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:12, color:'#555', marginTop:6 }}>
-      <input
-        type="checkbox"
-        checked={!!wForm.knownUGroundContact}
-        onChange={(e) => setWForm({ ...wForm, knownUGroundContact: e.target.checked })}
-      />
-      U-value accounts for ground contact (basement walls only)
-    </label>
-  </div>
-)}
+          {wForm.category === 'Known U-Value' && (
+            <div>
+              <Label>U-Value *</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={wForm.uValue ?? ''}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setWForm({ ...wForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : wForm.uValue) });
+                }}
+              />
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#555', marginTop: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={!!wForm.knownUGroundContact}
+                  onChange={(e) => setWForm({ ...wForm, knownUGroundContact: e.target.checked })}
+                />
+                U-value accounts for ground contact (basement walls only)
+              </label>
+            </div>
+          )}
+        </div>
 
         {/* External Insulation controls */}
         {wForm.category !== 'Known U-Value' && (
@@ -456,7 +485,14 @@ export default function ElementsPage(): React.JSX.Element {
               <div />
               <div>
                 <Label>Insulation Thickness (mm)</Label>
-                <Input type="number" value={wForm.extInsulThk ?? ''} onChange={(e) => setWForm({ ...wForm, extInsulThk: e.target.value === '' ? '' : Number(e.target.value) })} />
+                <Input
+                  type="number"
+                  value={wForm.extInsulThk ?? ''}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setWForm({ ...wForm, extInsulThk: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : wForm.extInsulThk) });
+                  }}
+                />
               </div>
               <div>
                 <Label>Insulation Material</Label>
@@ -480,7 +516,7 @@ export default function ElementsPage(): React.JSX.Element {
 
         {showWallSearch && (
           <WallSearchDialog
-            rows={useMemo(() => wallLookup, [wallLookup])}
+            rows={wallLookup}  {/* fixed: no hook call inside JSX */}
             onClose={() => setShowWallSearch(false)}
             onPick={(row) => { setWForm({ ...wForm, ageBand: row.age, construction: row.cons }); setShowWallSearch(false); }}
           />
@@ -498,7 +534,9 @@ export default function ElementsPage(): React.JSX.Element {
                 <div style={{ flex: 2 }}>{w.name}</div>
                 <div style={{ flex: 1 }}>{w.category}</div>
                 <div style={{ flex: 2 }}>
-                  {w.category === 'Known U-Value' ? `U=${w.uValue}` : `${w.ageBand || '—'} · ${w.construction || '—'} (≈ ${suggestWallUValue(w) ?? '—'})`}
+                  {w.category === 'Known U-Value'
+                    ? `U=${w.uValue}${w.knownUGroundContact ? ' (incl. ground)' : ''}`
+                    : `${w.ageBand || '—'} · ${w.construction || '—'} (≈ ${suggestWallUValue(w) ?? '—'})`}
                 </div>
                 <div>
                   <button style={linkDanger} onClick={() => setModel((m) => ({ ...m, walls: m.walls.filter((_, idx) => idx !== i) }))}>Remove</button>
@@ -531,7 +569,8 @@ export default function ElementsPage(): React.JSX.Element {
             <Input value={fForm.name} onChange={(e) => setFForm({ ...fForm, name: e.target.value })} />
           </div>
 
-          {fForm.category !== 'known-u' && fForm.category !== 'internal' && (
+          {/* Always show construction unless internal; show thickness only for non-known-u */}
+          {fForm.category !== 'internal' && (
             <>
               <div>
                 <Label>Floor Construction *</Label>
@@ -540,47 +579,48 @@ export default function ElementsPage(): React.JSX.Element {
                   <option value="suspended">Suspended (timber/chipboard/beam & block)</option>
                 </Select>
               </div>
-              <div>
-                <Label>Insulation Thickness (mm)</Label>
-                <Input type="number" value={fForm.insulThk ?? ''} onChange={(e) => setFForm({ ...fForm, insulThk: e.target.value === '' ? '' : Number(e.target.value) })} />
-              </div>
+              {fForm.category !== 'known-u' && (
+                <div>
+                  <Label>Insulation Thickness (mm)</Label>
+                  <Input
+                    type="number"
+                    value={fForm.insulThk ?? ''}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      setFForm({ ...fForm, insulThk: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : fForm.insulThk) });
+                    }}
+                  />
+                </div>
+              )}
             </>
           )}
 
-      {fForm.category === 'known-u' && (
-  <div>
-    <Label>U-Value *</Label>
-    <Input
-      type="number"
-      step="0.01"
-      value={fForm.uValue ?? ''}
-      onChange={(e) => {
-        const n = Number(e.target.value);
-        setFForm({ ...fForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : fForm.uValue) });
-      }}
-    />
-    <div style={{ display:'flex', gap:12, marginTop:6 }}>
-      {fForm.construction === 'solid' && (
-        <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:12, color:'#555' }}>
-          <input
-            type="checkbox"
-            checked={!!fForm.groundContactAdjust}
-            onChange={(e) => setFForm({ ...fForm, groundContactAdjust: e.target.checked })}
-          />
-          U-value accounts for ground contact (solid floors only)
-        </label>
-      )}
-      <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:12, color:'#555' }}>
-        <input
-          type="checkbox"
-          checked={!!fForm.includesPsi}
-          onChange={(e) => setFForm({ ...fForm, includesPsi: e.target.checked })}
-        />
-        U-value includes thermal bridging factor
-      </label>
-    </div>
-  </div>
-)}
+          {fForm.category === 'known-u' && (
+            <div>
+              <Label>U-Value *</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={fForm.uValue ?? ''}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setFForm({ ...fForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : fForm.uValue) });
+                }}
+              />
+              <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                {fForm.construction === 'solid' && (
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#555' }}>
+                    <input type="checkbox" checked={!!fForm.groundContactAdjust} onChange={(e) => setFForm({ ...fForm, groundContactAdjust: e.target.checked })} />
+                    U-value accounts for ground contact (solid floors only)
+                  </label>
+                )}
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#555' }}>
+                  <input type="checkbox" checked={!!fForm.includesPsi} onChange={(e) => setFForm({ ...fForm, includesPsi: e.target.checked })} />
+                  U-value includes thermal bridging factor
+                </label>
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
@@ -599,7 +639,9 @@ export default function ElementsPage(): React.JSX.Element {
                 <div style={{ flex: 2 }}>{f.name}</div>
                 <div style={{ flex: 1 }}>{prettyFloorCategory(f.category)}</div>
                 <div style={{ flex: 2 }}>
-                  {f.category === 'known-u' ? `U=${f.uValue}` : `${f.construction}${typeof f.insulThk === 'number' ? `, ${f.insulThk}mm` : ''} (≈ ${suggestFloorUValue(f) ?? '—'})`}
+                  {f.category === 'known-u'
+                    ? `U=${f.uValue}${f.construction === 'solid' ? (f.groundContactAdjust ? ' (incl. ground)' : '') : ''}`
+                    : `${f.construction}${typeof f.insulThk === 'number' ? `, ${f.insulThk}mm` : ''} (≈ ${suggestFloorUValue(f) ?? '—'})`}
                 </div>
                 <div>
                   <button style={linkDanger} onClick={() => setModel((m) => ({ ...m, floors: m.floors.filter((_, idx) => idx !== i) }))}>Remove</button>
@@ -640,14 +682,29 @@ export default function ElementsPage(): React.JSX.Element {
               </div>
               <div>
                 <Label>Insulation Thickness (mm)</Label>
-                <Input type="number" value={cForm.insulThk ?? ''} onChange={(e) => setCForm({ ...cForm, insulThk: e.target.value === '' ? '' : Number(e.target.value) })} />
+                <Input
+                  type="number"
+                  value={cForm.insulThk ?? ''}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setCForm({ ...cForm, insulThk: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : cForm.insulThk) });
+                  }}
+                />
               </div>
             </>
           )}
           {cForm.category === 'known-u' && (
             <div>
               <Label>U-Value *</Label>
-              <Input type="number" step="0.01" value={cForm.uValue ?? ''} onChange={(e) => setCForm({ ...cForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })} />
+              <Input
+                type="number"
+                step="0.01"
+                value={cForm.uValue ?? ''}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setCForm({ ...cForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : cForm.uValue) });
+                }}
+              />
             </div>
           )}
         </div>
@@ -705,7 +762,15 @@ export default function ElementsPage(): React.JSX.Element {
           {dForm.category === 'known-u' && (
             <div>
               <Label>U-Value *</Label>
-              <Input type="number" step="0.01" value={dForm.uValue ?? ''} onChange={(e) => setDForm({ ...dForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })} />
+              <Input
+                type="number"
+                step="0.01"
+                value={dForm.uValue ?? ''}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setDForm({ ...dForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : dForm.uValue) });
+                }}
+              />
             </div>
           )}
         </div>
@@ -776,7 +841,15 @@ export default function ElementsPage(): React.JSX.Element {
           {winForm.category === 'known-u' && (
             <div>
               <Label>U-Value *</Label>
-              <Input type="number" step="0.01" value={winForm.uValue ?? ''} onChange={(e) => setWinForm({ ...winForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })} />
+              <Input
+                type="number"
+                step="0.01"
+                value={winForm.uValue ?? ''}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setWinForm({ ...winForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : winForm.uValue) });
+                }}
+              />
             </div>
           )}
         </div>
@@ -821,7 +894,7 @@ const h3: React.CSSProperties = { fontSize: 16, margin: '10px 0 6px' };
 const mutedText: React.CSSProperties = { color: '#666', fontSize: 13, marginBottom: 12 };
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e6e6e6', borderRadius: 14, padding: 16 };
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 };
-const row: React.CSSProperties = { display: 'flex', gap: 8, padding: '8px 4px', alignItems: 'center', borderBottom: '1px solid #f2f2f2' };
+const row: React.CSSProperties = { display: 'flex', gap: 8, padding: '8px 4px', alignItems: 'center', borderBottom: '1px solid '#f2f2f2'" as any }; // slight TS appeasement
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd', outline: 'none', boxSizing: 'border-box' };
 const primaryBtn: React.CSSProperties = { background: '#111', color: '#fff', border: '1px solid #111', padding: '10px 16px', borderRadius: 12, cursor: 'pointer' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #ddd', padding: '10px 16px', borderRadius: 12, cursor: 'pointer' };
@@ -906,7 +979,6 @@ const dlgCard: React.CSSProperties = { width: 560, background: '#fff', border: '
     const su = suggestWallUValue(w);
     console.assert(typeof su === 'number' && su < 0.55, 'EWI should reduce U below base');
   } catch (e) {
-    // Never crash app due to tests
     console.warn('Dev tests skipped:', e);
   }
 })();
@@ -920,4 +992,3 @@ const dlgCard: React.CSSProperties = { width: 560, background: '#fff', border: '
     console.assert(prettyFloorCategory('ground-known').startsWith('Ground'), 'prettyFloorCategory ground-known label');
   } catch {}
 })();
-
