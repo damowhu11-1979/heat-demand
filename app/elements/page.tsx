@@ -103,6 +103,7 @@ interface WallForm {
   extInsulated?: boolean;
   extInsulThk?: number | '';
   extInsulMat?: keyof typeof INSULATION_LAMBDA | '';
+   
 }
 
 interface FloorForm {
@@ -421,13 +422,28 @@ export default function ElementsPage(): React.JSX.Element {
             </>
           )}
 
-          {wForm.category === 'Known U-Value' && (
-            <div>
-              <Label>U-Value *</Label>
-              <Input type="number" step="0.01" value={wForm.uValue ?? ''} onChange={(e) => setWForm({ ...wForm, uValue: e.target.value === '' ? '' : Number(e.target.value) })} />
-            </div>
-          )}
-        </div>
+        {wForm.category === 'Known U-Value' && (
+  <div>
+    <Label>U-Value *</Label>
+    <Input
+      type="number"
+      step="0.01"
+      value={wForm.uValue ?? ''}
+      onChange={(e) => {
+        const n = Number(e.target.value);
+        setWForm({ ...wForm, uValue: e.target.value === '' ? '' : (isFinite(n) && n >= 0 ? n : wForm.uValue) });
+      }}
+    />
+    <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:12, color:'#555', marginTop:6 }}>
+      <input
+        type="checkbox"
+        checked={!!wForm.knownUGroundContact}
+        onChange={(e) => setWForm({ ...wForm, knownUGroundContact: e.target.checked })}
+      />
+      U-value accounts for ground contact (basement walls only)
+    </label>
+  </div>
+)}
 
         {/* External Insulation controls */}
         {wForm.category !== 'Known U-Value' && (
