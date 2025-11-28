@@ -451,23 +451,7 @@ export default function RoomsPage(): React.JSX.Element {
                 />
               </div>
 
-              <div>
-                <Label>Internal Air Volume (m³)</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  value={form.internalAirVolume ?? ''}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      internalAirVolume: toNumberOr(e.target.value, form.internalAirVolume),
-                    })
-                  }
-                />
-              </div>
-            </div>
-
+            
             <div style={grid2}>
               <div>
                 <Label>Intermittent Heating (%)</Label>
