@@ -1,8 +1,7 @@
 // app/lib/age-bands.ts
-
 import type { AgeBand } from './vent-rates';
 
-/** The detailed labels you use across the app */
+/** The detailed labels you use across the app (UI + localStorage) */
 export type PropertyAgeBandLabel =
   | 'pre-1900' | '1900-1929' | '1930-1949' | '1950-1966'
   | '1967-1975' | '1976-1982' | '1983-1990' | '1991-1995'
@@ -16,7 +15,7 @@ export const PROPERTY_AGE_BANDS: PropertyAgeBandLabel[] = [
 
 /**
  * Mapping from detailed labels → calc tiers used by computeRoomLoss.
- * NOTE: If you later add a separate "2021+" label, map that to 'y2021_plus'.
+ * NOTE: If you later add a separate "2021+" detailed label, map that to 'y2021_plus'.
  */
 export const AGE_BAND_TO_TIER: Record<PropertyAgeBandLabel, AgeBand> = {
   'pre-1900': 'pre_2003',
@@ -30,8 +29,7 @@ export const AGE_BAND_TO_TIER: Record<PropertyAgeBandLabel, AgeBand> = {
   '1996-2002': 'pre_2003',
   '2003-2006': 'y2003_2010',
   '2007-2011': 'y2010_2021',
-  '2012-present': 'y2010_2021', // ← best default given your current UI
-  // If you add "2021+" later: '2021+': 'y2021_plus'
+  '2012-present': 'y2010_2021', // best fit given your current UI
 };
 
 /** Coerce any stored string to a valid PropertyAgeBandLabel (fallback sensible) */
