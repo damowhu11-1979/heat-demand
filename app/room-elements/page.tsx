@@ -967,12 +967,23 @@ const miniBtn: React.CSSProperties = {
   marginRight: 6,
 };
 
+const miniBtn: React.CSSProperties = {
+  background: '#fff',
+  color: '#111',
+  border: '1px solid #D1D5DB',
+  padding: '4px 8px',
+  borderRadius: 6,
+  cursor: 'pointer',
+  fontSize: 12,
+  marginRight: 6,
+};
+
 const miniDanger: React.CSSProperties = {
   ...miniBtn,
   color: '#b00020',
   border: '1px solid #f0b3bd',
 };
-const miniDanger: React.CSSProperties = { ...miniBtn, color: '#b00020', border: '1px solid #f0b3bd' } as React.CSSProperties;
+
 const footerNav: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, marginTop: 22 };
 const panel: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, background: '#fff', marginBottom: 12 };
 const help: React.CSSProperties = { color: '#666', fontSize: 12, marginTop: 6 };
