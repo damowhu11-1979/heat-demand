@@ -74,13 +74,19 @@
 
     <!-- Main content -->
     <main class="main">
-      <div class="topline">
-        <div>
-          <h1 class="title">Final Calculation</h1>
-          <div class="meta" id="metaDate"></div>
-        </div>
-        <img src="assets/logo.svg" class="brand" alt="Company logo" />
-      </div>
+   <div class="topline">
+  <div>
+    <h1 class="title">Final Calculation</h1>
+    <div class="meta" id="metaDate"></div>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:8px">
+    <img id="brandLogo" src="assets/logo.svg" class="brand" alt="Company logo" />
+    <input id="logoFile" type="file" accept="image/png,image/jpeg,image/svg+xml" style="display:none" />
+    <button id="btnLogoPick" type="button">Change logo</button>
+    <button id="btnLogoReset" type="button" title="Revert to default">Reset</button>
+  </div>
+</div>
 
       <div class="notice">
         <div style="font-size:18px;line-height:1">✓</div>
