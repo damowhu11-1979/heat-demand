@@ -956,16 +956,6 @@ const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, heigh
 const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
-const miniBtn: React.CSSProperties = {
-  background: '#fff',
-  color: '#111',
-  border: '1px solid #D1D5DB',
-  padding: '4px 8px',
-  borderRadius: 6,
-  cursor: 'pointer',
-  fontSize: 12,
-  marginRight: 6,
-};
 
 const miniBtn: React.CSSProperties = {
   background: '#fff',
