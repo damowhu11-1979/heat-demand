@@ -242,6 +242,130 @@ function basicsFromSourceRoom(r: Any): {
 }
 
 /* ============================================================================
+   ---- FINAL CALCULATION PAGE PAYLOAD HELPERS (NEW) ----
+============================================================================ */
+type FinalElAdj = 'external' | 'unheated' | 'ground' | 'internal_heated';
+function mapAdj(a: Adjacent): FinalElAdj {
+  switch (a) {
+    case 'Exterior': return 'external';
+    case 'Interior (Unheated)': return 'unheated';
+    case 'Ground': return 'ground';
+    default: return 'internal_heated';
+  }
+}
+function pushOpeningAsElement(
+  out: any[], _ownerName: string, adj: Adjacent, kind: 'window'|'door'|'roof_window', o: Opening
+){
+  const area_m2 = +(num(o.width) * num(o.height)).toFixed(2);
+  if (!area_m2) return;
+  out.push({
+    type: kind === 'door' ? 'door' : 'window',
+    adj: mapAdj(adj),
+    area_m2,
+    U_Wm2K: num(o.uValue),
+  });
+}
+function elementsFromRoom(r: RoomModel) {
+  const list: any[] = [];
+
+  // Walls (+ openings as separate elements)
+  r.walls.forEach(w => {
+    const gross = num(w.width) * num(w.height);
+    const openingsArea = (w.openings||[]).reduce((s,o)=> s + (num(o.width)*num(o.height)), 0);
+    const net = Math.max(gross - openingsArea, 0);
+    if (net) {
+      list.push({
+        type: 'wall',
+        adj: mapAdj(w.adjacent),
+        area_m2: +net.toFixed(2),
+        U_Wm2K: num(w.uValue),
+      });
+    }
+    (w.openings||[]).forEach(o => pushOpeningAsElement(list, w.name, w.adjacent, o.kind, o));
+  });
+
+  // Floors
+  r.floors.forEach(f => {
+    const A = +(num(f.width)*num(f.height)).toFixed(2);
+    if (!A) return;
+    list.push({
+      type: 'floor',
+      adj: mapAdj(f.adjacent),
+      area_m2: A,
+      U_Wm2K: num(f.uValue),
+    });
+  });
+
+  // Ceilings/Roofs (+ roof windows)
+  r.ceilings.forEach(c => {
+    const gross = num(c.width) * num(c.height);
+    const openingsArea = (c.openings||[]).reduce((s,o)=> s + (num(o.width)*num(o.height)), 0);
+    const net = Math.max(gross - openingsArea, 0);
+    if (net) {
+      list.push({
+        type: c.type === 'Roof' ? 'roof' : 'ceiling',
+        adj: mapAdj(c.adjacent),
+        area_m2: +net.toFixed(2),
+        U_Wm2K: num(c.uValue),
+      });
+    }
+    (c.openings||[]).forEach(o => pushOpeningAsElement(list, c.name, c.adjacent, 'roof_window', o));
+  });
+
+  return list;
+}
+function buildFinalPayloadFromStorage() {
+  const byRoom = readJSON<Record<string, RoomModel>>(LS_BYROOM_KEY) || {};
+  const meta   = readJSON<Record<string, { roomType?: RoomType; designTempC?: number }>>('mcs.room.meta.byRoom.v1') || {};
+  const rooms = Object.entries(byRoom).map(([id, r]) => ({
+    id,
+    name: r.name || id,
+    area_m2: +(num(r.length)*num(r.width)).toFixed(2),
+    volume_m3: +(num(r.length)*num(r.width)*num(r.height)).toFixed(1),
+    designTemp_C: typeof meta[id]?.designTempC === 'number' ? meta[id]!.designTempC! : 21,
+    elements: elementsFromRoom(r),
+  }));
+
+  // Design inputs – adjust keys if you have different storage locations
+  const S = getStorage();
+  const avgAnnual = num((S.getItem('mcs.design.avgAnnualExternalC') ?? '9.5'));
+  const designExt = num((S.getItem('mcs.design.designExternalC') ?? '-3'));
+  const avgInt    = num((S.getItem('mcs.design.avgInternalC') ?? '20'));
+  const hdd       = num((S.getItem('mcs.design.hdd') ?? '2500'));
+
+  const floorAreaTotal = rooms.reduce((s,r)=> s + (r.area_m2||0), 0);
+  const volumeTotal    = rooms.reduce((s,r)=> s + (r.volume_m3||0), 0);
+
+  const anyMVHR = Object.values(byRoom).some(r => (r.ventilation||[]).some(v => v.type === 'mvhr_supply' || v.type === 'mvhr_extract'));
+  const mvhrEta = num(S.getItem('mcs.vent.mvhr.eta') ?? '0.85');
+
+  return {
+    project: {
+      client: S.getItem('mcs.project.client') || 'Client',
+      siteAddress: S.getItem('mcs.project.address') || 'Address',
+      assessor: S.getItem('mcs.project.assessor') || 'Assessor',
+      methodVersion: 'MIS3005-D/EN12831-1:2017',
+      timestamp: new Date().toISOString(),
+    },
+    design: {
+      avgExternalAnnualTemp: avgAnnual,
+      designExternalTemp: designExt,
+      avgInternalTemp: avgInt,
+      heatingDegreeDays: hdd,
+    },
+    house: {
+      floorAreaTotal,
+      volumeTotal,
+      infiltrationRateACH: num(S.getItem('mcs.vent.infiltrationACH') ?? '0.5'),
+      mvhr: { isPresent: anyMVHR, supply_m3ph: undefined, extract_m3ph: undefined, efficiency: mvhrEta }
+    },
+    rooms,
+    gains_W: 0,
+    heatUpAllowance_pct: num(S.getItem('mcs.heatUpPct') ?? '0.10') || 0.10,
+  };
+}
+
+/* ============================================================================
    Component
 ============================================================================ */
 export default function RoomElementsPage(): React.JSX.Element {
@@ -456,13 +580,11 @@ export default function RoomElementsPage(): React.JSX.Element {
   /* -------------------- Heat Loss Results -------------------- */
   const OUTDOOR_C = -3;
 
-  // strictly a number for calc
   const displayVolume: number = useMemo(() => {
     const cand = override ? room.volumeOverride : null;
     return (typeof cand === 'number' && Number.isFinite(cand)) ? cand : autoVolume;
   }, [override, room.volumeOverride, autoVolume]);
 
-  // Indoor design temp: use imported value if provided, else default 21°C
   const indoorC = useMemo(() => {
     if (typeof designTempC === 'number' && Number.isFinite(designTempC) && designTempC > 0) return designTempC;
     return 21;
@@ -563,6 +685,16 @@ export default function RoomElementsPage(): React.JSX.Element {
   };
   const onSaveAndContinue = () => { exportJSON(); router.push(`${BP}/rooms/`); };
 
+  // ---- NEW: proceed to Final Calculation page ----
+  const onProceedToFinal = () => {
+    const payload = buildFinalPayloadFromStorage();
+    try { sessionStorage.setItem('heatCalc', JSON.stringify(payload)); } catch {}
+    if (typeof window !== 'undefined') {
+      const target = new URL('../final/final.html', window.location.href);
+      window.location.href = target.toString();
+    }
+  };
+
   return (
     <main style={wrap}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -587,7 +719,7 @@ export default function RoomElementsPage(): React.JSX.Element {
         </div>
       )}
 
-      {/* CONFIG: Age band (12-band UI) / room type / policy / design temp */}
+      {/* CONFIG: Age band / room type / policy / design temp */}
       <div style={panel}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
           <div>
@@ -899,6 +1031,9 @@ export default function RoomElementsPage(): React.JSX.Element {
         <button type="button" onClick={goElements} style={btnGhost}>◀ Back</button>
         <div style={{ flex: 1 }} />
         <button style={btnPrimary} onClick={onSaveAndContinue}>Save & Continue ▶</button>
+        <button style={{ ...btnPrimary, marginLeft: 8 }} onClick={onProceedToFinal}>
+          Proceed to Final Calculations →
+        </button>
       </div>
     </main>
   );
@@ -954,7 +1089,7 @@ const wrap: React.CSSProperties = { maxWidth: 1120, margin: '0 auto', padding: 2
 const title: React.CSSProperties = { fontSize: 28, letterSpacing: 0.5, margin: '0 0 6px' };
 const sectionTitle: React.CSSProperties = { margin: '0 0 6px', fontSize: 14, letterSpacing: 1.5, textTransform: 'uppercase' };
 const muted: React.CSSProperties = { color: '#666', fontSize: 13, margin: '0 0 10px' };
-const listBox: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' };
+const listBox: React.CSSProperties = { border: '1px solid '#E5E7EB', borderRadius: 8, overflow: 'hidden' } as React.CSSProperties;
 const headerRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '40px 1fr 1fr 1fr 1fr', gap: 12, padding: '10px 12px', background: '#ECEDEF', color: '#222' } as React.CSSProperties;
 const dataRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '40px 1fr 1fr 1fr 1fr', gap: 12, padding: '12px', alignItems: 'center', borderTop: '1px solid #F1F1F1', background: '#fff' } as React.CSSProperties;
 const totalRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', background: '#F3F4F6', padding: '12px', borderTop: '1px solid #E5E7EB', fontWeight: 600 };
