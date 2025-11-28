@@ -3,9 +3,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import ResultsCard from '../components/ResultsCard';
-import { computeRoomLoss } from '../lib/calc';
-import type { AgeBand, RoomType } from '../lib/vent-rates';
+import {
+  PROPERTY_AGE_BANDS,
+  AGE_BAND_TO_TIER,
+  type PropertyAgeBandLabel,
+  coercePropertyAgeBandLabel,
+} from '../lib/age-bands';
 
 /* ============================================================================
    Persistence helpers (safe localStorage wrapper)
