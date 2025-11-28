@@ -1,0 +1,6 @@
+@page { size: A4; margin: 12mm }
+@media print {
+  #btnPrint { display: none }
+  a { text-decoration: none; color: black }
+  body { -webkit-print-color-adjust: exact; }
+}

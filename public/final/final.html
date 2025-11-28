@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Final Calculation – Heat Loss</title>
+  <link rel="stylesheet" href="css/print.css"/>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.4;margin:0}
+    .container{max-width:1024px;margin:0 auto;padding:16px}
+    header,footer{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0}
+    .card{border:1px solid #ddd;border-radius:10px;padding:12px}
+    table{width:100%;border-collapse:collapse;margin:12px 0}
+    th,td{border:1px solid #e5e5e5;padding:6px 8px;text-align:right}
+    th:first-child,td:first-child{text-align:left}
+    .muted{opacity:.7;font-size:.9em}
+    .badge{display:inline-block;border:1px solid #ccc;border-radius:6px;padding:2px 6px;margin:3px 6px 3px 0}
+    .warn{color:#b30000}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media (max-width:900px){.cards{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <div class="container" id="app">
+    <header>
+      <div>
+        <h1>Final Calculation</h1>
+        <div class="muted">Complies with MIS 3005‑D & EN 12831‑1:2017</div>
+        <div id="projectMeta" class="muted"></div>
+      </div>
+      <img src="assets/logo.svg" alt="Company logo" height="48"/>
+    </header>
+
+    <section class="cards" aria-label="Summary">
+      <div class="card"><div class="muted">Peak Load</div><div id="peakKW" aria-live="polite"></div></div>
+      <div class="card"><div class="muted">W/m²</div><div id="wPerM2"></div></div>
+      <div class="card"><div class="muted">Annual kWh</div><div id="annualKWh"></div></div>
+      <div class="card"><div class="muted">Method</div><div id="method"></div></div>
+    </section>
+
+    <section>
+      <h2>Design Conditions</h2>
+      <div id="designConditions"></div>
+    </section>
+
+    <section>
+      <h2>Calculation Details</h2>
+      <div id="calcDetails"></div>
+    </section>
+
+    <section>
+      <h2>Per‑Room Peak Heat Loss</h2>
+      <div id="roomTable"></div>
+    </section>
+
+    <section>
+      <h2>Fabric Breakdown</h2>
+      <div id="fabricTable"></div>
+    </section>
+
+    <section>
+      <h2>Ventilation Breakdown</h2>
+      <div id="ventTable"></div>
+    </section>
+
+    <footer>
+      <button id="btnPrint" type="button">Download PDF</button>
+      <small class="muted">Floors to ground use ΔT against annual average external temperature (MIS 3005‑D).</small>
+    </footer>
+  </div>
+  <script src="js/utils.js"></script>
+  <script src="js/templates.js"></script>
+  <script src="js/final.js"></script>
+</body>
+</html>
