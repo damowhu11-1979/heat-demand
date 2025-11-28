@@ -1089,9 +1089,25 @@ const wrap: React.CSSProperties = { maxWidth: 1120, margin: '0 auto', padding: 2
 const title: React.CSSProperties = { fontSize: 28, letterSpacing: 0.5, margin: '0 0 6px' };
 const sectionTitle: React.CSSProperties = { margin: '0 0 6px', fontSize: 14, letterSpacing: 1.5, textTransform: 'uppercase' };
 const muted: React.CSSProperties = { color: '#666', fontSize: 13, margin: '0 0 10px' };
-const listBox: React.CSSProperties = { border: '1px solid '#E5E7EB', borderRadius: 8, overflow: 'hidden' } as React.CSSProperties;
-const headerRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '40px 1fr 1fr 1fr 1fr', gap: 12, padding: '10px 12px', background: '#ECEDEF', color: '#222' } as React.CSSProperties;
-const dataRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '40px 1fr 1fr 1fr 1fr', gap: 12, padding: '12px', alignItems: 'center', borderTop: '1px solid #F1F1F1', background: '#fff' } as React.CSSProperties;
+
+const listBox: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' };
+const headerRow: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '40px 1fr 1fr 1fr 1fr',
+  gap: 12,
+  padding: '10px 12px',
+  background: '#ECEDEF',
+  color: '#222'
+};
+const dataRow: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '40px 1fr 1fr 1fr 1fr',
+  gap: 12,
+  padding: '12px',
+  alignItems: 'center',
+  borderTop: '1px solid #F1F1F1',
+  background: '#fff'
+};
 const totalRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', background: '#F3F4F6', padding: '12px', borderTop: '1px solid #E5E7EB', fontWeight: 600 };
 const editor: React.CSSProperties = { background: '#FAFAFA', borderTop: '1px solid #F1F1F1', padding: 12 };
 const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 };
@@ -1099,11 +1115,11 @@ const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '16
 const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' };
 const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
-const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
+const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' };
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
 const miniBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #D1D5DB', padding: '4px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, marginRight: 6 };
-const miniDanger: React.CSSProperties = { ...miniBtn, color: '#b00020', border: '1px solid #f0b3bd' } as React.CSSProperties;
+const miniDanger: React.CSSProperties = { ...miniBtn, color: '#b00020', border: '1px solid #f0b3bd' };
 const footerNav: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, marginTop: 22 };
 const panel: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, background: '#fff', marginBottom: 12 };
 const help: React.CSSProperties = { color: '#666', fontSize: 12, marginTop: 6 };
