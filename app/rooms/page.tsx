@@ -6,17 +6,15 @@ import Link from 'next/link';
 /* ------------------------------ TYPES ------------------------------ */
 
 type Room = {
-  zone: number;                 // index of the zone this room belongs to
-  type: string;                 // Bedroom, Kitchen, etc.
-  name: string;                 // User-visible name
-  maxCeiling: number;           // meters
-  designTemp: number;           // °C (required)
-  airChangeRate: number;        // /hr (required)
-
-  // Optional / advanced:
-  internalAirVolume?: number;   // m³
-  intermittentHeatingPct?: number; // 0-100
-  heatGainsW?: number;          // Watts
+  zone: number;
+  type: string;
+  name: string;
+  maxCeiling: number;
+  designTemp: number;
+  airChangeRate: number;
+  internalAirVolume?: number;
+  intermittentHeatingPct?: number;
+  heatGainsW?: number;
 };
 
 type Zone = { name: string; Rooms: Room[] };
@@ -54,10 +52,8 @@ const writeRooms = (zones: Zone[]) => {
 };
 
 /* ----------------------- AGE BAND → DEFAULTS ----------------------- */
-/** Age Band written by the Property page (page 1) */
 const AGE_BAND_KEY = 'mcs.AgeBand' as const;
 
-/** Earlier bands (A) — per-room recommendations */
 const RECOMMENDED_BY_ROOM_AGE_A: Record<string, number> = {
   Bathroom: 22,
   Bedroom: 18,
@@ -82,12 +78,10 @@ const RECOMMENDED_BY_ROOM_AGE_A: Record<string, number> = {
   Other: 21,
 };
 
-/** Newer, well-insulated bands (B onwards): 21 °C everywhere except bathrooms at 22 °C */
 const RECOMMENDED_BY_ROOM_AGE_B_ONWARDS: Record<string, number> = new Proxy({}, {
   get: (_t, k: string) => (k === 'Bathroom' || k === 'Shower room' ? 22 : 21),
 }) as Record<string, number>;
 
-/** Adjust this to match your project’s “B onwards” mapping */
 const AGE_B_BANDS = new Set<string>(['2012-present']);
 
 const readAgeBand = (): string | null => {
@@ -133,7 +127,7 @@ export default function RoomsPage(): React.JSX.Element {
     type: '',
     name: '',
     maxCeiling: 2.4,
-    designTemp: 21, // neutral; will set from room type + age band on selection
+    designTemp: 21,
     airChangeRate: 1,
     internalAirVolume: undefined,
     intermittentHeatingPct: undefined,
@@ -141,7 +135,6 @@ export default function RoomsPage(): React.JSX.Element {
   };
   const [form, setForm] = useState<Room>(emptyForm);
 
-  /* Load existing Rooms */
   useEffect(() => {
     const saved = readRooms();
     if (saved && Array.isArray(saved) && saved.length) {
@@ -150,54 +143,29 @@ export default function RoomsPage(): React.JSX.Element {
     }
   }, []);
 
-  /* Auto-save */
   useEffect(() => {
     const t = setTimeout(() => writeRooms(zones), 300);
     return () => clearTimeout(t);
   }, [zones]);
 
-  /* Room type list (aligned with recommendation table keys) */
   const roomTypes = useMemo(
     () => [
-      'Bathroom',
-      'Bedroom',
-      'Bedroom with en-suite',
-      'Bedroom/study',
-      'Breakfast room',
-      'Cloakroom/WC',
-      'Dining Room',
-      'Family/morning room',
-      'Games room',
-      'Hall',
-      'Internal room/corridor',
-      'Kitchen',
-      'Landing',
-      'Lounge/sitting room',
-      'Living Room',
-      'Shower room',
-      'Store room',
-      'Study',
-      'Toilet',
-      'Utility room',
-      'Other',
+      'Bathroom','Bedroom','Bedroom with en-suite','Bedroom/study','Breakfast room',
+      'Cloakroom/WC','Dining Room','Family/morning room','Games room','Hall',
+      'Internal room/corridor','Kitchen','Landing','Lounge/sitting room','Living Room',
+      'Shower room','Store room','Study','Toilet','Utility room','Other',
     ],
     []
   );
 
-  /* Open Add Room */
   const onOpenAddRoom = () => {
     setIsEditing(false);
     setEditingIndices(null);
     setUserEditedDesignTemp(false);
-    setForm({
-      ...emptyForm,
-      zone: 0,
-      designTemp: 21, // neutral; will be set by room type + age band
-    });
+    setForm({ ...emptyForm, zone: 0, designTemp: 21 });
     setShowModal(true);
   };
 
-  /* Open Edit Room */
   const onOpenEditRoom = (zoneIdx: number, roomIdx: number) => {
     const room = zones[zoneIdx].Rooms[roomIdx];
     setIsEditing(true);
@@ -207,7 +175,6 @@ export default function RoomsPage(): React.JSX.Element {
     setShowModal(true);
   };
 
-  /* Validation */
   const validate = (r: Room): string[] => {
     const errs: string[] = [];
     if (!r.name.trim()) errs.push('Room name is required.');
@@ -228,7 +195,6 @@ export default function RoomsPage(): React.JSX.Element {
       errs.push('Heat gains must be >= 0 W.');
     }
 
-    // Duplicate name within same zone (soft check)
     const namesInZone = new Set(
       zones[r.zone].Rooms
         .filter((_r, idx) => !(isEditing && editingIndices && r.zone === editingIndices.zoneIdx && idx === editingIndices.roomIdx))
@@ -241,7 +207,6 @@ export default function RoomsPage(): React.JSX.Element {
     return errs;
   };
 
-  /* Save Room (Create/Update) */
   const onSaveRoom = () => {
     const errs = validate(form);
     if (errs.length) {
@@ -253,7 +218,6 @@ export default function RoomsPage(): React.JSX.Element {
     if (isEditing && editingIndices) {
       const { zoneIdx, roomIdx } = editingIndices;
 
-      // If zone moved, remove from old and push into new
       if (zoneIdx !== form.zone) {
         const moved = { ...form };
         copy[zoneIdx] = {
@@ -266,7 +230,6 @@ export default function RoomsPage(): React.JSX.Element {
         };
         setExpanded((e) => ({ ...e, [form.zone]: true }));
       } else {
-        // In-place update
         const roomsCopy = [...copy[zoneIdx].Rooms];
         roomsCopy[roomIdx] = { ...form };
         copy[zoneIdx] = { ...copy[zoneIdx], Rooms: roomsCopy };
@@ -285,14 +248,12 @@ export default function RoomsPage(): React.JSX.Element {
     setEditingIndices(null);
   };
 
-  /* Add zone */
   const onAddZone = () => {
     const n = zones.length + 1;
     setZones([...zones, { name: `Zone ${n}`, Rooms: [] }]);
     setExpanded((e) => ({ ...e, [zones.length]: true }));
   };
 
-  /* Remove room */
   const onRemoveRoom = (zoneIdx: number, idx: number) => {
     const ok = confirm('Remove this room? This cannot be undone.');
     if (!ok) return;
@@ -303,8 +264,6 @@ export default function RoomsPage(): React.JSX.Element {
     };
     setZones(copy);
   };
-
-  /* ------------------------------ RENDER ------------------------------ */
 
   return (
     <main style={wrap}>
@@ -380,7 +339,6 @@ export default function RoomsPage(): React.JSX.Element {
         </Link>
       </div>
 
-      {/* ------------------------------ MODAL ------------------------------ */}
       {showModal && (
         <div style={modalBackdrop} onClick={() => setShowModal(false)}>
           <div style={modal} onClick={(e) => e.stopPropagation()}>
@@ -577,10 +535,13 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 
 /* ------------------------------ STYLES ------------------------------ */
 
+const FONT_STACK = 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+
 const wrap: React.CSSProperties = {
   maxWidth: 1040,
   margin: '0 auto',
   padding: 24,
+  fontFamily: FONT_STACK, // ← match other pages
 };
 
 const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 12px' };
@@ -618,15 +579,17 @@ const input: React.CSSProperties = {
   borderRadius: 10,
   border: '1px solid #ddd',
   outline: 'none',
+  fontFamily: 'inherit', // ← inherit from wrap
 };
 
 const primaryBtn: React.CSSProperties = {
   background: '#111',
   color: '#fff',
-  border: '1px solid #111',   // ✅ fixed
+  border: '1px solid #111',
   padding: '10px 16px',
   borderRadius: 12,
   cursor: 'pointer',
+  fontFamily: 'inherit',
 };
 
 const secondaryBtn: React.CSSProperties = {
@@ -636,6 +599,7 @@ const secondaryBtn: React.CSSProperties = {
   padding: '10px 16px',
   borderRadius: 12,
   cursor: 'pointer',
+  fontFamily: 'inherit',
 };
 
 const linkBtn: React.CSSProperties = {
@@ -645,6 +609,7 @@ const linkBtn: React.CSSProperties = {
   background: 'none',
   border: 0,
   padding: 0,
+  fontFamily: 'inherit',
 };
 
 const linkDanger: React.CSSProperties = {
@@ -654,36 +619,4 @@ const linkDanger: React.CSSProperties = {
   background: 'none',
   border: 0,
   padding: 0,
-};
-
-const iconBtn: React.CSSProperties = {
-  padding: '4px 10px',
-  borderRadius: 8,
-  border: '1px solid #ccc',
-  cursor: 'pointer',
-  background: '#fafafa',
-};
-
-const grid2: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2, 1fr)',
-  gap: 12,
-};
-
-const modalBackdrop: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(0,0,0,0.3)',
-  display: 'grid',
-  placeItems: 'center',
-  zIndex: 50,
-};
-
-const modal: React.CSSProperties = {
-  background: '#fff',
-  width: 'min(720px, 92vw)',
-  borderRadius: 14,
-  border: '1px solid #e6e6e6',
-  padding: 20,
-  boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-};
+  fontFamil
