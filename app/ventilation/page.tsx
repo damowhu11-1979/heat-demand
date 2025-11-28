@@ -45,6 +45,7 @@ const DEFAULT_ROOMS: Record<RoomKey, number> = {
   bedroom: 0,
 };
 
+/* ───────── storage helpers ───────── */
 const readVent = () => {
   if (typeof window === 'undefined') return null;
   try {
@@ -54,13 +55,15 @@ const readVent = () => {
     return null;
   }
 };
-
 const writeVent = (obj: any) => {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
   } catch {}
 };
+
+/* ───────── shared UI atoms/styles ───────── */
+const FONT_STACK = 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
 
 const Label = ({ children }: { children: React.ReactNode }) => (
   <label style={{ display: 'block', fontWeight: 600, marginBottom: 4 }}>{children}</label>
@@ -73,6 +76,7 @@ const primaryBtn: React.CSSProperties = {
   borderRadius: 10,
   textDecoration: 'none',
   border: 0,
+  cursor: 'pointer',
 };
 
 const secondaryBtn: React.CSSProperties = {
@@ -82,10 +86,11 @@ const secondaryBtn: React.CSSProperties = {
   borderRadius: 10,
   textDecoration: 'none',
   border: '1px solid #ccc',
+  cursor: 'pointer',
 };
 
 const inputStyle: React.CSSProperties = {
-  fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+  fontFamily: 'inherit', // inherit from <main> -> matches Property page
   padding: '8px 10px',
   border: '1px solid #ddd',
   borderRadius: 8,
@@ -93,6 +98,7 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
+/* ───────── page ───────── */
 export default function VentilationPage() {
   const [type, setType] = useState('natural');
   const [rooms, setRooms] = useState<Record<RoomKey, number>>(DEFAULT_ROOMS);
@@ -160,7 +166,7 @@ export default function VentilationPage() {
   };
 
   return (
-    <main style={{ maxWidth: 900, margin: '0 auto', padding: 20 }}>
+    <main style={{ maxWidth: 900, margin: '0 auto', padding: 20, fontFamily: FONT_STACK }}>
       {/* Sticky summary so users don't scroll to see results */}
       <div
         style={{
@@ -204,6 +210,7 @@ export default function VentilationPage() {
         )}
       </div>
 
+      <h1 style={{ fontSize: 28, marginBottom: 6 }}>Ventilation</h1>
       <p style={{ color: '#666', fontSize: 13, marginBottom: 12 }}>
         Step 2 of 6 — Configure ventilation strategy and minimum air flow requirements
       </p>
@@ -261,7 +268,7 @@ export default function VentilationPage() {
                 />
               </div>
               <div>
-                <Label>How many facades are sheltered from wind?</Label>
+                <Label>How many are sheltered from wind?</Label>
                 <input
                   type="number"
                   min={0}
@@ -300,9 +307,22 @@ export default function VentilationPage() {
         </p>
       </section>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', position: 'sticky', bottom: 0, background: '#fff', paddingTop: 8 }}>
-        <Link href="/" style={secondaryBtn}>← Back</Link>
-        <Link href="/rooms" style={primaryBtn}>Next: Heated Rooms →</Link>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          bottom: 0,
+          background: '#fff',
+          paddingTop: 8,
+        }}
+      >
+        <Link href="/" style={secondaryBtn}>
+          ← Back
+        </Link>
+        <Link href="/rooms" style={primaryBtn}>
+          Next: Heated Rooms →
+        </Link>
       </div>
     </main>
   );
