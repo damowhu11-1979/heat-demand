@@ -1,76 +1,174 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Final Calculation – Heat Loss</title>
-  <link rel="stylesheet" href="css/print.css"/>
+  <meta charset="utf-8" />
+  <title>Final Calculation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="css/print.css" />
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.4;margin:0}
-    .container{max-width:1024px;margin:0 auto;padding:16px}
-    header,footer{display:flex;justify-content:space-between;align-items:center;gap:12px}
-    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0}
-    .card{border:1px solid #ddd;border-radius:10px;padding:12px}
-    table{width:100%;border-collapse:collapse;margin:12px 0}
-    th,td{border:1px solid #e5e5e5;padding:6px 8px;text-align:right}
-    th:first-child,td:first-child{text-align:left}
-    .muted{opacity:.7;font-size:.9em}
-    .badge{display:inline-block;border:1px solid #ccc;border-radius:6px;padding:2px 6px;margin:3px 6px 3px 0}
-    .warn{color:#b30000}
-    .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-    @media (max-width:900px){.cards{grid-template-columns:1fr 1fr}}
+    /* --- page shell --- */
+    :root { --rail: 260px; --g: 14px; --card: #f7f7f7; --ink:#111; --muted:#666; --line:#e5e7eb; --accent:#10b981; }
+    html,body{height:100%}
+    body{margin:0; font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif; color:var(--ink); background:#fff;}
+    .wrap{display:grid; grid-template-columns: var(--rail) 1fr; min-height:100vh}
+    .rail{background:#fafafa; border-right:1px solid var(--line); padding:24px 18px; position:sticky; top:0; height:100vh}
+    .logo{font-weight:800; letter-spacing:6px; font-size:28px}
+    .navTitle{margin:16px 0 12px; color:#7a7a7a; font-weight:600;}
+    .step{display:flex; align-items:center; justify-content:space-between; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; background:#fff}
+    .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
+    .main{padding:28px 34px}
+    .topline{display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:2px solid #111; padding-bottom:12px; margin-bottom:16px}
+    .title{margin:0; font-size:34px; letter-spacing:.4px}
+    .meta{font-size:12px; color:var(--muted)}
+    .brand{height:22px}
+
+    /* --- KPIs --- */
+    .kpis{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin:16px 0 24px}
+    .kpi{background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px}
+    .kpi h4{margin:0 0 6px; font-size:13px; color:#444; font-weight:600; letter-spacing:.3px}
+    .kpi .big{font-size:36px; font-weight:800}
+    .kpi .unit{font-weight:600; margin-left:6px; color:#444}
+    .kpi .sub{margin-top:6px; color:#666; font-size:12px}
+
+    /* --- sections & cards --- */
+    .h2{font-size:22px; margin:24px 0 8px}
+    .cardGrid{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+    .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px}
+    .card h5{margin:0 0 6px; font-size:13px; color:#444}
+    .card .big{font-size:30px; font-weight:800}
+    .hr{margin:14px 0 8px; border-top:2px solid #111}
+
+    /* --- tables --- */
+    table{width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden}
+    th,td{padding:12px 14px; border-top:1px solid var(--line); vertical-align:middle}
+    th{background:#fafafa; text-align:left; font-weight:700; color:#333}
+    tr:first-child th, tr:first-child td{border-top:0}
+    td.num{text-align:right; font-variant-numeric: tabular-nums}
+    tfoot td{font-weight:700; background:#fbfbfb}
+
+    /* --- notice --- */
+    .notice{display:flex; gap:10px; align-items:flex-start; border:1px solid var(--line); background:#f8fffB; border-left:5px solid var(--accent); padding:12px 14px; border-radius:8px; color:#1b4332; font-size:13px}
+
+    /* --- print tweaks --- */
+    @media print {
+      .wrap{grid-template-columns:1fr} .rail{display:none}
+      .main{padding:20px}
+      .topline{border-bottom:1px solid #000}
+      .kpi{page-break-inside:avoid}
+      .card, table{page-break-inside:avoid}
+    }
   </style>
 </head>
 <body>
-  <div class="container" id="app">
-    <header>
-      <div>
-        <h1>Final Calculation</h1>
-        <div class="muted">Complies with MIS 3005‑D & EN 12831‑1:2017</div>
-        <div id="projectMeta" class="muted"></div>
+  <div class="wrap">
+    <!-- Left rail -->
+    <aside class="rail">
+      <div class="logo">MCS</div>
+      <div class="navTitle">Heat Load Calculator</div>
+      <div class="step">Property Information <span class="tick"></span></div>
+      <div class="step">Ventilation <span class="tick"></span></div>
+      <div class="step">Heated Rooms <span class="tick"></span></div>
+      <div class="step">Building Elements <span class="tick"></span></div>
+      <div class="step">Result Calculation <span class="tick"></span></div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <div class="topline">
+        <div>
+          <h1 class="title">Final Calculation</h1>
+          <div class="meta" id="metaDate"></div>
+        </div>
+        <img src="assets/logo.svg" class="brand" alt="Company logo" />
       </div>
-      <img src="assets/logo.svg" alt="Company logo" height="48"/>
-    </header>
 
-    <section class="cards" aria-label="Summary">
-      <div class="card"><div class="muted">Peak Load</div><div id="peakKW" aria-live="polite"></div></div>
-      <div class="card"><div class="muted">W/m²</div><div id="wPerM2"></div></div>
-      <div class="card"><div class="muted">Annual kWh</div><div id="annualKWh"></div></div>
-      <div class="card"><div class="muted">Method</div><div id="method"></div></div>
-    </section>
+      <div class="notice">
+        <div style="font-size:18px;line-height:1">✓</div>
+        <div>
+          <strong>This calculation is MIS&nbsp;3005-D compliant for designing heat pumps.</strong>
+          <div style="color:#4a5568">Figures are guidance only. Conduct a full property survey before making design decisions.</div>
+        </div>
+      </div>
 
-    <section>
-      <h2>Design Conditions</h2>
-      <div id="designConditions"></div>
-    </section>
+      <!-- KPIs -->
+      <section class="kpis">
+        <div class="kpi">
+          <h4>Peak Heat Load</h4>
+          <div><span id="kpiPeak" class="big">–</span><span class="unit">kWp</span></div>
+          <div class="sub">The system size required to meet the space heating load.</div>
+        </div>
+        <div class="kpi">
+          <h4>Heat Load By Floor Area</h4>
+          <div><span id="kpiWm2" class="big">–</span><span class="unit">W/m²</span></div>
+          <div class="sub">Whole-house load normalised by floor area.</div>
+        </div>
+        <div class="kpi">
+          <h4>Annual Heating Energy Estimate</h4>
+          <div><span id="kpiKwh" class="big">–</span><span class="unit">kWh/yr</span></div>
+          <div class="sub">Actual energy depends on system efficiency (e.g., SCoP).</div>
+        </div>
+      </section>
 
-    <section>
-      <h2>Calculation Details</h2>
-      <div id="calcDetails"></div>
-    </section>
+      <!-- Design conditions -->
+      <h2 class="h2">Design Conditions</h2>
+      <div class="cardGrid">
+        <div class="card"><h5>Average Internal Room Temperature</h5><div><span id="dcAvgInt" class="big">–</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Mean Annual External Air Temperature</h5><div><span id="dcAvgExt" class="big">–</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Design External Air Temperature</h5><div><span id="dcDesignExt" class="big">–</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Heating Degree Days</h5><div><span id="dcHdd" class="big">–</span></div></div>
+      </div>
 
-    <section>
-      <h2>Per‑Room Peak Heat Loss</h2>
-      <div id="roomTable"></div>
-    </section>
+      <div class="hr"></div>
+      <h2 class="h2">Calculation Details</h2>
+      <div class="cardGrid">
+        <div class="card"><h5>Fabric Heat Loss</h5><div><span id="cdFabric" class="big">–</span> <span class="unit">W</span></div></div>
+        <div class="card"><h5>Ventilation Heat Loss</h5><div><span id="cdVent" class="big">–</span> <span class="unit">W</span></div></div>
+        <div class="card"><h5>Heating Up Power</h5><div><span id="cdHeatUp" class="big">–</span> <span class="unit">W</span></div></div>
+        <div class="card"><h5>Heat Gains</h5><div><span id="cdGains" class="big">–</span> <span class="unit">W</span></div></div>
+        <div class="card" style="grid-column:1/-1"><h5>Space Heating Load</h5><div><span id="cdSpaceLoad" class="big">–</span> <span class="unit">W</span></div></div>
+      </div>
 
-    <section>
-      <h2>Fabric Breakdown</h2>
-      <div id="fabricTable"></div>
-    </section>
+      <div class="hr"></div>
+      <h2 class="h2">Per-Room Peak Heat Loss</h2>
+      <table id="perRoomTbl">
+        <thead>
+          <tr>
+            <th>Room Name</th><th>Floor Area (m²)</th><th>Design Temp (°C)</th><th>Peak Heat Load (W)</th><th>By Floor Area (W/m²)</th><th>Annual Energy (kWh/yr)</th>
+          </tr>
+        </thead>
+        <tbody id="perRoomBody"></tbody>
+      </table>
 
-    <section>
-      <h2>Ventilation Breakdown</h2>
-      <div id="ventTable"></div>
-    </section>
+      <div class="hr"></div>
+      <h2 class="h2">Fabric Breakdown</h2>
+      <table id="fabricTbl">
+        <thead>
+          <tr><th>Adjacent Space</th><th>Description</th><th>Adjacent Temp (°C)</th><th class="num">Fabric Heat Loss (W)</th><th class="num">%</th></tr>
+        </thead>
+        <tbody id="fabricBody"></tbody>
+      </table>
 
-    <footer>
-      <button id="btnPrint" type="button">Download PDF</button>
-      <small class="muted">Floors to ground use ΔT against annual average external temperature (MIS 3005‑D).</small>
-    </footer>
+      <div class="hr"></div>
+      <h2 class="h2">Ventilation Breakdown</h2>
+      <table id="ventTbl">
+        <thead>
+          <tr><th>Zone Name</th><th>Internal Air Volume (m³)</th><th>External Surface Area† (m²)</th><th>Air Permeability @ 50Pa†† (m³/m²·h)</th><th class="num">Ventilation Heat Loss (W)</th><th class="num">%</th></tr>
+        </thead>
+        <tbody id="ventBody"></tbody>
+      </table>
+
+      <p class="meta" style="margin-top:10px">† External surface area excludes party walls (BS 12831-1:2017). †† Permeability may differ to measured airtightness due to dimension options.</p>
+
+      <div style="margin:16px 0 6px">
+        <button id="btnPrint" onclick="window.print()">Download PDF</button>
+      </div>
+      <div class="meta">Floors to ground use ΔT against annual average external temperature (MIS 3005-D).</div>
+    </main>
   </div>
-  <script src="js/utils.js"></script>
-  <script src="js/templates.js"></script>
-  <script src="js/final.js"></script>
+
+  <!-- Keep your original logic – it fills values from sessionStorage -->
+  <script type="module" src="js/final.js"></script>
+  <!-- Skin hook to push values into the new UI (below) -->
+  <script type="module" src="js/skin-mcs.js"></script>
 </body>
 </html>
