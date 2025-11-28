@@ -16,6 +16,9 @@ const LS_ROOMS_KEYS = [
   'mcs.Rooms.v2', 'mcs.Rooms.v1', 'mcs.rooms.v2', 'mcs.rooms.v1', 'mcs.rooms', 'rooms.v1'
 ];
 
+// Global Age Band key written by home page (app/page.tsx)
+const LS_AGE_GLOBAL = 'mcs.AgeBand';
+
 interface SafeStorage {
   getItem(k: string): string | null;
   setItem(k: string, v: string): void;
@@ -147,7 +150,7 @@ const clampNumber = (v: any) => {
 };
 
 /* ============================================================================
-   ROOMS IMPORT HELPERS (now includes roomType + designTemp)
+   ROOMS IMPORT HELPERS (includes roomType + designTemp)
 ============================================================================ */
 type Any = any;
 
@@ -230,17 +233,33 @@ function basicsFromSourceRoom(r: Any): {
   const width  = pickNum(r, 'width','Width','W');
   const height = pickNum(r, 'height','Height','H');
 
-  // Room type from several common fields
   const rtRaw = pickStr(r, 'roomType','type','category','use','kind');
   const rt = normalizeRoomType(rtRaw) ?? undefined;
 
-  // Design temperature in °C from common fields
   const designTempC = pickNum(
     r,
     'designTempC','design_temperature_c','designTemp','heatingSetpointC','heatingSetpoint','setpointC','setpoint'
   ) || undefined;
 
   return { name, length, width, height, roomType: rt, designTempC };
+}
+
+/* ============================================================================
+   Age band mapping (home page strings -> calc AgeBand)
+   Home page values: 'pre-1900' ... '2012-present'
+============================================================================ */
+function mapGlobalAgeBandToVentAgeBand(s: string | null | undefined): AgeBand | null {
+  if (!s) return null;
+  const v = String(s).toLowerCase();
+  // Up to 2002
+  if (
+    v === 'pre-1900' || v === '1900-1929' || v === '1930-1949' || v === '1950-1966' ||
+    v === '1967-1975' || v === '1976-1982' || v === '1983-1990' || v === '1991-1995' || v === '1996-2002'
+  ) return 'pre_2003';
+  if (v === '2003-2006') return 'y2003_2010';
+  if (v === '2007-2011') return 'y2010_2021';
+  if (v === '2012-present') return 'y2021_plus';
+  return null;
 }
 
 /* ============================================================================
@@ -262,10 +281,11 @@ export default function RoomElementsPage(): React.JSX.Element {
   const [ageBand, setAgeBand] = useState<AgeBand>('y2021_plus');
   const [roomType, setRoomType] = useState<RoomType>('bedroom');
   const [policy, setPolicy] = useState<'max'|'sum'>('max');
-  const [designTempC, setDesignTempC] = useState<number | ''>(''); // '' means use default
+  const [designTempC, setDesignTempC] = useState<number | ''>(''); // '' = default 21°C
 
   // Quick add internal wall inputs
   const [quickIntWidth, setQuickIntWidth] = useState<number | ''>('');
+  thead: any;
   const [quickIntHeight, setQuickIntHeight] = useState<number | ''>('');
   const [quickIntAdj, setQuickIntAdj] = useState<Adjacent>('Interior (Heated)');
 
@@ -291,7 +311,7 @@ export default function RoomElementsPage(): React.JSX.Element {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [override, setOverride] = useState(false);
 
-  // Import logic: prefer saved Elements model; else pull basics from /rooms (now includes type & design temp)
+  // Import logic: prefer saved Elements model; else pull basics from /rooms
   function importSelectedRoom(targetId?: string | null) {
     const rid = String(targetId ?? selectedRoomId ?? room.id ?? '');
     if (!rid) return;
@@ -300,7 +320,7 @@ export default function RoomElementsPage(): React.JSX.Element {
     const saved = byRoom[rid];
     if (saved) {
       setRoom(saved);
-      // also restore any per-room metadata we keep outside the model
+      // meta (roomType + designTempC)
       const meta = readJSON<Record<string, { roomType?: RoomType; designTempC?: number }>>('mcs.room.meta.byRoom.v1') || {};
       const m = meta[rid] || {};
       if (m.roomType) setRoomType(m.roomType);
@@ -311,7 +331,6 @@ export default function RoomElementsPage(): React.JSX.Element {
     const srcRoom = findSourceRoomById(rid);
     const basics = basicsFromSourceRoom(srcRoom);
 
-    // hydrate the page state
     setRoom((r) => ({
       ...r,
       id: rid,
@@ -377,12 +396,21 @@ export default function RoomElementsPage(): React.JSX.Element {
     if (activeId) setSelectedRoomId(activeId);
   }, []);
 
-  // When selection changes, import that room (saved elements or basics)
+  // When selection changes, import that room
   useEffect(() => {
     if (selectedRoomId) importSelectedRoom(selectedRoomId);
-  }, [selectedRoomId]);
+  }, [selectedRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist per-room Elements model + meta
+  // Seed age band from home-page global on mount
+  useEffect(() => {
+    try {
+      const globalStr = getStorage().getItem(LS_AGE_GLOBAL);
+      const mapped = mapGlobalAgeBandToVentAgeBand(globalStr);
+      if (mapped) setAgeBand(mapped);
+    } catch {}
+  }, []);
+
+  // Persist per-room Elements model + meta (and reflect age band globally too)
   useEffect(() => {
     const rid = selectedRoomId || room.id;
     if (rid) {
@@ -391,7 +419,6 @@ export default function RoomElementsPage(): React.JSX.Element {
       writeJSON(LS_BYROOM_KEY, byRoom);
       writeJSON('mcs.rooms.selectedId', rid);
 
-      // Save meta (roomType + designTempC) per room id
       const meta = readJSON<Record<string, { roomType?: RoomType; designTempC?: number }>>('mcs.room.meta.byRoom.v1') || {};
       meta[rid] = {
         roomType,
@@ -401,7 +428,11 @@ export default function RoomElementsPage(): React.JSX.Element {
     } else {
       writeJSON(LS_KEY, room);
     }
-  }, [room, selectedRoomId, roomType, designTempC]);
+
+    // Mirror the currently selected calc-ageBand back to the global key,
+    // so other pages stay in sync (optional but handy).
+    try { getStorage().setItem(LS_AGE_GLOBAL, ageBand); } catch {}
+  }, [room, selectedRoomId, roomType, designTempC, ageBand]);
 
   /* -------------------- Derived totals -------------------- */
   const autoVolume = useMemo(
@@ -438,13 +469,11 @@ export default function RoomElementsPage(): React.JSX.Element {
   /* -------------------- Heat Loss Results -------------------- */
   const OUTDOOR_C = -3;
 
-  // strictly a number for calc
   const displayVolume: number = useMemo(() => {
     const cand = override ? room.volumeOverride : null;
     return (typeof cand === 'number' && Number.isFinite(cand)) ? cand : autoVolume;
   }, [override, room.volumeOverride, autoVolume]);
 
-  // Indoor design temp: use imported value if provided, else default 21°C
   const indoorC = useMemo(() => {
     if (typeof designTempC === 'number' && Number.isFinite(designTempC) && designTempC > 0) return designTempC;
     return 21;
@@ -480,10 +509,7 @@ export default function RoomElementsPage(): React.JSX.Element {
 
   const activeRoom = roomsList.find((r) => r.id === (selectedRoomId || room.id));
 
-  /* -------------------- Adders/Updaters (UI sections)
-     (unchanged except for the config panel showing room type + design temp)
-  -------------------- */
-
+  /* -------------------- Adders/Updaters -------------------- */
   const addWall = () => setRoom((r) => ({
     ...r,
     walls: [...r.walls, { id: uid(), name: `External Wall ${r.walls.length + 1}`, orientation: 'N', adjacent: 'Exterior', width: 0, height: 0, uValue: '', openings: [] }],
@@ -555,7 +581,6 @@ export default function RoomElementsPage(): React.JSX.Element {
   return (
     <main style={wrap}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {/* Back to Elements (basePath-aware) */}
         <button type="button" onClick={goElements} style={backLink} aria-label="Back">◀</button>
         <h1 style={title}>{activeRoom?.name || room.name}</h1>
       </div>
@@ -577,17 +602,18 @@ export default function RoomElementsPage(): React.JSX.Element {
         </div>
       )}
 
-      {/* CONFIG: Age band / room type / policy / design temp */}
+      {/* CONFIG */}
       <div style={panel}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
           <div>
-            <Label>Dwelling Age Band</Label>
+            <Label>Dwelling Age Band (calc)</Label>
             <Select value={ageBand} onChange={(e)=> setAgeBand((e.target.value as AgeBand) || 'y2021_plus')}>
               <option value="pre_2003">Pre-2003</option>
               <option value="y2003_2010">2003–2010</option>
               <option value="y2010_2021">2010–2021</option>
               <option value="y2021_plus">2021+</option>
             </Select>
+            <div style={help}>Seeded from the home page’s “Age Band” and mapped to calc tiers.</div>
           </div>
           <div>
             <Label>Room Type</Label>
@@ -617,7 +643,7 @@ export default function RoomElementsPage(): React.JSX.Element {
               value={designTempC === '' ? '' : designTempC}
               onChange={onChangeDesignTemp}
             />
-            <div style={help}>If blank, defaults to 21°C. Imported from Rooms when available.</div>
+            <div style={help}>Blank = 21°C. Imported from Rooms when available.</div>
           </div>
         </div>
       </div>
@@ -694,7 +720,7 @@ export default function RoomElementsPage(): React.JSX.Element {
         {/* Quick add: INTERNAL WALL */}
         <div style={panel}>
           <h3 style={{ margin: 0, fontSize: 16 }}>Quick Add Internal Wall</h3>
-          <p style={muted}>(For partitions inside the dwelling—choose Heated for zero-loss partitions, Unheated for e.g. halls/lofts.)</p>
+          <p style={muted}>(Heated = zero-loss partitions; Unheated = e.g. halls/lofts.)</p>
           <div style={{ display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 140px', gap: 10, alignItems: 'center' }}>
             <div><Label>Adjacent</Label>
               <Select value={quickIntAdj} onChange={(e) => setQuickIntAdj((e.target.value as Adjacent) || 'Interior (Heated)')}>
@@ -823,9 +849,9 @@ export default function RoomElementsPage(): React.JSX.Element {
         } />
       </Section>
 
-      {/* V E N T I L A T I O N */}
+      {/* VENTILATION & RESULTS */}
       <h2 style={sectionTitle}>VENTILATION</h2>
-      <p style={muted}>Enter the internal air volume of this room and add any ventilation devices.</p>
+      <p style={muted}>Enter internal air volume and add any ventilation devices.</p>
       <div style={panel}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 100px', gap: 10, alignItems: 'center' }}>
           <div>
@@ -835,7 +861,7 @@ export default function RoomElementsPage(): React.JSX.Element {
               onChange={onChangeVolume}
               disabled={!override}
             />
-            <div style={help}>The internal volume has been estimated based on the ceiling areas and wall heights entered.</div>
+            <div style={help}>Estimated from walls/ceilings; tick Override to edit.</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span>m³</span></div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
@@ -953,10 +979,9 @@ const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '16
 const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' };
 const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
-const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
+const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid '#111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
-
 const miniBtn: React.CSSProperties = {
   background: '#fff',
   color: '#111',
@@ -967,13 +992,7 @@ const miniBtn: React.CSSProperties = {
   fontSize: 12,
   marginRight: 6,
 };
-
-const miniDanger: React.CSSProperties = {
-  ...miniBtn,
-  color: '#b00020',
-  border: '1px solid #f0b3bd',
-};
-
+const miniDanger: React.CSSProperties = { ...miniBtn, color: '#b00020', border: '1px solid #f0b3bd' } as React.CSSProperties;
 const footerNav: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, marginTop: 22 };
 const panel: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, background: '#fff', marginBottom: 12 };
 const help: React.CSSProperties = { color: '#666', fontSize: 12, marginTop: 6 };
@@ -986,14 +1005,6 @@ function Label({ children }: { children: React.ReactNode }) { return <label styl
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) { return <input {...props} style={{ ...input, ...(props.style || {}) }} />; }
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) { return <select {...props} style={{ ...input, ...(props.style || {}) }} />; }
 
-function clean<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
-  const out: Record<string, any> = {};
-  Object.keys(patch).forEach((k) => {
-    const v: any = (patch as any)[k];
-    out[k] = typeof v === 'number' && Number.isNaN(v) ? 0 : v;
-  });
-  return out as Partial<T>;
-}
 function cleanNumberPatch<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
   const out: Record<string, any> = {};
   Object.keys(patch).forEach((k) => {
