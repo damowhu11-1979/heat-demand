@@ -82,4 +82,52 @@ ready(() => {
       tbody.appendChild(tr);
     });
   }
-});
+});/* ---- Persistent brand logo (localStorage) ---- */
+(function logoPersistence(){
+  const KEY = 'mcs.brand.logoDataUrl';         // where we persist
+  const img = document.getElementById('brandLogo');
+  const file = document.getElementById('logoFile');
+  const pick = document.getElementById('btnLogoPick');
+  const reset = document.getElementById('btnLogoReset');
+
+  // 1) Load persisted logo (if any)
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved && /^data:image\//.test(saved)) img.src = saved;
+  } catch {}
+
+  // 2) Pick new logo
+  pick?.addEventListener('click', () => file?.click());
+  file?.addEventListener('change', () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+
+    if (!/^image\/(png|jpeg|svg\+xml)$/.test(f.type)) {
+      alert('Please choose a PNG, JPG, or SVG file.'); return;
+    }
+    // Size guard (adjust if you want larger)
+    if (f.size > 512 * 1024) { // 512 KB
+      alert('Logo is larger than 512 KB. Please use a smaller image.'); return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (!/^data:image\//.test(dataUrl)) { alert('Invalid image.'); return; }
+      try { localStorage.setItem(KEY, dataUrl); } catch (e) {
+        alert('Could not save logo (storage full or blocked). It will display this session only.');
+      }
+      img.src = dataUrl;
+      // Clear the file input to allow re-uploading the same file if desired
+      file.value = '';
+    };
+    reader.readAsDataURL(f);
+  });
+
+  // 3) Reset to default
+  reset?.addEventListener('click', () => {
+    try { localStorage.removeItem(KEY); } catch {}
+    img.src = 'assets/logo.svg';
+  });
+})();
+
