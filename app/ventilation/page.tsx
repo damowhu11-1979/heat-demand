@@ -23,10 +23,7 @@ const INTERMITTENT_FLOW = {
   'en-suite': 15,
 };
 
-const SUPPLY_FLOW = {
-  living: 10,
-  bedroom: 8,
-};
+const SUPPLY_FLOW = { living: 10, bedroom: 8 };
 
 const ROOM_LABELS = {
   kitchen: 'Kitchen',
@@ -66,32 +63,34 @@ const writeVent = (obj: any) => {
 };
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-  <label style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>{children}</label>
+  <label style={{ display: 'block', fontWeight: 600, marginBottom: 4 }}>{children}</label>
 );
 
-const primaryBtn = {
+const primaryBtn: React.CSSProperties = {
   background: '#111',
   color: '#fff',
-  padding: '12px 18px',
-  borderRadius: 12,
+  padding: '10px 14px',
+  borderRadius: 10,
   textDecoration: 'none',
   border: 0,
 };
 
-const secondaryBtn = {
+const secondaryBtn: React.CSSProperties = {
   background: '#fff',
   color: '#111',
-  padding: '12px 18px',
-  borderRadius: 12,
+  padding: '10px 14px',
+  borderRadius: 10,
   textDecoration: 'none',
   border: '1px solid #ccc',
 };
 
 const inputStyle: React.CSSProperties = {
   fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-  padding: '10px 12px',
+  padding: '8px 10px',
   border: '1px solid #ddd',
   borderRadius: 8,
+  width: '100%',
+  boxSizing: 'border-box',
 };
 
 export default function VentilationPage() {
@@ -114,13 +113,13 @@ export default function VentilationPage() {
     return sum;
   }, 0);
 
-const totalSupply = Object.entries(rooms).reduce((sum, [key, count]) => {
-  const k = key as RoomKey;
-  const flow = Object.prototype.hasOwnProperty.call(SUPPLY_FLOW, k)
-    ? SUPPLY_FLOW[k as keyof typeof SUPPLY_FLOW]
-    : 0;
-  return sum + flow * count;
-}, 0);
+  const totalSupply = Object.entries(rooms).reduce((sum, [key, count]) => {
+    const k = key as RoomKey;
+    const flow = Object.prototype.hasOwnProperty.call(SUPPLY_FLOW, k)
+      ? SUPPLY_FLOW[k as keyof typeof SUPPLY_FLOW]
+      : 0;
+    return sum + flow * count;
+  }, 0);
 
   const extractOK = totalExtract >= 30;
   const supplyOK = totalSupply >= 15;
@@ -141,137 +140,170 @@ const totalSupply = Object.entries(rooms).reduce((sum, [key, count]) => {
     writeVent({ type, rooms, ventilationZones, storeys, externalFacades, shelteredFacades });
   }, [type, rooms, ventilationZones, storeys, externalFacades, shelteredFacades]);
 
+  const twoCol: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 12,
+  };
+
+  const roomGrid: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 10,
+  };
+
+  const roomItem: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 64px',
+    alignItems: 'center',
+    gap: 8,
+  };
+
   return (
-    <main style={{ maxWidth: 800, margin: '0 auto', padding: 24 }}>
-      <h1 style={{ fontSize: 28, marginBottom: 6 }}>Ventilation</h1>
-      <p style={{ color: '#666', fontSize: 13, marginBottom: 20 }}>
+    <main style={{ maxWidth: 900, margin: '0 auto', padding: 20 }}>
+      {/* Sticky summary so users don't scroll to see results */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          background: '#fff',
+          padding: '10px 12px',
+          margin: '-8px 0 12px',
+          border: '1px solid #eee',
+          borderRadius: 10,
+          boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+          display: 'flex',
+          gap: 12,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
+      >
+        <strong style={{ marginRight: 8 }}>Ventilation</strong>
+        <span
+          style={{
+            background: extractOK ? '#e5ffe5' : '#ffe5e5',
+            padding: '6px 10px',
+            borderRadius: 999,
+            fontSize: 13,
+          }}
+        >
+          {totalExtract} L/s extract ({['mev', 'mv', 'mvhr'].includes(type) ? 'Continuous' : 'Intermittent'})
+        </span>
+        {totalSupply > 0 && (
+          <span
+            style={{
+              background: supplyOK ? '#e5ffe5' : '#ffe5e5',
+              padding: '6px 10px',
+              borderRadius: 999,
+              fontSize: 13,
+            }}
+          >
+            {totalSupply} L/s supply
+          </span>
+        )}
+      </div>
+
+      <p style={{ color: '#666', fontSize: 13, marginBottom: 12 }}>
         Step 2 of 6 — Configure ventilation strategy and minimum air flow requirements
       </p>
 
-      <section style={{ marginBottom: 24 }}>
-        <h3 style={{ fontSize: 18, marginBottom: 12 }}>Ventilation Zone Info</h3>
-
-        <div style={{ marginBottom: 12 }}>
-          <Label>Number of Ventilation Zones</Label>
-          <input
-            type="number"
-            min={1}
-            value={ventilationZones}
-            onChange={(e) => setVentilationZones(parseInt(e.target.value || '1'))}
-            style={inputStyle}
-          />
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <Label>Number of Storeys</Label>
-          <input
-            type="number"
-            min={1}
-            value={storeys}
-            onChange={(e) => setStoreys(parseInt(e.target.value || '1'))}
-            style={inputStyle}
-          />
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <Label>Number of External Facades</Label>
-          <input
-            type="number"
-            min={0}
-            value={externalFacades}
-            onChange={(e) => setExternalFacades(parseInt(e.target.value || '0'))}
-            style={inputStyle}
-          />
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <Label>How many are sheltered from wind?</Label>
-          <input
-            type="number"
-            min={0}
-            max={externalFacades}
-            value={shelteredFacades}
-            onChange={(e) => setShelteredFacades(parseInt(e.target.value || '0'))}
-            style={inputStyle}
-          />
-        </div>
-      </section>
-
-      <section style={{ marginBottom: 24 }}>
-        <Label>Ventilation Strategy</Label>
-        <select value={type} onChange={(e) => setType(e.target.value)} style={inputStyle}>
-          <option value="natural">Natural Ventilation</option>
-          <option value="mev">MEV (Mechanical Extract Ventilation)</option>
-          <option value="mv">MV (Mechanical Ventilation)</option>
-          <option value="mvhr">MVHR (Mech. Ventilation w/ Heat Recovery)</option>
-          <option value="piv">PIV (Positive Input Ventilation)</option>
-        </select>
-        <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-          Strategy determines airflow types required (intermittent vs continuous, extract vs supply).
-        </p>
-      </section>
-
-      <section style={{ marginBottom: 32 }}>
-        <h3 style={{ fontSize: 18, marginBottom: 12 }}>Room Counts</h3>
-        {Object.keys(ROOM_LABELS).map((roomKey) => {
-          const key = roomKey as RoomKey;
-          return (
-            <div key={key} style={{ marginBottom: 12 }}>
-              <Label>{ROOM_LABELS[key]}</Label>
-              <input
-                type="number"
-                value={rooms[key]}
-                onChange={(e) =>
-                  setRooms({ ...rooms, [key]: parseInt(e.target.value || '0') })
-                }
-                min={0}
-                style={inputStyle}
-              />
-            </div>
-          );
-        })}
-      </section>
-
-      <section style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 18, marginBottom: 8 }}>Required Ventilation</h3>
-
-        <div
-          style={{
-            background: extractOK ? '#e5ffe5' : '#ffe5e5',
-            padding: 16,
-            borderRadius: 10,
-            fontSize: 14,
-            marginBottom: 8,
-          }}
-        >
-          <strong>{totalExtract} L/s extract</strong> ({['mev', 'mv', 'mvhr'].includes(type) ? 'Continuous' : 'Intermittent'})<br />
-          {extractOK ? '✅ Meets extract flow requirement' : '⚠️ Below extract threshold'}
-        </div>
-
-        {totalSupply > 0 && (
-          <div
-            style={{
-              background: supplyOK ? '#e5ffe5' : '#ffe5e5',
-              padding: 16,
-              borderRadius: 10,
-              fontSize: 14,
-            }}
-          >
-            <strong>{totalSupply} L/s supply</strong> to habitable rooms<br />
-            {supplyOK ? '✅ Meets supply flow requirement' : '⚠️ Below supply flow threshold'}
+      <section style={{ marginBottom: 16 }}>
+        <div style={twoCol}>
+          <div>
+            <Label>Ventilation Strategy</Label>
+            <select value={type} onChange={(e) => setType(e.target.value)} style={inputStyle}>
+              <option value="natural">Natural Ventilation</option>
+              <option value="mev">MEV (Mechanical Extract Ventilation)</option>
+              <option value="mv">MV (Mechanical Ventilation)</option>
+              <option value="mvhr">MVHR (Mech. Ventilation w/ Heat Recovery)</option>
+              <option value="piv">PIV (Positive Input Ventilation)</option>
+            </select>
+            <p style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+              Strategy determines airflow types required.
+            </p>
           </div>
-        )}
 
+          {/* Collapsible “advanced” zone info */}
+          <details open>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: 8 }}>
+              Ventilation Zone Info
+            </summary>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <Label>Number of Ventilation Zones</Label>
+                <input
+                  type="number"
+                  min={1}
+                  value={ventilationZones}
+                  onChange={(e) => setVentilationZones(parseInt(e.target.value || '1'))}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <Label>Number of Storeys</Label>
+                <input
+                  type="number"
+                  min={1}
+                  value={storeys}
+                  onChange={(e) => setStoreys(parseInt(e.target.value || '1'))}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <Label>Number of External Facades</Label>
+                <input
+                  type="number"
+                  min={0}
+                  value={externalFacades}
+                  onChange={(e) => setExternalFacades(parseInt(e.target.value || '0'))}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <Label>How many are sheltered from wind?</Label>
+                <input
+                  type="number"
+                  min={0}
+                  max={externalFacades}
+                  value={shelteredFacades}
+                  onChange={(e) => setShelteredFacades(parseInt(e.target.value || '0'))}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section style={{ marginBottom: 16 }}>
+        <h3 style={{ fontSize: 18, marginBottom: 8 }}>Room Counts</h3>
+        <div style={roomGrid}>
+          {Object.keys(ROOM_LABELS).map((roomKey) => {
+            const key = roomKey as RoomKey;
+            return (
+              <div key={key} style={roomItem}>
+                <label style={{ fontSize: 14 }}>{ROOM_LABELS[key]}</label>
+                <input
+                  type="number"
+                  value={rooms[key]}
+                  onChange={(e) => setRooms({ ...rooms, [key]: parseInt(e.target.value || '0') })}
+                  min={0}
+                  style={{ ...inputStyle, width: '64px', justifySelf: 'end' }}
+                />
+              </div>
+            );
+          })}
+        </div>
         <p style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-          Based on UK ventilation standards (e.g. Document F, BS 5250). You can edit room counts above.
+          Based on UK ventilation standards (e.g. Document F, BS 5250).
         </p>
       </section>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', position: 'sticky', bottom: 0, background: '#fff', paddingTop: 8 }}>
         <Link href="/" style={secondaryBtn}>← Back</Link>
         <Link href="/rooms" style={primaryBtn}>Next: Heated Rooms →</Link>
       </div>
     </main>
   );
 }
-
