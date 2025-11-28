@@ -1026,15 +1026,14 @@ export default function RoomElementsPage(): React.JSX.Element {
         />
       </div>
 
-      {/* Footer nav */}
-      <div style={footerNav}>
-        <button type="button" onClick={goElements} style={btnGhost}>◀ Back</button>
-        <div style={{ flex: 1 }} />
-        <button style={btnPrimary} onClick={onSaveAndContinue}>Save & Continue ▶</button>
-        <button style={{ ...btnPrimary, marginLeft: 8 }} onClick={onProceedToFinal}>
-          Proceed to Final Calculations →
-        </button>
-      </div>
+    {/* Footer nav */}
+<div style={footerNav}>
+  <button type="button" onClick={goElements} style={btnGhost}>◀ Back</button>
+  <div style={{ flex: 1 }} />
+  <button style={{ ...btnPrimary, marginLeft: 8 }} onClick={onProceedToFinal}>
+    Proceed to Final Calculations →
+  </button>
+</div>
     </main>
   );
 
