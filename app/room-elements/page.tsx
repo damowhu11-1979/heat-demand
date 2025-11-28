@@ -280,8 +280,15 @@ export default function RoomElementsPage(): React.JSX.Element {
     walls: [], floors: [], ceilings: [], ventilation: [],
   });
 
-  // Config (age band, room type, policy, design temp)
-  const [ageBand, setAgeBand] = useState<AgeBand>('y2021_plus');
+  // Human-readable detailed band for the UI (12-band list)
+const [propertyAgeBand, setPropertyAgeBand] =
+  useState<PropertyAgeBandLabel>('2012-present');
+
+// Derived calc tier that feeds computeRoomLoss
+const ageBand: AgeBand = useMemo(
+  () => AGE_BAND_TO_TIER[propertyAgeBand],
+  [propertyAgeBand]
+);
   const [roomType, setRoomType] = useState<RoomType>('bedroom');
   const [policy, setPolicy] = useState<'max'|'sum'>('max');
   const [designTempC, setDesignTempC] = useState<number | ''>(''); // '' = default 21°C
