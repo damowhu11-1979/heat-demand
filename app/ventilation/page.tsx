@@ -268,7 +268,7 @@ export default function VentilationPage() {
                 />
               </div>
               <div>
-                <Label>How many are sheltered from wind?</Label>
+                <Label>How many facades are sheltered from wind?</Label>
                 <input
                   type="number"
                   min={0}
