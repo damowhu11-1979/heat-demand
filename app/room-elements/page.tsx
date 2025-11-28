@@ -285,7 +285,6 @@ export default function RoomElementsPage(): React.JSX.Element {
 
   // Quick add internal wall inputs
   const [quickIntWidth, setQuickIntWidth] = useState<number | ''>('');
-  thead: any;
   const [quickIntHeight, setQuickIntHeight] = useState<number | ''>('');
   const [quickIntAdj, setQuickIntAdj] = useState<Adjacent>('Interior (Heated)');
 
@@ -979,7 +978,14 @@ const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '16
 const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' };
 const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
-const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid '#111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' } as React.CSSProperties;
+const btnPrimary: React.CSSProperties = {
+  background: '#111827',
+  color: '#fff',
+  border: '1px solid #111827',
+  padding: '10px 16px',
+  borderRadius: 10,
+  cursor: 'pointer'
+} as React.CSSProperties;
 const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
 const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
 const miniBtn: React.CSSProperties = {
