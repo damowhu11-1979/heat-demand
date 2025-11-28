@@ -541,7 +541,7 @@ const wrap: React.CSSProperties = {
   maxWidth: 1040,
   margin: '0 auto',
   padding: 24,
-  fontFamily: FONT_STACK, // ← match other pages
+  fontFamily: FONT_STACK, // match other pages
 };
 
 const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 12px' };
@@ -579,7 +579,7 @@ const input: React.CSSProperties = {
   borderRadius: 10,
   border: '1px solid #ddd',
   outline: 'none',
-  fontFamily: 'inherit', // ← inherit from wrap
+  fontFamily: 'inherit',
 };
 
 const primaryBtn: React.CSSProperties = {
@@ -619,4 +619,39 @@ const linkDanger: React.CSSProperties = {
   background: 'none',
   border: 0,
   padding: 0,
-  fontFamil
+  fontFamily: 'inherit',
+};
+
+const iconBtn: React.CSSProperties = {
+  padding: '4px 10px',
+  borderRadius: 8,
+  border: '1px solid #ccc',
+  cursor: 'pointer',
+  background: '#fafafa',
+  fontFamily: 'inherit',
+};
+
+const grid2: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, 1fr)',
+  gap: 12,
+};
+
+const modalBackdrop: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(0,0,0,0.3)',
+  display: 'grid',
+  placeItems: 'center',
+  zIndex: 50,
+};
+
+const modal: React.CSSProperties = {
+  background: '#fff',
+  width: 'min(720px, 92vw)',
+  borderRadius: 14,
+  border: '1px solid #e6e6e6',
+  padding: 20,
+  boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+  fontFamily: FONT_STACK,
+};
