@@ -1,0 +1,79 @@
+// Generator & datasource
+model Room {
+id String @id @default(cuid())
+projectId String
+project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+name String
+type String
+setpointC Float
+adjTempC Float?
+volumeM3 Float
+floorAreaM2 Float
+ach Float
+elements Element[]
+psiJunctions PsiJunction[]
+}
+
+
+model Element {
+id String @id @default(cuid())
+roomId String
+room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+kind ElementKind
+areaM2 Float
+uValue Float
+fCorr Float @default(1.0)
+orientation String?
+notes String?
+}
+
+
+model PsiJunction {
+id String @id @default(cuid())
+roomId String
+room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+type String
+lengthM Float
+psiWmK Float
+}
+
+
+model VentilationSystem {
+id String @id @default(cuid())
+projectId String @unique
+project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+type VentType
+mvhrEff Float?
+}
+
+
+model Report {
+id String @id @default(cuid())
+projectId String
+project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+version Int
+pdfUrl String
+createdAt DateTime @default(now())
+createdById String
+changelog String?
+}
+
+
+// Datasets
+model DatasetDOT {
+id String @id @default(cuid())
+regionCode String @unique
+dotC Float
+source String
+validFrom DateTime
+}
+
+
+model DatasetHDD {
+id String @id @default(cuid())
+regionCode String @unique
+baseC Float @default(15.5)
+hddAnnual Int
+source String
+validFrom DateTime
+}
