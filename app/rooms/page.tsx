@@ -529,7 +529,7 @@ const wrap: React.CSSProperties = {
   maxWidth: 1040,
   margin: '0 auto',
   padding: 24,
-  fontFamily: FONT_STACK, // match other pages
+  fontFamily: FONT_STACK,
 };
 
 const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 12px' };
@@ -540,7 +540,7 @@ const muted: React.CSSProperties = { color: '#777' };
 
 const card: React.CSSProperties = {
   background: '#fff',
-  border: '1px solid '#eee',
+  border: '1px solid #eee',   // <-- fixed
   borderRadius: 14,
   padding: 16,
 };
