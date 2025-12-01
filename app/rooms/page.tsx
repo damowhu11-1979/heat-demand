@@ -434,6 +434,7 @@ export default function RoomsPage(): React.JSX.Element {
               </div>
             </div>
 
+            {/* Air changes only in its own row */}
             <div style={grid2}>
               <div>
                 <Label>Air Change Rate (/hr) *</Label>
@@ -451,7 +452,10 @@ export default function RoomsPage(): React.JSX.Element {
                 />
               </div>
 
-            
+              <div /> {/* spacer to keep the grid balanced */}
+            </div>
+
+            {/* Intermittent Heating & Heat Gains */}
             <div style={grid2}>
               <div>
                 <Label>Intermittent Heating (%)</Label>
@@ -536,7 +540,7 @@ const muted: React.CSSProperties = { color: '#777' };
 
 const card: React.CSSProperties = {
   background: '#fff',
-  border: '1px solid #eee',
+  border: '1px solid '#eee',
   borderRadius: 14,
   padding: 16,
 };
