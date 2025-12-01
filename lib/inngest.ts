@@ -1,2 +1,7 @@
+// lib/inngest.ts
 import { Inngest } from "inngest";
-export const inngest = new Inngest({ name: "heat-demand-app" });
+
+// Use `id` (not `name`) for the client options with this Inngest version
+export const inngest = new Inngest({
+  id: "heat-demand-app",
+});
