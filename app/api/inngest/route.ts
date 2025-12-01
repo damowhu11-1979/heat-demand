@@ -1,7 +1,8 @@
-import { serve } from "@inngest/next";
-import { generateReportFn } from "@/src/inngest/reportGenerate";
+// app/api/inngest/route.ts
+import { serve } from "inngest/next";
+import { inngest, generateReportFn } from "@/src/inngest/reportGenerate";
 
 export const { GET, POST, PUT } = serve({
-  client: { name: "heat-demand-app" },
+  client: inngest,
   functions: [generateReportFn],
 });
