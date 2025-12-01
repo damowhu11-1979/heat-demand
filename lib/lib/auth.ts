@@ -1,5 +1,8 @@
-import NextAuth from "next-auth";
-// Configure providers, adapters as per your setup
-export const { auth } = NextAuth({
-providers: [],
-});
+// lib/auth.ts
+// Temporary stub so build works without NextAuth.
+// Later you can wire this up to real authentication.
+
+export async function auth() {
+  // Pretend there is no logged-in user
+  return null;
+}
