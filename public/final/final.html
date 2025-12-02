@@ -331,18 +331,18 @@
     </main>
   </div>
 
-  <!-- Keep your original logic – it fills values from sessionStorage -->
+<!-- Keep your original logic – it fills values from sessionStorage -->
   <script type="module" src="js/final.js"></script>
   <!-- Skin hook to push values into the new UI (below) -->
   <script type="module" src="js/skin-mcs.js"></script>
 
   <!-- Inject a green Back button next to the title -->
   <script>
-    window.addEventListener("DOMContentLoaded", function () {
+    (function () {
       var toplineLeft = document.querySelector(".topline > div:first-child");
       if (!toplineLeft) return;
 
-      // Avoid adding twice on hot reloads
+      // Avoid adding twice
       if (document.getElementById("backButton")) return;
 
       var btn = document.createElement("button");
@@ -367,7 +367,7 @@
 
       // Insert as the first child in the left part of the topline
       toplineLeft.insertBefore(btn, toplineLeft.firstChild);
-    });
+    })();
   </script>
 </body>
 </html>
