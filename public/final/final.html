@@ -147,6 +147,30 @@
     <aside class="rail">
       <div class="logo">M C S</div>
       <div class="navTitle">Heat Load Calculator</div>
+
+      <!-- NEW: green Back button in the nav -->
+      <button
+        type="button"
+        onclick="window.history.back()"
+        style="
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 8px;
+          padding: 10px 12px;
+          margin-bottom: 12px;
+          border-radius: 10px;
+          border: 1px solid #16a34a;
+          background: #16a34a;
+          color: #ffffff;
+          font-weight: 600;
+          cursor: pointer;
+        "
+      >
+        ← Back to calculator
+      </button>
+
       <div class="step">Property Information <span class="tick"></span></div>
       <div class="step">Ventilation <span class="tick"></span></div>
       <div class="step">Heated Rooms <span class="tick"></span></div>
