@@ -1,4 +1,4 @@
-  <!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -19,35 +19,42 @@
     }
     .wrap{display:grid; grid-template-columns: var(--rail) 1fr; min-height:100vh}
     .rail{
-  background:#fafafa;
-  border-right:1px solid var(--line);
-  padding:24px 18px;
-  position:sticky;
-  top:0;
-  height:100vh;
-  z-index: 10; /* add this */
-}
+      background:#fafafa;
+      border-right:1px solid var(--line);
+      padding:24px 18px;
+      position:sticky;
+      top:0;
+      height:100vh;
+      z-index:1000;          /* ensure rail is above main */
+      pointer-events:auto;   /* be explicit */
+    }
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
     .navTitle{margin:16px 0 12px; color:#7a7a7a; font-weight:600;}
-.step{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  border:1px solid var(--line);
-  border-radius:10px;
-  padding:10px 12px;
-  margin-bottom:8px;
-  background:#fff;
-}
 
-.nav-link {
-  text-decoration: none;
-  color: inherit;
-  display: block;
-}
+    .step{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:10px 12px;
+      margin-bottom:8px;
+      background:#fff;
+    }
+
+    .nav-link {
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      cursor: pointer;
+    }
 
     .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
-    .main{padding:28px 34px}
+    .main{
+      padding:28px 34px;
+      position:relative;  /* give main a stacking context below rail */
+      z-index:0;
+    }
     .topline{
       display:flex;
       align-items:center;
@@ -152,7 +159,7 @@
 <body>
   <div class="wrap">
     <!-- Left rail -->
-<aside class="rail">
+    <aside class="rail">
       <div class="logo">M C S</div>
       <div class="navTitle">Heat Load Calculator</div>
 
@@ -347,5 +354,22 @@
   <script type="module" src="js/final.js"></script>
   <!-- Skin hook to push values into the new UI (below) -->
   <script type="module" src="js/skin-mcs.js"></script>
+
+  <!-- Force navigation for sidebar links even if another handler cancels clicks -->
+  <script>
+    (function () {
+      // Run after modules in case they register global handlers
+      const links = document.querySelectorAll('a.nav-link');
+      links.forEach(a => {
+        a.addEventListener('click', function (e) {
+          // If any other handler tries to cancel, stop it first
+          e.stopImmediatePropagation();
+          // Do not call preventDefault here — we *want* navigation
+          // Hard navigate to the href to avoid SPA/router interference
+          window.location.href = this.href;
+        }, true); // capture so this runs before bubbling handlers
+      });
+    })();
+  </script>
 </body>
 </html>
