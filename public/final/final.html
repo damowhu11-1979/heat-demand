@@ -335,5 +335,39 @@
   <script type="module" src="js/final.js"></script>
   <!-- Skin hook to push values into the new UI (below) -->
   <script type="module" src="js/skin-mcs.js"></script>
+
+  <!-- Inject a green Back button next to the title -->
+  <script>
+    window.addEventListener("DOMContentLoaded", function () {
+      var toplineLeft = document.querySelector(".topline > div:first-child");
+      if (!toplineLeft) return;
+
+      // Avoid adding twice on hot reloads
+      if (document.getElementById("backButton")) return;
+
+      var btn = document.createElement("button");
+      btn.id = "backButton";
+      btn.type = "button";
+      btn.textContent = "← Back";
+
+      // Green pill styling
+      btn.style.padding = "6px 14px";
+      btn.style.borderRadius = "999px";
+      btn.style.border = "none";
+      btn.style.background = "#16a34a";
+      btn.style.color = "white";
+      btn.style.cursor = "pointer";
+      btn.style.fontSize = "14px";
+      btn.style.fontWeight = "600";
+      btn.style.marginRight = "8px";
+
+      btn.addEventListener("click", function () {
+        window.history.back();
+      });
+
+      // Insert as the first child in the left part of the topline
+      toplineLeft.insertBefore(btn, toplineLeft.firstChild);
+    });
+  </script>
 </body>
 </html>
