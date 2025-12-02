@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -11,22 +11,67 @@
     /* --- page shell --- */
     :root { --rail: 260px; --g: 14px; --card: #f7f7f7; --ink:#111; --muted:#666; --line:#e5e7eb; --accent:#10b981; }
     html,body{height:100%}
-    body{margin:0; font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif; color:var(--ink); background:#fff;}
+    body{
+      margin:0;
+      font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif;
+      color:var(--ink);
+      background:#fff;
+    }
     .wrap{display:grid; grid-template-columns: var(--rail) 1fr; min-height:100vh}
-    .rail{background:#fafafa; border-right:1px solid var(--line); padding:24px 18px; position:sticky; top:0; height:100vh}
+    .rail{
+      background:#fafafa;
+      border-right:1px solid var(--line);
+      padding:24px 18px;
+      position:sticky;
+      top:0;
+      height:100vh;
+    }
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
     .navTitle{margin:16px 0 12px; color:#7a7a7a; font-weight:600;}
-    .step{display:flex; align-items:center; justify-content:space-between; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; background:#fff}
+    .step{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:10px 12px;
+      margin-bottom:8px;
+      background:#fff;
+    }
     .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
     .main{padding:28px 34px}
-    .topline{display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:2px solid #111; padding-bottom:12px; margin-bottom:16px}
+    .topline{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      border-bottom:2px solid #111;
+      padding-bottom:12px;
+      margin-bottom:16px;
+    }
     .title{margin:0; font-size:34px; letter-spacing:.4px}
     .meta{font-size:12px; color:var(--muted)}
 
     /* --- KPIs --- */
-    .kpis{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin:16px 0 24px}
-    .kpi{background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px}
-    .kpi h4{margin:0 0 6px; font-size:13px; color:#444; font-weight:600; letter-spacing:.3px}
+    .kpis{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:16px;
+      margin:16px 0 24px;
+    }
+    .kpi{
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:14px 16px;
+    }
+    .kpi h4{
+      margin:0 0 6px;
+      font-size:13px;
+      color:#444;
+      font-weight:600;
+      letter-spacing:.3px;
+    }
     .kpi .big{font-size:36px; font-weight:800}
     .kpi .unit{font-weight:600; margin-left:6px; color:#444}
     .kpi .sub{margin-top:6px; color:#666; font-size:12px}
@@ -34,25 +79,60 @@
     /* --- sections & cards --- */
     .h2{font-size:22px; margin:24px 0 8px}
     .cardGrid{display:grid; grid-template-columns:1fr 1fr; gap:16px}
-    .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px}
+    .card{
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:16px;
+    }
     .card h5{margin:0 0 6px; font-size:13px; color:#444}
     .card .big{font-size:30px; font-weight:800}
     .hr{margin:14px 0 8px; border-top:2px solid #111}
 
     /* --- tables --- */
-    table{width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden}
-    th,td{padding:12px 14px; border-top:1px solid var(--line); vertical-align:middle}
-    th{background:#fafafa; text-align:left; font-weight:700; color:#333}
-    tr:first-child th, tr:first-child td{border-top:0}
+    table{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:12px;
+      overflow:hidden;
+    }
+    th,td{
+      padding:12px 14px;
+      border-top:1px solid var(--line);
+      vertical-align:middle;
+    }
+    th{
+      background:#fafafa;
+      text-align:left;
+      font-weight:700;
+      color:#333;
+    }
+    tr:first-child th,
+    tr:first-child td{border-top:0}
     td.num{text-align:right; font-variant-numeric: tabular-nums}
     tfoot td{font-weight:700; background:#fbfbfb}
 
     /* --- notice --- */
-    .notice{display:flex; gap:10px; align-items:flex-start; border:1px solid var(--line); background:#f8fffB; border-left:5px solid var(--accent); padding:12px 14px; border-radius:8px; color:#1b4332; font-size:13px}
+    .notice{
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+      border:1px solid var(--line);
+      background:#f8fffB;
+      border-left:5px solid var(--accent);
+      padding:12px 14px;
+      border-radius:8px;
+      color:#1b4332;
+      font-size:13px;
+    }
 
     /* --- print tweaks --- */
     @media print {
-      .wrap{grid-template-columns:1fr} .rail{display:none}
+      .wrap{grid-template-columns:1fr}
+      .rail{display:none}
       .main{padding:20px}
       .topline{border-bottom:1px solid #000}
       .kpi{page-break-inside:avoid}
@@ -62,23 +142,10 @@
 </head>
 
 <body>
-  <button
-    onclick="window.history.back()"
-    style="
-      margin: 1rem;
-      padding: 0.5rem 1rem;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      background: #f5f5f5;
-      cursor: pointer;
-    "
-  >
-    ← Back
-  </button>
   <div class="wrap">
     <!-- Left rail -->
     <aside class="rail">
-      <div class="logo">MCS</div>
+      <div class="logo">M C S</div>
       <div class="navTitle">Heat Load Calculator</div>
       <div class="step">Property Information <span class="tick"></span></div>
       <div class="step">Ventilation <span class="tick"></span></div>
@@ -89,19 +156,44 @@
 
     <!-- Main content -->
     <main class="main">
-   <div class="topline">
-  <div>
-    <h1 class="title">Final Calculation</h1>
-    <div class="meta" id="metaDate"></div>
-  </div>
+      <div class="topline">
+        <div style="display:flex; align-items:center; gap:12px">
+          <!-- Green Back button -->
+          <button
+            type="button"
+            onclick="window.history.back()"
+            style="
+              padding: 6px 14px;
+              border-radius: 999px;
+              border: none;
+              background: #16a34a;
+              color: white;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+            "
+          >
+            ← Back
+          </button>
 
-  <div style="display:flex; align-items:center; gap:8px">
-    <img id="brandLogo" src="assets/logo.svg" class="brand" alt="Company logo" />
-    <input id="logoFile" type="file" accept="image/png,image/jpeg,image/svg+xml" style="display:none" />
-    <button id="btnLogoPick" type="button">Change logo</button>
-    <button id="btnLogoReset" type="button" title="Revert to default">Reset</button>
-  </div>
-</div>
+          <div>
+            <h1 class="title">Final Calculation</h1>
+            <div class="meta" id="metaDate"></div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px">
+          <img id="brandLogo" src="assets/logo.svg" class="brand" alt="Company logo" />
+          <input
+            id="logoFile"
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml"
+            style="display:none"
+          />
+          <button id="btnLogoPick" type="button">Change logo</button>
+          <button id="btnLogoReset" type="button" title="Revert to default">Reset</button>
+        </div>
+      </div>
 
       <div class="notice">
         <div style="font-size:18px;line-height:1">✓</div>
@@ -133,20 +225,47 @@
       <!-- Design conditions -->
       <h2 class="h2">Design Conditions</h2>
       <div class="cardGrid">
-        <div class="card"><h5>Average Internal Room Temperature</h5><div><span id="dcAvgInt" class="big">–</span> <span class="unit">°C</span></div></div>
-        <div class="card"><h5>Mean Annual External Air Temperature</h5><div><span id="dcAvgExt" class="big">–</span> <span class="unit">°C</span></div></div>
-        <div class="card"><h5>Design External Air Temperature</h5><div><span id="dcDesignExt" class="big">–</span> <span class="unit">°C</span></div></div>
-        <div class="card"><h5>Heating Degree Days</h5><div><span id="dcHdd" class="big">–</span></div></div>
+        <div class="card">
+          <h5>Average Internal Room Temperature</h5>
+          <div><span id="dcAvgInt" class="big">–</span> <span class="unit">°C</span></div>
+        </div>
+        <div class="card">
+          <h5>Mean Annual External Air Temperature</h5>
+          <div><span id="dcAvgExt" class="big">–</span> <span class="unit">°C</span></div>
+        </div>
+        <div class="card">
+          <h5>Design External Air Temperature</h5>
+          <div><span id="dcDesignExt" class="big">–</span> <span class="unit">°C</span></div>
+        </div>
+        <div class="card">
+          <h5>Heating Degree Days</h5>
+          <div><span id="dcHdd" class="big">–</span></div>
+        </div>
       </div>
 
       <div class="hr"></div>
       <h2 class="h2">Calculation Details</h2>
       <div class="cardGrid">
-        <div class="card"><h5>Fabric Heat Loss</h5><div><span id="cdFabric" class="big">–</span> <span class="unit">W</span></div></div>
-        <div class="card"><h5>Ventilation Heat Loss</h5><div><span id="cdVent" class="big">–</span> <span class="unit">W</span></div></div>
-        <div class="card"><h5>Heating Up Power</h5><div><span id="cdHeatUp" class="big">–</span> <span class="unit">W</span></div></div>
-        <div class="card"><h5>Heat Gains</h5><div><span id="cdGains" class="big">–</span> <span class="unit">W</span></div></div>
-        <div class="card" style="grid-column:1/-1"><h5>Space Heating Load</h5><div><span id="cdSpaceLoad" class="big">–</span> <span class="unit">W</span></div></div>
+        <div class="card">
+          <h5>Fabric Heat Loss</h5>
+          <div><span id="cdFabric" class="big">–</span> <span class="unit">W</span></div>
+        </div>
+        <div class="card">
+          <h5>Ventilation Heat Loss</h5>
+          <div><span id="cdVent" class="big">–</span> <span class="unit">W</span></div>
+        </div>
+        <div class="card">
+          <h5>Heating Up Power</h5>
+          <div><span id="cdHeatUp" class="big">–</span> <span class="unit">W</span></div>
+        </div>
+        <div class="card">
+          <h5>Heat Gains</h5>
+          <div><span id="cdGains" class="big">0</span> <span class="unit">W</span></div>
+        </div>
+        <div class="card" style="grid-column:1/-1">
+          <h5>Space Heating Load</h5>
+          <div><span id="cdSpaceLoad" class="big">–</span> <span class="unit">W</span></div>
+        </div>
       </div>
 
       <div class="hr"></div>
@@ -154,7 +273,12 @@
       <table id="perRoomTbl">
         <thead>
           <tr>
-            <th>Room Name</th><th>Floor Area (m²)</th><th>Design Temp (°C)</th><th>Peak Heat Load (W)</th><th>By Floor Area (W/m²)</th><th>Annual Energy (kWh/yr)</th>
+            <th>Room Name</th>
+            <th>Floor Area (m²)</th>
+            <th>Design Temp (°C)</th>
+            <th>Peak Heat Load (W)</th>
+            <th>By Floor Area (W/m²)</th>
+            <th>Annual Energy (kWh/yr)</th>
           </tr>
         </thead>
         <tbody id="perRoomBody"></tbody>
@@ -164,7 +288,13 @@
       <h2 class="h2">Fabric Breakdown</h2>
       <table id="fabricTbl">
         <thead>
-          <tr><th>Adjacent Space</th><th>Description</th><th>Adjacent Temp (°C)</th><th class="num">Fabric Heat Loss (W)</th><th class="num">%</th></tr>
+          <tr>
+            <th>Adjacent Space</th>
+            <th>Description</th>
+            <th>Adjacent Temp (°C)</th>
+            <th class="num">Fabric Heat Loss (W)</th>
+            <th class="num">%</th>
+          </tr>
         </thead>
         <tbody id="fabricBody"></tbody>
       </table>
@@ -173,17 +303,29 @@
       <h2 class="h2">Ventilation Breakdown</h2>
       <table id="ventTbl">
         <thead>
-          <tr><th>Zone Name</th><th>Internal Air Volume (m³)</th><th>External Surface Area† (m²)</th><th>Air Permeability @ 50Pa†† (m³/m²·h)</th><th class="num">Ventilation Heat Loss (W)</th><th class="num">%</th></tr>
+          <tr>
+            <th>Zone Name</th>
+            <th>Internal Air Volume (m³)</th>
+            <th>External Surface Area† (m²)</th>
+            <th>Air Permeability @ 50Pa†† (m³/m²·h)</th>
+            <th class="num">Ventilation Heat Loss (W)</th>
+            <th class="num">%</th>
+          </tr>
         </thead>
         <tbody id="ventBody"></tbody>
       </table>
 
-      <p class="meta" style="margin-top:10px">† External surface area excludes party walls (BS 12831-1:2017). †† Permeability may differ to measured airtightness due to dimension options.</p>
+      <p class="meta" style="margin-top:10px">
+        † External surface area excludes party walls (BS 12831-1:2017).
+        †† Permeability may differ to measured airtightness due to dimension options.
+      </p>
 
       <div style="margin:16px 0 6px">
         <button id="btnPrint" onclick="window.print()">Download PDF</button>
       </div>
-      <div class="meta">Floors to ground use ΔT against annual average external temperature (MIS 3005-D).</div>
+      <div class="meta">
+        Floors to ground use ΔT against annual average external temperature (MIS 3005-D).
+      </div>
     </main>
   </div>
 
