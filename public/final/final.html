@@ -28,17 +28,26 @@
     }
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
     .navTitle{margin:16px 0 12px; color:#7a7a7a; font-weight:600;}
- .step{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  border:1px solid var(--line);
-  border-radius:10px;
-  padding:10px 12px;
-  margin-bottom:8px;
-  background:#fff;
-  cursor:pointer;   /* makes them feel clickable */
-}
+
+    .step{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:10px 12px;
+      margin-bottom:8px;
+      background:#fff;
+      cursor:pointer;
+    }
+    a.step {
+      text-decoration:none;
+      color:inherit;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+    }
+
     .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
     .main{padding:28px 34px}
     .topline{
@@ -145,75 +154,35 @@
 <body>
   <div class="wrap">
     <!-- Left rail -->
-   <aside class="rail">
+    <aside class="rail">
       <div class="logo">M C S</div>
       <div class="navTitle">Heat Load Calculator</div>
 
-      <div
-        class="step"
-        onclick="window.location.href='https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/'"
-      >
-        Property Information <span class="tick"></span>
-      </div>
-
-      <div
-        class="step"
-        onclick="window.location.href='https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/ventilation'"
-      >
-        Ventilation <span class="tick"></span>
-      </div>
-
-      <div
-        class="step"
-        onclick="window.location.href='https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/rooms'"
-      >
-        Heated Rooms <span class="tick"></span>
-      </div>
-
-      <div
-        class="step"
-        onclick="window.location.href='https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/room-elements'"
-      >
-        Building Elements <span class="tick"></span>
-      </div>
-
-      <div
-        class="step"
-        onclick="window.location.href='https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/final/final.html'"
-      >
-        Result Calculation <span class="tick"></span>
-      </div>
+      <!-- Use FULL URLs you provided -->
+      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/">
+        <span>Property Information</span><span class="tick"></span>
+      </a>
+      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/ventilation">
+        <span>Ventilation</span><span class="tick"></span>
+      </a>
+      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/rooms">
+        <span>Heated Rooms</span><span class="tick"></span>
+      </a>
+      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/room-elements">
+        <span>Building Elements</span><span class="tick"></span>
+      </a>
+      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/final/final.html">
+        <span>Result Calculation</span><span class="tick"></span>
+      </a>
     </aside>
 
     <!-- Main content -->
     <main class="main">
       <div class="topline">
-      <div style="display:flex; align-items:center; gap:12px">
-  <!-- Green Back "button" as a link -->
-  <a
-    href="javascript:window.history.back()"
-    style="
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      padding: 6px 14px;
-      border-radius: 999px;
-      background: #16a34a;
-      color: white;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 600;
-      text-decoration: none;
-    "
-  >
-    ← Back
-  </a>
-
-  <div>
-    <h1 class="title">Final Calculation</h1>
-    <div class="meta" id="metaDate"></div>
-  </div>
-</div>
+        <div>
+          <h1 class="title">Final Calculation</h1>
+          <div class="meta" id="metaDate"></div>
+        </div>
 
         <div style="display:flex; align-items:center; gap:8px">
           <img id="brandLogo" src="assets/logo.svg" class="brand" alt="Company logo" />
@@ -362,43 +331,9 @@
     </main>
   </div>
 
-<!-- Keep your original logic – it fills values from sessionStorage -->
+  <!-- Keep your original logic – it fills values from sessionStorage -->
   <script type="module" src="js/final.js"></script>
   <!-- Skin hook to push values into the new UI (below) -->
   <script type="module" src="js/skin-mcs.js"></script>
-
-  <!-- Inject a green Back button next to the title -->
-  <script>
-    (function () {
-      var toplineLeft = document.querySelector(".topline > div:first-child");
-      if (!toplineLeft) return;
-
-      // Avoid adding twice
-      if (document.getElementById("backButton")) return;
-
-      var btn = document.createElement("button");
-      btn.id = "backButton";
-      btn.type = "button";
-      btn.textContent = "← Back";
-
-      // Green pill styling
-      btn.style.padding = "6px 14px";
-      btn.style.borderRadius = "999px";
-      btn.style.border = "none";
-      btn.style.background = "#16a34a";
-      btn.style.color = "white";
-      btn.style.cursor = "pointer";
-      btn.style.fontSize = "14px";
-      btn.style.fontWeight = "600";
-      btn.style.marginRight = "8px";
-
-      btn.addEventListener("click", function () {
-        window.history.back();
-      });
-
-      // Insert as the first child in the left part of the topline
-      toplineLeft.insertBefore(btn, toplineLeft.firstChild);
-    })();
-  </script>
 </body>
 </html>
