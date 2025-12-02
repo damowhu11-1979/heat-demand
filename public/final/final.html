@@ -28,25 +28,22 @@
     }
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
     .navTitle{margin:16px 0 12px; color:#7a7a7a; font-weight:600;}
+.step{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px 12px;
+  margin-bottom:8px;
+  background:#fff;
+}
 
-    .step{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      border:1px solid var(--line);
-      border-radius:10px;
-      padding:10px 12px;
-      margin-bottom:8px;
-      background:#fff;
-      cursor:pointer;
-    }
-    a.step {
-      text-decoration:none;
-      color:inherit;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-    }
+.nav-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
 
     .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
     .main{padding:28px 34px}
@@ -154,25 +151,39 @@
 <body>
   <div class="wrap">
     <!-- Left rail -->
-    <aside class="rail">
+   <aside class="rail">
       <div class="logo">M C S</div>
       <div class="navTitle">Heat Load Calculator</div>
 
-      <!-- Use FULL URLs you provided -->
-      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/">
-        <span>Property Information</span><span class="tick"></span>
+      <!-- Each <a> wraps a .step div -->
+      <a class="nav-link" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/">
+        <div class="step">
+          Property Information <span class="tick"></span>
+        </div>
       </a>
-      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/ventilation">
-        <span>Ventilation</span><span class="tick"></span>
+
+      <a class="nav-link" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/ventilation">
+        <div class="step">
+          Ventilation <span class="tick"></span>
+        </div>
       </a>
-      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/rooms">
-        <span>Heated Rooms</span><span class="tick"></span>
+
+      <a class="nav-link" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/rooms">
+        <div class="step">
+          Heated Rooms <span class="tick"></span>
+        </div>
       </a>
-      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/room-elements">
-        <span>Building Elements</span><span class="tick"></span>
+
+      <a class="nav-link" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/room-elements">
+        <div class="step">
+          Building Elements <span class="tick"></span>
+        </div>
       </a>
-      <a class="step" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/final/final.html">
-        <span>Result Calculation</span><span class="tick"></span>
+
+      <a class="nav-link" href="https://heat-demand-21n3-huj7xu34s-damowhu11-1979s-projects.vercel.app/final/final.html">
+        <div class="step">
+          Result Calculation <span class="tick"></span>
+        </div>
       </a>
     </aside>
 
