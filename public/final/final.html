@@ -157,30 +157,32 @@
     <!-- Main content -->
     <main class="main">
       <div class="topline">
-        <div style="display:flex; align-items:center; gap:12px">
-          <!-- Green Back button -->
-          <button
-            type="button"
-            onclick="window.history.back()"
-            style="
-              padding: 6px 14px;
-              border-radius: 999px;
-              border: none;
-              background: #16a34a;
-              color: white;
-              cursor: pointer;
-              font-size: 14px;
-              font-weight: 600;
-            "
-          >
-            ← Back
-          </button>
+      <div style="display:flex; align-items:center; gap:12px">
+  <!-- Green Back "button" as a link -->
+  <a
+    href="javascript:window.history.back()"
+    style="
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: #16a34a;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    "
+  >
+    ← Back
+  </a>
 
-          <div>
-            <h1 class="title">Final Calculation</h1>
-            <div class="meta" id="metaDate"></div>
-          </div>
-        </div>
+  <div>
+    <h1 class="title">Final Calculation</h1>
+    <div class="meta" id="metaDate"></div>
+  </div>
+</div>
 
         <div style="display:flex; align-items:center; gap:8px">
           <img id="brandLogo" src="assets/logo.svg" class="brand" alt="Company logo" />
