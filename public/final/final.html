@@ -19,13 +19,14 @@
     }
     .wrap{display:grid; grid-template-columns: var(--rail) 1fr; min-height:100vh}
     .rail{
-      background:#fafafa;
-      border-right:1px solid var(--line);
-      padding:24px 18px;
-      position:sticky;
-      top:0;
-      height:100vh;
-    }
+  background:#fafafa;
+  border-right:1px solid var(--line);
+  padding:24px 18px;
+  position:sticky;
+  top:0;
+  height:100vh;
+  z-index: 10; /* add this */
+}
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
     .navTitle{margin:16px 0 12px; color:#7a7a7a; font-weight:600;}
 .step{
