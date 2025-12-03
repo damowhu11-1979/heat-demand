@@ -9,6 +9,11 @@
   <link rel="stylesheet" href="css/print.css" media="print" />
   
   <style>
+    /* New Fix: Apply border-box globally for predictable width calculation */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
     .brand { height:48px; max-width:280px; object-fit:contain }
 
     :root { --rail: 260px; --g: 14px; --card: #f7f7f7; --ink:#111; --muted:#666; --line:#e5e7eb; --accent:#10b981; }
@@ -35,6 +40,10 @@
       margin-left:var(--rail);   /* make room for fixed rail */
       padding:28px 34px;
       /* FIX: Removed explicit width calc. Block elements take up 100% of remaining space naturally. */
+      /* NEW FIX: Ensure content respects container width, especially for long words/strings */
+      max-width: 100%;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
