@@ -4,7 +4,10 @@
   <meta charset="utf-8" />
   <title>Final Calculation</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="css/print.css" />
+  
+  <!-- FIX 1: Added media="print" so print styles don't mess up the screen layout/cursors -->
+  <link rel="stylesheet" href="css/print.css" media="print" />
+  
   <style>
     .brand { height:48px; max-width:280px; object-fit:contain }
 
@@ -45,16 +48,24 @@
       padding:10px 12px;
       margin-bottom:8px;
       background:#fff;
+      transition: background 0.1s;
+    }
+    
+    /* Optional: Hover effect to make it feel more interactive */
+    .nav-link:hover .step {
+      background: #f0f0f0;
+      border-color: #ccc;
     }
 
     .nav-link{
       text-decoration:none;
       color:inherit;
       display:block;
-      cursor:pointer;
+      cursor:pointer; /* Ensures hand cursor appears */
     }
-    /* Ensure clicks hit the <a>, not its children */
-    .nav-link *{ pointer-events:none; }
+
+    /* FIX 2: Removed the '.nav-link * { pointer-events:none }' rule. 
+       It is unnecessary and often prevents the cursor from changing correctly. */
 
     .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
     .topline{
@@ -103,6 +114,8 @@
       .topline{border-bottom:1px solid #000}
       .kpi{page-break-inside:avoid}
       .card, table{page-break-inside:avoid}
+      /* Ensure everything is visible in print */
+      body { background: white; }
     }
   </style>
 </head>
@@ -234,10 +247,14 @@
       const links = document.querySelectorAll('a.nav-link');
       links.forEach(a => {
         a.addEventListener('click', function (e) {
-          e.stopImmediatePropagation();  // ignore global handlers
-          // do NOT call preventDefault; hard navigate:
-          window.location.href = this.href;
-        }, true); // capture
+          // Prevent any existing scripts from blocking the navigation
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          
+          // Optional: You can un-comment this if other scripts are REALLY stubborn
+          // e.preventDefault();
+          // window.location.href = this.href;
+        }, true); // use capture phase to beat bubbling handlers
       });
     })();
   </script>
