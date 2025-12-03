@@ -35,6 +35,7 @@
       border-right:1px solid var(--line);
       padding:24px 18px;
       z-index:2147483647;        /* top of the world */
+      overflow-y: auto; /* Added overflow for safety */
     }
     .main{
       margin-left:var(--rail);   /* make room for fixed rail */
@@ -79,7 +80,18 @@
       pointer-events: auto;
     }
 
-    .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
+    /* ********** NEW/ADJUSTED TICK STYLING ********** */
+    /* Ensure the tick size and background are consistent */
+    .tick{
+      width: 18px; 
+      height: 18px; 
+      min-width: 18px; /* Added min-width to prevent shrinking */
+      border-radius: 999px; 
+      background: var(--accent); /* Should be green */
+      margin-left: 10px; /* Ensure spacing between text and tick */
+    }
+    /* ********************************************** */
+
     .topline{
       display:flex;
       align-items:center;
@@ -180,7 +192,8 @@
         </div>
 
         <div style="display:flex; align-items:center; gap:8px">
-          <img id="brandLogo" src="assets/logo.svg" class="brand" alt="Company logo" />
+          <!-- FIX: Placeholder for logo, as Vercel URL might fail for 'assets/logo.svg' -->
+          <img id="brandLogo" src="https://placehold.co/120x48/10b981/ffffff?text=Company+Logo" class="brand" alt="Company logo" />
           <input id="logoFile" type="file" accept="image/png,image/jpeg,image/svg+xml" style="display:none" />
           <button id="btnLogoPick" type="button">Change logo</button>
           <button id="btnLogoReset" type="button" title="Revert to default">Reset</button>
