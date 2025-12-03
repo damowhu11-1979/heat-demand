@@ -64,9 +64,9 @@
       text-decoration:none;
       color:inherit;
       display:block;
-      /* FIX: Force pointer cursor with !important to override any external CSS */
-      cursor: pointer !important; 
-      pointer-events: auto !important;
+      /* Ensure pointer cursor is set */
+      cursor: pointer; 
+      pointer-events: auto;
     }
 
     .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
@@ -128,20 +128,20 @@
       <div class="logo">M C S</div>
       <div class="navTitle">Heat Load Calculator</div>
 
-      <!-- FIX: Changed to explicit .html file paths for maximum robustness on static hosting (Vercel) -->
-      <a class="nav-link" href="/index.html">
+      <!-- FIX: Reverting to clean, root-relative paths for maximum compatibility with Vercel's default static routing. -->
+      <a class="nav-link" href="/">
         <div class="step">Property Information <span class="tick"></span></div>
       </a>
-      <a class="nav-link" href="/ventilation.html">
+      <a class="nav-link" href="/ventilation">
         <div class="step">Ventilation <span class="tick"></span></div>
       </a>
-      <a class="nav-link" href="/rooms.html">
+      <a class="nav-link" href="/rooms">
         <div class="step">Heated Rooms <span class="tick"></span></div>
       </a>
-      <a class="nav-link" href="/room-elements.html">
+      <a class="nav-link" href="/room-elements">
         <div class="step">Building Elements <span class="tick"></span></div>
       </a>
-      <a class="nav-link" href="/final/final.html">
+      <a class="nav-link" href="/final">
         <div class="step">Result Calculation <span class="tick"></span></div>
       </a>
     </aside>
@@ -244,24 +244,6 @@
   <script type="module" src="js/final.js"></script>
   <script type="module" src="js/skin-mcs.js"></script>
 
-  <!-- Force navigation even if another handler cancels it -->
-  <script>
-    (function () {
-      const links = document.querySelectorAll('a.nav-link');
-      links.forEach(a => {
-        a.addEventListener('click', function (e) {
-          // Prevent any existing scripts from blocking the navigation
-          e.stopImmediatePropagation();
-          e.stopPropagation();
-          e.preventDefault();
-          
-          // Force navigation manually. This overrides single-page-app routers 
-          // or other scripts that might be swallowing the click.
-          window.location.href = this.getAttribute('href');
-          
-        }, true); // use capture phase to beat bubbling handlers
-      });
-    })();
-  </script>
+  <!-- Removed the aggressive JavaScript event listener to prevent potential interference with Vercel's routing/JS execution. -->
 </body>
 </html>
