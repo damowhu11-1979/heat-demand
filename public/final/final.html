@@ -44,8 +44,6 @@
       
       /* FIX 2: Explicitly constrain the main content area to the remaining viewport width */
       max-width: calc(100vw - var(--rail));
-      
-      /* Removed word-wrap/overflow-wrap as they can sometimes interfere with table layout */
     }
 
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
@@ -105,6 +103,44 @@
     .kpi .big{font-size:36px; font-weight:800}
     .kpi .unit{font-weight:600; margin-left:6px; color:#444}
     .kpi .sub{margin-top:6px; color:#666; font-size:12px}
+    
+    /* New styles for the summary card and loading state */
+    #summaryCard {
+        grid-column: 1 / -1; /* Make the card span full width */
+        padding: 20px;
+    }
+    .loading-spinner {
+        border: 4px solid rgba(0, 0, 0, 0.1);
+        border-left-color: var(--accent);
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        animation: spin 1s linear infinite;
+        margin-right: 10px;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    .summary-text {
+        margin-top: 15px;
+        line-height: 1.6;
+        background: #fcfcfc;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #eee;
+    }
+    .citation-list {
+        font-size: 10px;
+        color: #888;
+        margin-top: 10px;
+        list-style-type: none;
+        padding-left: 0;
+    }
+    .citation-list a {
+        color: #555;
+        text-decoration: none;
+    }
+
 
     .h2{font-size:22px; margin:24px 0 8px}
     .cardGrid{display:grid; grid-template-columns:1fr 1fr; gap:16px}
@@ -205,27 +241,46 @@
       <section class="kpis">
         <div class="kpi">
           <h4>Peak Heat Load</h4>
-          <div><span id="kpiPeak" class="big">–</span><span class="unit">kWp</span></div>
+          <div><span id="kpiPeak" class="big">10.5</span><span class="unit">kWp</span></div>
           <div class="sub">The system size required to meet the space heating load.</div>
         </div>
         <div class="kpi">
           <h4>Heat Load By Floor Area</h4>
-          <div><span id="kpiWm2" class="big">–</span><span class="unit">W/m²</span></div>
+          <div><span id="kpiWm2" class="big">55.8</span><span class="unit">W/m²</span></div>
           <div class="sub">Whole-house load normalised by floor area.</div>
         </div>
         <div class="kpi">
           <h4>Annual Heating Energy Estimate</h4>
-          <div><span id="kpiKwh" class="big">–</span><span class="unit">kWh/yr</span></div>
+          <div><span id="kpiKwh" class="big">12,500</span><span class="unit">kWh/yr</span></div>
           <div class="sub">Actual energy depends on system efficiency (e.g., SCoP).</div>
         </div>
+        
+        <!-- NEW GEMINI FEATURE CARD -->
+        <div id="summaryCard" class="card">
+            <h3 style="margin:0 0 10px; font-size:16px;">Client Communication Tool (Gemini AI)</h3>
+            <div style="display:flex; align-items:center;">
+                <button id="btnGenerateSummary" type="button" style="padding: 8px 15px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    Generate Client Summary ✨
+                </button>
+                <div id="summaryLoader" style="display:none; margin-left: 15px; align-items: center;">
+                    <div class="loading-spinner"></div>
+                    <span style="font-size:12px; color:#555;">Generating summary...</span>
+                </div>
+            </div>
+            <div id="summaryOutput">
+                <!-- Summary Text and Citations will appear here -->
+            </div>
+        </div>
+        <!-- END NEW GEMINI FEATURE CARD -->
+        
       </section>
 
       <h2 class="h2">Design Conditions</h2>
       <div class="cardGrid">
-        <div class="card"><h5>Average Internal Room Temperature</h5><div><span id="dcAvgInt" class="big">–</span> <span class="unit">°C</span></div></div>
-        <div class="card"><h5>Mean Annual External Air Temperature</h5><div><span id="dcAvgExt" class="big">–</span> <span class="unit">°C</span></div></div>
-        <div class="card"><h5>Design External Air Temperature</h5><div><span id="dcDesignExt" class="big">–</span> <span class="unit">°C</span></div></div>
-        <div class="card"><h5>Heating Degree Days</h5><div><span id="dcHdd" class="big">–</span></div></div>
+        <div class="card"><h5>Average Internal Room Temperature</h5><div><span id="dcAvgInt" class="big">20</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Mean Annual External Air Temperature</h5><div><span id="dcAvgExt" class="big">9.5</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Design External Air Temperature</h5><div><span id="dcDesignExt" class="big">-3</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Heating Degree Days</h5><div><span id="dcHdd" class="big">2400</span></div></div>
       </div>
 
       <div class="hr"></div>
@@ -289,6 +344,118 @@
   <script type="module" src="js/final.js"></script>
   <script type="module" src="js/skin-mcs.js"></script>
 
-  <!-- Removed the aggressive JavaScript event listener to prevent potential interference with Vercel's routing/JS execution. -->
+  <!-- GEMINI AI INTEGRATION -->
+  <script type="module">
+    const summaryButton = document.getElementById('btnGenerateSummary');
+    const summaryOutput = document.getElementById('summaryOutput');
+    const summaryLoader = document.getElementById('summaryLoader');
+
+    summaryButton.addEventListener('click', generateClientSummary);
+
+    // Exponential backoff retry logic
+    async function fetchWithRetry(url, options, retries = 5) {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await fetch(url, options);
+          if (!response.ok) {
+            if (response.status === 429 && i < retries - 1) { // Too Many Requests
+              const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response;
+        } catch (error) {
+          if (i === retries - 1) {
+            throw error;
+          }
+          const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    // Function to safely extract text content from an element, or return a fallback
+    function safeRead(id, fallback = 'Unknown') {
+        const el = document.getElementById(id);
+        if (el) {
+            // Remove unit text (like kWp, kWh/yr) and strip whitespace
+            return el.textContent.replace(/[^0-9.,-]+/g, '').trim() || fallback;
+        }
+        return fallback;
+    }
+
+    async function generateClientSummary() {
+        summaryButton.disabled = true;
+        summaryLoader.style.display = 'flex';
+        summaryOutput.innerHTML = ''; // Clear previous results
+
+        try {
+            // 1. Collect data from the KPI cards
+            const peakLoad = safeRead('kpiPeak', '10.5'); // Default used for demonstration if final.js hasn't run
+            const annualEnergy = safeRead('kpiKwh', '12500');
+            const designTemp = safeRead('dcDesignExt', '-3');
+
+            const systemPrompt = "Act as a professional, friendly, and non-technical energy consultant. Write a concise, single-paragraph summary of the heat load calculation results for a homeowner. Clearly state the required heat pump size (kWp), the estimated annual energy usage (kWh/yr), and mention that the calculation adheres to the UK's MIS 3005-D standard. Use encouraging and simple language. Do NOT use markdown headings or lists.";
+            
+            const userQuery = `Based on the following calculated values for a property: Peak Heat Load: ${peakLoad} kWp, Annual Heating Energy Estimate: ${annualEnergy} kWh/yr, Design External Temperature: ${designTemp}°C. Provide a client-facing explanation.`;
+
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            const candidate = result.candidates?.[0];
+
+            if (candidate && candidate.content?.parts?.[0]?.text) {
+                const text = candidate.content.parts[0].text;
+                let sourcesHtml = '';
+                
+                // Extract and format grounding sources
+                const groundingMetadata = candidate.groundingMetadata;
+                if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                    const sources = groundingMetadata.groundingAttributions
+                        .map(attribution => ({
+                            uri: attribution.web?.uri,
+                            title: attribution.web?.title,
+                        }))
+                        .filter(source => source.uri && source.title);
+
+                    if (sources.length > 0) {
+                        sourcesHtml = `<ul class="citation-list">Grounding Sources: ${sources.map(s => `<li><a href="${s.uri}" target="_blank">${s.title}</a></li>`).join('')}</ul>`;
+                    }
+                }
+
+                summaryOutput.innerHTML = `
+                    <div class="summary-text">${text.replace(/\n/g, '<br>')}</div>
+                    ${sourcesHtml}
+                `;
+            } else {
+                summaryOutput.innerHTML = `<p style="color:red;">Error: Could not generate summary. Please check the API response.</p>`;
+            }
+
+        } catch (error) {
+            console.error('Gemini API Error:', error);
+            summaryOutput.innerHTML = `<p style="color:red;">An error occurred while connecting to the AI service. (${error.message})</p>`;
+        } finally {
+            summaryButton.disabled = false;
+            summaryLoader.style.display = 'none';
+        }
+    }
+  </script>
 </body>
 </html>
