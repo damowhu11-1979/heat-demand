@@ -8,7 +8,6 @@
   <style>
     .brand { height:48px; max-width:280px; object-fit:contain }
 
-    /* --- page shell --- */
     :root { --rail: 260px; --g: 14px; --card: #f7f7f7; --ink:#111; --muted:#666; --line:#e5e7eb; --accent:#10b981; }
     html,body{height:100%}
     body{
@@ -17,17 +16,23 @@
       color:var(--ink);
       background:#fff;
     }
-    .wrap{display:grid; grid-template-columns: var(--rail) 1fr; min-height:100vh}
+
+    /* Layout: fixed rail so nothing can cover it */
+    .wrap{min-height:100vh;}
     .rail{
+      position:fixed;            /* <— fixed instead of sticky */
+      left:0; top:0; bottom:0;
+      width:var(--rail);
       background:#fafafa;
       border-right:1px solid var(--line);
       padding:24px 18px;
-      position:sticky;
-      top:0;
-      height:100vh;
-      z-index:1000;          /* ensure rail is above main */
-      pointer-events:auto;   /* be explicit */
+      z-index:2147483647;        /* top of the world */
     }
+    .main{
+      margin-left:var(--rail);   /* make room for fixed rail */
+      padding:28px 34px;
+    }
+
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
     .navTitle{margin:16px 0 12px; color:#7a7a7a; font-weight:600;}
 
@@ -42,19 +47,16 @@
       background:#fff;
     }
 
-    .nav-link {
-      text-decoration: none;
-      color: inherit;
-      display: block;
-      cursor: pointer;
+    .nav-link{
+      text-decoration:none;
+      color:inherit;
+      display:block;
+      cursor:pointer;
     }
+    /* Ensure clicks hit the <a>, not its children */
+    .nav-link *{ pointer-events:none; }
 
     .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
-    .main{
-      padding:28px 34px;
-      position:relative;  /* give main a stacking context below rail */
-      z-index:0;
-    }
     .topline{
       display:flex;
       align-items:center;
@@ -67,88 +69,37 @@
     .title{margin:0; font-size:34px; letter-spacing:.4px}
     .meta{font-size:12px; color:var(--muted)}
 
-    /* --- KPIs --- */
-    .kpis{
-      display:grid;
-      grid-template-columns:repeat(3, minmax(0,1fr));
-      gap:16px;
-      margin:16px 0 24px;
-    }
-    .kpi{
-      background:#fff;
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:14px 16px;
-    }
-    .kpi h4{
-      margin:0 0 6px;
-      font-size:13px;
-      color:#444;
-      font-weight:600;
-      letter-spacing:.3px;
-    }
+    .kpis{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin:16px 0 24px;}
+    .kpi{background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px;}
+    .kpi h4{margin:0 0 6px; font-size:13px; color:#444; font-weight:600; letter-spacing:.3px;}
     .kpi .big{font-size:36px; font-weight:800}
     .kpi .unit{font-weight:600; margin-left:6px; color:#444}
     .kpi .sub{margin-top:6px; color:#666; font-size:12px}
 
-    /* --- sections & cards --- */
     .h2{font-size:22px; margin:24px 0 8px}
     .cardGrid{display:grid; grid-template-columns:1fr 1fr; gap:16px}
-    .card{
-      background:#fff;
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:16px;
-    }
+    .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px;}
     .card h5{margin:0 0 6px; font-size:13px; color:#444}
     .card .big{font-size:30px; font-weight:800}
     .hr{margin:14px 0 8px; border-top:2px solid #111}
 
-    /* --- tables --- */
-    table{
-      width:100%;
-      border-collapse:separate;
-      border-spacing:0;
-      background:#fff;
-      border:1px solid var(--line);
-      border-radius:12px;
-      overflow:hidden;
-    }
-    th,td{
-      padding:12px 14px;
-      border-top:1px solid var(--line);
-      vertical-align:middle;
-    }
-    th{
-      background:#fafafa;
-      text-align:left;
-      font-weight:700;
-      color:#333;
-    }
-    tr:first-child th,
-    tr:first-child td{border-top:0}
+    table{width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+    th,td{padding:12px 14px; border-top:1px solid var(--line); vertical-align:middle;}
+    th{background:#fafafa; text-align:left; font-weight:700; color:#333;}
+    tr:first-child th, tr:first-child td{border-top:0}
     td.num{text-align:right; font-variant-numeric: tabular-nums}
     tfoot td{font-weight:700; background:#fbfbfb}
 
-    /* --- notice --- */
     .notice{
-      display:flex;
-      gap:10px;
-      align-items:flex-start;
-      border:1px solid var(--line);
-      background:#f8fffB;
-      border-left:5px solid var(--accent);
-      padding:12px 14px;
-      border-radius:8px;
-      color:#1b4332;
-      font-size:13px;
+      display:flex; gap:10px; align-items:flex-start;
+      border:1px solid var(--line); background:#f8fffB;
+      border-left:5px solid var(--accent); padding:12px 14px;
+      border-radius:8px; color:#1b4332; font-size:13px;
     }
 
-    /* --- print tweaks --- */
     @media print {
-      .wrap{grid-template-columns:1fr}
       .rail{display:none}
-      .main{padding:20px}
+      .main{margin:0; padding:20px}
       .topline{border-bottom:1px solid #000}
       .kpi{page-break-inside:avoid}
       .card, table{page-break-inside:avoid}
@@ -158,44 +109,27 @@
 
 <body>
   <div class="wrap">
-    <!-- Left rail -->
     <aside class="rail">
       <div class="logo">M C S</div>
       <div class="navTitle">Heat Load Calculator</div>
 
-      <!-- Links go to your live pages -->
       <a class="nav-link" href="https://heat-demand-21n3.vercel.app/">
-        <div class="step">
-          Property Information <span class="tick"></span>
-        </div>
+        <div class="step">Property Information <span class="tick"></span></div>
       </a>
-
       <a class="nav-link" href="https://heat-demand-21n3.vercel.app/ventilation">
-        <div class="step">
-          Ventilation <span class="tick"></span>
-        </div>
+        <div class="step">Ventilation <span class="tick"></span></div>
       </a>
-
       <a class="nav-link" href="https://heat-demand-21n3.vercel.app/rooms">
-        <div class="step">
-          Heated Rooms <span class="tick"></span>
-        </div>
+        <div class="step">Heated Rooms <span class="tick"></span></div>
       </a>
-
       <a class="nav-link" href="https://heat-demand-21n3.vercel.app/room-elements">
-        <div class="step">
-          Building Elements <span class="tick"></span>
-        </div>
+        <div class="step">Building Elements <span class="tick"></span></div>
       </a>
-
       <a class="nav-link" href="https://heat-demand-21n3.vercel.app/final/final.html">
-        <div class="step">
-          Result Calculation <span class="tick"></span>
-        </div>
+        <div class="step">Result Calculation <span class="tick"></span></div>
       </a>
     </aside>
 
-    <!-- Main content -->
     <main class="main">
       <div class="topline">
         <div>
@@ -205,12 +139,7 @@
 
         <div style="display:flex; align-items:center; gap:8px">
           <img id="brandLogo" src="assets/logo.svg" class="brand" alt="Company logo" />
-          <input
-            id="logoFile"
-            type="file"
-            accept="image/png,image/jpeg,image/svg+xml"
-            style="display:none"
-          />
+          <input id="logoFile" type="file" accept="image/png,image/jpeg,image/svg+xml" style="display:none" />
           <button id="btnLogoPick" type="button">Change logo</button>
           <button id="btnLogoReset" type="button" title="Revert to default">Reset</button>
         </div>
@@ -224,7 +153,6 @@
         </div>
       </div>
 
-      <!-- KPIs -->
       <section class="kpis">
         <div class="kpi">
           <h4>Peak Heat Load</h4>
@@ -243,96 +171,42 @@
         </div>
       </section>
 
-      <!-- Design conditions -->
       <h2 class="h2">Design Conditions</h2>
       <div class="cardGrid">
-        <div class="card">
-          <h5>Average Internal Room Temperature</h5>
-          <div><span id="dcAvgInt" class="big">–</span> <span class="unit">°C</span></div>
-        </div>
-        <div class="card">
-          <h5>Mean Annual External Air Temperature</h5>
-          <div><span id="dcAvgExt" class="big">–</span> <span class="unit">°C</span></div>
-        </div>
-        <div class="card">
-          <h5>Design External Air Temperature</h5>
-          <div><span id="dcDesignExt" class="big">–</span> <span class="unit">°C</span></div>
-        </div>
-        <div class="card">
-          <h5>Heating Degree Days</h5>
-          <div><span id="dcHdd" class="big">–</span></div>
-        </div>
+        <div class="card"><h5>Average Internal Room Temperature</h5><div><span id="dcAvgInt" class="big">–</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Mean Annual External Air Temperature</h5><div><span id="dcAvgExt" class="big">–</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Design External Air Temperature</h5><div><span id="dcDesignExt" class="big">–</span> <span class="unit">°C</span></div></div>
+        <div class="card"><h5>Heating Degree Days</h5><div><span id="dcHdd" class="big">–</span></div></div>
       </div>
 
       <div class="hr"></div>
       <h2 class="h2">Calculation Details</h2>
       <div class="cardGrid">
-        <div class="card">
-          <h5>Fabric Heat Loss</h5>
-          <div><span id="cdFabric" class="big">–</span> <span class="unit">W</span></div>
-        </div>
-        <div class="card">
-          <h5>Ventilation Heat Loss</h5>
-          <div><span id="cdVent" class="big">–</span> <span class="unit">W</span></div>
-        </div>
-        <div class="card">
-          <h5>Heating Up Power</h5>
-          <div><span id="cdHeatUp" class="big">–</span> <span class="unit">W</span></div>
-        </div>
-        <div class="card">
-          <h5>Heat Gains</h5>
-          <div><span id="cdGains" class="big">0</span> <span class="unit">W</span></div>
-        </div>
-        <div class="card" style="grid-column:1/-1">
-          <h5>Space Heating Load</h5>
-          <div><span id="cdSpaceLoad" class="big">–</span> <span class="unit">W</span></div>
-        </div>
+        <div class="card"><h5>Fabric Heat Loss</h5><div><span id="cdFabric" class="big">–</span> <span class="unit">W</span></div></div>
+        <div class="card"><h5>Ventilation Heat Loss</h5><div><span id="cdVent" class="big">–</span> <span class="unit">W</span></div></div>
+        <div class="card"><h5>Heating Up Power</h5><div><span id="cdHeatUp" class="big">–</span> <span class="unit">W</span></div></div>
+        <div class="card"><h5>Heat Gains</h5><div><span id="cdGains" class="big">0</span> <span class="unit">W</span></div></div>
+        <div class="card" style="grid-column:1/-1"><h5>Space Heating Load</h5><div><span id="cdSpaceLoad" class="big">–</span> <span class="unit">W</span></div></div>
       </div>
 
       <div class="hr"></div>
       <h2 class="h2">Per-Room Peak Heat Loss</h2>
       <table id="perRoomTbl">
-        <thead>
-          <tr>
-            <th>Room Name</th>
-            <th>Floor Area (m²)</th>
-            <th>Design Temp (°C)</th>
-            <th>Peak Heat Load (W)</th>
-            <th>By Floor Area (W/m²)</th>
-            <th>Annual Energy (kWh/yr)</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Room Name</th><th>Floor Area (m²)</th><th>Design Temp (°C)</th><th>Peak Heat Load (W)</th><th>By Floor Area (W/m²)</th><th>Annual Energy (kWh/yr)</th></tr></thead>
         <tbody id="perRoomBody"></tbody>
       </table>
 
       <div class="hr"></div>
       <h2 class="h2">Fabric Breakdown</h2>
       <table id="fabricTbl">
-        <thead>
-          <tr>
-            <th>Adjacent Space</th>
-            <th>Description</th>
-            <th>Adjacent Temp (°C)</th>
-            <th class="num">Fabric Heat Loss (W)</th>
-            <th class="num">%</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Adjacent Space</th><th>Description</th><th>Adjacent Temp (°C)</th><th class="num">Fabric Heat Loss (W)</th><th class="num">%</th></tr></thead>
         <tbody id="fabricBody"></tbody>
       </table>
 
       <div class="hr"></div>
       <h2 class="h2">Ventilation Breakdown</h2>
       <table id="ventTbl">
-        <thead>
-          <tr>
-            <th>Zone Name</th>
-            <th>Internal Air Volume (m³)</th>
-            <th>External Surface Area† (m²)</th>
-            <th>Air Permeability @ 50Pa†† (m³/m²·h)</th>
-            <th class="num">Ventilation Heat Loss (W)</th>
-            <th class="num">%</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Zone Name</th><th>Internal Air Volume (m³)</th><th>External Surface Area† (m²)</th><th>Air Permeability @ 50Pa†† (m³/m²·h)</th><th class="num">Ventilation Heat Loss (W)</th><th class="num">%</th></tr></thead>
         <tbody id="ventBody"></tbody>
       </table>
 
@@ -350,24 +224,20 @@
     </main>
   </div>
 
-  <!-- Keep your original logic – it fills values from sessionStorage -->
+  <!-- Your original logic -->
   <script type="module" src="js/final.js"></script>
-  <!-- Skin hook to push values into the new UI (below) -->
   <script type="module" src="js/skin-mcs.js"></script>
 
-  <!-- Force navigation for sidebar links even if another handler cancels clicks -->
+  <!-- Force navigation even if another handler cancels it -->
   <script>
     (function () {
-      // Run after modules in case they register global handlers
       const links = document.querySelectorAll('a.nav-link');
       links.forEach(a => {
         a.addEventListener('click', function (e) {
-          // If any other handler tries to cancel, stop it first
-          e.stopImmediatePropagation();
-          // Do not call preventDefault here — we *want* navigation
-          // Hard navigate to the href to avoid SPA/router interference
+          e.stopImmediatePropagation();  // ignore global handlers
+          // do NOT call preventDefault; hard navigate:
           window.location.href = this.href;
-        }, true); // capture so this runs before bubbling handlers
+        }, true); // capture
       });
     })();
   </script>
