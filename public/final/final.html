@@ -34,6 +34,7 @@
     .main{
       margin-left:var(--rail);   /* make room for fixed rail */
       padding:28px 34px;
+      /* FIX: Removed explicit width calc. Block elements take up 100% of remaining space naturally. */
     }
 
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
@@ -96,12 +97,19 @@
     .card .big{font-size:30px; font-weight:800}
     .hr{margin:14px 0 8px; border-top:2px solid #111}
 
+    /* Table styles for display */
     table{width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden;}
     th,td{padding:12px 14px; border-top:1px solid var(--line); vertical-align:middle;}
     th{background:#fafafa; text-align:left; font-weight:700; color:#333;}
     tr:first-child th, tr:first-child td{border-top:0}
     td.num{text-align:right; font-variant-numeric: tabular-nums}
     tfoot td{font-weight:700; background:#fbfbfb}
+
+    /* New CSS class for responsive tables */
+    .table-responsive {
+        overflow-x: auto; /* Allows horizontal scrolling when content overflows */
+        margin-bottom: 24px; /* Add some space below the scrolling container */
+    }
 
     .notice{
       display:flex; gap:10px; align-items:flex-start;
@@ -118,6 +126,15 @@
       .card, table{page-break-inside:avoid}
       /* Ensure everything is visible in print */
       body { background: white; }
+      
+      /* New rule: Hide logo change/reset buttons on print */
+      #btnLogoPick, #btnLogoReset {
+          display: none !important;
+      }
+      /* Ensure tables don't scroll in print mode */
+      .table-responsive {
+        overflow-x: visible; 
+      }
     }
   </style>
 </head>
@@ -207,24 +224,36 @@
 
       <div class="hr"></div>
       <h2 class="h2">Per-Room Peak Heat Loss</h2>
-      <table id="perRoomTbl">
-        <thead><tr><th>Room Name</th><th>Floor Area (m²)</th><th>Design Temp (°C)</th><th>Peak Heat Load (W)</th><th>By Floor Area (W/m²)</th><th>Annual Energy (kWh/yr)</th></tr></thead>
-        <tbody id="perRoomBody"></tbody>
-      </table>
+      <!-- Responsive Wrapper -->
+      <div class="table-responsive">
+        <table id="perRoomTbl">
+          <thead><tr><th>Room Name</th><th>Floor Area (m²)</th><th>Design Temp (°C)</th><th>Peak Heat Load (W)</th><th>By Floor Area (W/m²)</th><th>Annual Energy (kWh/yr)</th></tr></thead>
+          <tbody id="perRoomBody"></tbody>
+        </table>
+      </div>
+      <!-- End Responsive Wrapper -->
 
       <div class="hr"></div>
       <h2 class="h2">Fabric Breakdown</h2>
-      <table id="fabricTbl">
-        <thead><tr><th>Adjacent Space</th><th>Description</th><th>Adjacent Temp (°C)</th><th class="num">Fabric Heat Loss (W)</th><th class="num">%</th></tr></thead>
-        <tbody id="fabricBody"></tbody>
-      </table>
+      <!-- Responsive Wrapper -->
+      <div class="table-responsive">
+        <table id="fabricTbl">
+          <thead><tr><th>Adjacent Space</th><th>Description</th><th>Adjacent Temp (°C)</th><th class="num">Fabric Heat Loss (W)</th><th class="num">%</th></tr></thead>
+          <tbody id="fabricBody"></tbody>
+        </table>
+      </div>
+      <!-- End Responsive Wrapper -->
 
       <div class="hr"></div>
       <h2 class="h2">Ventilation Breakdown</h2>
-      <table id="ventTbl">
-        <thead><tr><th>Zone Name</th><th>Internal Air Volume (m³)</th><th>External Surface Area† (m²)</th><th>Air Permeability @ 50Pa†† (m³/m²·h)</th><th class="num">Ventilation Heat Loss (W)</th><th class="num">%</th></tr></thead>
-        <tbody id="ventBody"></tbody>
-      </table>
+      <!-- Responsive Wrapper -->
+      <div class="table-responsive">
+        <table id="ventTbl">
+          <thead><tr><th>Zone Name</th><th>Internal Air Volume (m³)</th><th>External Surface Area† (m²)</th><th>Air Permeability @ 50Pa†† (m³/m²·h)</th><th class="num">Ventilation Heat Loss (W)</th><th class="num">%</th></tr></thead>
+          <tbody id="ventBody"></tbody>
+        </table>
+      </div>
+      <!-- End Responsive Wrapper -->
 
       <p class="meta" style="margin-top:10px">
         † External surface area excludes party walls (BS 12831-1:2017).
