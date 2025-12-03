@@ -5,7 +5,6 @@
   <title>Final Calculation</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   
-  <!-- FIX 1: Added media="print" so print styles don't mess up the screen layout/cursors -->
   <link rel="stylesheet" href="css/print.css" media="print" />
   
   <style>
@@ -23,28 +22,30 @@
       font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif;
       color:var(--ink);
       background:#fff;
+      /* FIX 1: Prevent global horizontal scrolling caused by overflowing content */
+      overflow-x: hidden;
     }
 
     /* Layout: fixed rail so nothing can cover it */
     .wrap{min-height:100vh;}
     .rail{
-      position:fixed;            /* <— fixed instead of sticky */
+      position:fixed;            
       left:0; top:0; bottom:0;
       width:var(--rail);
       background:#fafafa;
       border-right:1px solid var(--line);
       padding:24px 18px;
-      z-index:2147483647;        /* top of the world */
-      overflow-y: auto; /* Added overflow for safety */
+      z-index:2147483647;
+      overflow-y: auto;
     }
     .main{
       margin-left:var(--rail);   /* make room for fixed rail */
       padding:28px 34px;
-      /* FIX: Removed explicit width calc. Block elements take up 100% of remaining space naturally. */
-      /* NEW FIX: Ensure content respects container width, especially for long words/strings */
-      max-width: 100%;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
+      
+      /* FIX 2: Explicitly constrain the main content area to the remaining viewport width */
+      max-width: calc(100vw - var(--rail));
+      
+      /* Removed word-wrap/overflow-wrap as they can sometimes interfere with table layout */
     }
 
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
@@ -60,12 +61,10 @@
       margin-bottom:8px;
       background:#fff;
       transition: background 0.1s;
-      /* Ensure the inner div doesn't block the click or cursor */
       pointer-events: auto;
       cursor: pointer;
     }
     
-    /* Optional: Hover effect to make it feel more interactive */
     .nav-link:hover .step {
       background: #f0f0f0;
       border-color: #ccc;
@@ -75,22 +74,18 @@
       text-decoration:none;
       color:inherit;
       display:block;
-      /* Ensure pointer cursor is set */
       cursor: pointer; 
       pointer-events: auto;
     }
 
-    /* ********** NEW/ADJUSTED TICK STYLING ********** */
-    /* Ensure the tick size and background are consistent */
     .tick{
       width: 18px; 
       height: 18px; 
-      min-width: 18px; /* Added min-width to prevent shrinking */
+      min-width: 18px; 
       border-radius: 999px; 
-      background: var(--accent); /* Should be green */
-      margin-left: 10px; /* Ensure spacing between text and tick */
+      background: var(--accent); 
+      margin-left: 10px; 
     }
-    /* ********************************************** */
 
     .topline{
       display:flex;
@@ -129,7 +124,7 @@
     /* New CSS class for responsive tables */
     .table-responsive {
         overflow-x: auto; /* Allows horizontal scrolling when content overflows */
-        margin-bottom: 24px; /* Add some space below the scrolling container */
+        margin-bottom: 24px; 
     }
 
     .notice{
@@ -192,7 +187,6 @@
         </div>
 
         <div style="display:flex; align-items:center; gap:8px">
-          <!-- FIX: Placeholder for logo, as Vercel URL might fail for 'assets/logo.svg' -->
           <img id="brandLogo" src="https://placehold.co/120x48/10b981/ffffff?text=Company+Logo" class="brand" alt="Company logo" />
           <input id="logoFile" type="file" accept="image/png,image/jpeg,image/svg+xml" style="display:none" />
           <button id="btnLogoPick" type="button">Change logo</button>
