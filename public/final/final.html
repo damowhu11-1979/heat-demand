@@ -49,6 +49,9 @@
       margin-bottom:8px;
       background:#fff;
       transition: background 0.1s;
+      /* Ensure the inner div doesn't block the click or cursor */
+      pointer-events: auto;
+      cursor: pointer;
     }
     
     /* Optional: Hover effect to make it feel more interactive */
@@ -61,11 +64,10 @@
       text-decoration:none;
       color:inherit;
       display:block;
-      cursor:pointer; /* Ensures hand cursor appears */
+      /* FIX: Force pointer cursor with !important to override any external CSS */
+      cursor: pointer !important; 
+      pointer-events: auto !important;
     }
-
-    /* FIX 2: Removed the '.nav-link * { pointer-events:none }' rule. 
-       It is unnecessary and often prevents the cursor from changing correctly. */
 
     .tick{width:18px; height:18px; border-radius:999px; background:var(--accent)}
     .topline{
@@ -251,10 +253,12 @@
           // Prevent any existing scripts from blocking the navigation
           e.stopImmediatePropagation();
           e.stopPropagation();
+          e.preventDefault();
           
-          // Optional: You can un-comment this if other scripts are REALLY stubborn
-          // e.preventDefault();
-          // window.location.href = this.href;
+          // Force navigation manually. This overrides single-page-app routers 
+          // or other scripts that might be swallowing the click.
+          window.location.href = this.getAttribute('href');
+          
         }, true); // use capture phase to beat bubbling handlers
       });
     })();
