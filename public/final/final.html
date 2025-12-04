@@ -15,19 +15,30 @@
 
     .brand { height:48px; max-width:280px; object-fit:contain }
 
-    :root { --rail: 260px; --g: 14px; --card: #f7f7f7; --ink:#111; --muted:#666; --line:#e5e7eb; --accent:#10b981; }
+    :root { 
+      --rail: 260px; 
+      --g: 14px; 
+      --card: #f7f7f7; 
+      --ink:#111; 
+      --muted:#666; 
+      --line:#e5e7eb; 
+      --accent:#10b981; 
+      /* New breakpoint definition for responsiveness */
+      --breakpoint-md: 768px;
+    }
+    
     html,body{height:100%}
     body{
       margin:0;
       font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif;
       color:var(--ink);
       background:#fff;
-      /* FIX 1: Prevent global horizontal scrolling caused by overflowing content */
       overflow-x: hidden;
     }
 
     /* Layout: fixed rail so nothing can cover it */
-    .wrap{min-height:100vh;}
+    .wrap{min-height:100vh; display: flex;}
+
     .rail{
       position:fixed;            
       left:0; top:0; bottom:0;
@@ -35,16 +46,33 @@
       background:#fafafa;
       border-right:1px solid var(--line);
       padding:24px 18px;
-      z-index:2147483647;
+      z-index:10; /* Lowered z-index slightly */
       overflow-y: auto;
     }
+    
+    /* FIX FOR TEXT CUTOFF: Ensure main content starts after the rail and uses padding */
     .main{
+      flex-grow: 1; /* Allows main to take up remaining space */
       margin-left:var(--rail);   /* make room for fixed rail */
       padding:28px 34px;
-      
-      /* FIX 2: Removed max-width to prevent layout conflicts and text cutoff */
-      width: auto;
+      width: auto; /* Ensure it's fluid */
+      min-width: 0; /* Important for flex/grid layouts to prevent overflow */
     }
+
+    /* Mobile adjustments: Hide the rail on small screens */
+    @media (max-width: calc(var(--breakpoint-md) - 1px)) {
+        .rail {
+            width: 0;
+            padding: 0;
+            border-right: none;
+            /* Hide rail completely for mobile, would typically be managed by a menu button */
+        }
+        .main {
+            margin-left: 0;
+            padding: 16px; /* Reduced padding for mobile */
+        }
+    }
+
 
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
     .navTitle{margin:16px 0 12px; color:#7a7a7a; font-weight:600;}
@@ -97,7 +125,22 @@
     .title{margin:0; font-size:34px; letter-spacing:.4px}
     .meta{font-size:12px; color:var(--muted)}
 
-    .kpis{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin:16px 0 24px;}
+    /* Responsive KPI grid */
+    .kpis{
+      display:grid; 
+      grid-template-columns:repeat(3, minmax(0,1fr)); 
+      gap:16px; 
+      margin:16px 0 24px;
+    }
+    
+    /* Responsive adjustment for KPI grid */
+    @media (max-width: 1024px) {
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: var(--breakpoint-md)) {
+      .kpis { grid-template-columns: 1fr; }
+    }
+    
     .kpi{background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px;}
     .kpi h4{margin:0 0 6px; font-size:13px; color:#444; font-weight:600; letter-spacing:.3px;}
     .kpi .big{font-size:36px; font-weight:800}
@@ -106,7 +149,7 @@
     
     /* New styles for the summary card and loading state */
     #summaryCard {
-        grid-column: 1 / -1; /* Make the card span full width */
+        grid-column: 1 / -1; /* Make the card span full width on desktop/tablet */
         padding: 20px;
     }
     .loading-spinner {
@@ -144,6 +187,11 @@
 
     .h2{font-size:22px; margin:24px 0 8px}
     .cardGrid{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+    /* Responsive adjustment for card grid */
+    @media (max-width: var(--breakpoint-md)) {
+      .cardGrid { grid-template-columns: 1fr; }
+    }
+    
     .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px;}
     .card h5{margin:0 0 6px; font-size:13px; color:#444}
     .card .big{font-size:30px; font-weight:800}
@@ -256,7 +304,7 @@
           <div class="sub">Actual energy depends on system efficiency (e.g., SCoP).</div>
         </div>
         
-        <!-- GEMINI FEATURE CARD -->
+        <!-- GEMINI FEATURE CARD - Now fully visible with CSS fix -->
         <div id="summaryCard" class="card">
             <h3 style="margin:0 0 10px; font-size:16px;">Client Communication Tool (Gemini AI)</h3>
             <div style="display:flex; align-items:center;">
@@ -384,13 +432,19 @@
             <div class="card"><h5>Heating Degree Days</h5><div><span class="big">${design.heatingDegreeDays?.toFixed(0)??'–'}</span></div></div>
         `,
         // Generates the content for the Calculation Details (cardGrid)
-        details: ({fabricW_str, ventW_str, heatUp_str, gains_str, netPeak_str}) => `
-            <div class="card"><h5>Fabric Heat Loss</h5><div><span class="big">${fabricW_str}</span> <span class="unit">W</span></div></div>
-            <div class="card"><h5>Ventilation Heat Loss</h5><div><span class="big">${ventW_str}</span> <span class="unit">W</span></div></div>
-            <div class="card"><h5>Heating Up Power (${heatUp_str})</h5><div><span class="big">${fmtW(Number(netPeak_str.replace(/,/g, '')) * (parseFloat(heatUp_str)/100))}</span> <span class="unit">W</span></div></div>
-            <div class="card"><h5>Heat Gains</h5><div><span class="big">${gains_str}</span> <span class="unit">W</span></div></div>
-            <div class="card" style="grid-column:1/-1"><h5>Space Heating Load (Net)</h5><div><span class="big">${netPeak_str}</span> <span class="unit">W</span></div></div>
-        `,
+        details: ({fabricW_str, ventW_str, heatUp_str, gains_str, netPeak_str}) => {
+            const netPeakValue = Number(netPeak_str.replace(/,/g, ''));
+            const heatUpPct = parseFloat(heatUp_str) / 100;
+            const heatUpValue = netPeakValue * heatUpPct;
+            
+            return `
+                <div class="card"><h5>Fabric Heat Loss</h5><div><span class="big">${fabricW_str}</span> <span class="unit">W</span></div></div>
+                <div class="card"><h5>Ventilation Heat Loss</h5><div><span class="big">${ventW_str}</span> <span class="unit">W</span></div></div>
+                <div class="card"><h5>Heating Up Power (${heatUp_str})</h5><div><span class="big">${fmtW(heatUpValue)}</span> <span class="unit">W</span></div></div>
+                <div class="card"><h5>Heat Gains</h5><div><span class="big">${gains_str}</span> <span class="unit">W</span></div></div>
+                <div class="card" style="grid-column:1/-1"><h5>Space Heating Load (Total Peak)</h5><div><span class="big">${netPeak_str}</span> <span class="unit">Wp</span></div></div>
+            `;
+        },
         // Generates the table content (for room, fabric, vent tables)
         table: (head, rows) => `
             <thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead>
@@ -455,7 +509,8 @@
 
             ventRows.push(`<tr><td>${r.name}</td><td>${achBase ? 'Infiltration' : (mvhr?.isPresent?'MVHR':'Vent')}</td><td class="num">${(achEffective).toFixed(2)}</td><td class="num">${eta? (eta*100).toFixed(0)+'%':'—'}</td><td class="num">${dT_ext.toFixed(1)}</td><td class="num">${roomVent.toFixed(0)}</td></tr>`);
 
-            const peak = roomFabricW + roomVentW - gains;
+            const netLoss = roomFabricW + roomVentW;
+            const peak = netLoss - gains;
             
             // Note: Added 'num' class to relevant table cells
             roomRows.push(`<tr><td>${r.name}</td><td class="num">${r.area_m2?.toFixed(1)??'—'}</td><td class="num">${r.designTemp_C?.toFixed(1)??'—'}</td><td class="num">${roomFabricW.toFixed(0)}</td><td class="num">${roomVentW.toFixed(0)}</td><td class="num">${gains.toFixed(0)}</td><td class="num">${peak.toFixed(0)}</td><td class="num" data-room="${r.id}"></td></tr>`);
@@ -464,14 +519,14 @@
         }
 
         const heatUpPct = calc.heatUpAllowance_pct ?? 0;
-        const netPeakW = totalFabricW + totalVentW - totalGainsW;
-        const totalPeakW = netPeakW * (1 + heatUpPct);
+        const netW = totalFabricW + totalVentW - totalGainsW;
+        const totalPeakW = netW * (1 + heatUpPct);
         const floorArea = Number(calc.house?.floorAreaTotal || 0) || 1;
         const wPerM2 = totalPeakW / floorArea;
 
         // Annual
         const dT_design = (calc.design.avgInternalTemp - calc.design.designExternalTemp) || 1;
-        const UA = totalFabricW / dT_design;
+        const UA = (totalFabricW + totalVentW) / dT_design;
         const annualKWh = calc.annual_kWh ?? (calc.design.heatingDegreeDays ? (calc.design.heatingDegreeDays * 24 * UA / 1000) : null);
 
         // Summary
