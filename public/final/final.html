@@ -42,8 +42,8 @@
       margin-left:var(--rail);   /* make room for fixed rail */
       padding:28px 34px;
       
-      /* FIX 2: Explicitly constrain the main content area to the remaining viewport width */
-      max-width: calc(100vw - var(--rail));
+      /* FIX 2: Removed max-width to prevent layout conflicts and text cutoff */
+      width: auto;
     }
 
     .logo{font-weight:800; letter-spacing:6px; font-size:28px}
