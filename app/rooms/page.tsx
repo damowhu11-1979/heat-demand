@@ -1,645 +1,468 @@
-'use client';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Plus, X, Edit, Thermometer, Wind, Save } from 'lucide-react';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+// --- Room Design Constants derived from uploaded documents ---
 
-/* ------------------------------ TYPES ------------------------------ */
+const ROOM_TYPES = [
+  'Bathroom', 'Bedroom', 'Bedroom with en-suite', 'Bedroom/study',
+  'Breakfast room', 'Cloakroom/WC', 'Dining room', 'Dressing room',
+  'Family/breakfast room', 'Games room', 'Hall', 'Internal room/corridor',
+  'Kitchen', 'Landing', 'Lounge/sitting room', 'Living room',
+  'Shower room', 'Store room', 'Study', 'Toilet', 'Utility room'
+];
 
-type Room = {
-  zone: number;
-  type: string;
-  name: string;
-  maxCeiling: number;
-  designTemp: number;
-  airChangeRate: number;
-  internalAirVolume?: number;
-  intermittentHeatingPct?: number;
-  heatGainsW?: number;
+// Design Temperature (°C) from design-conditions.pdf (Table 3.6)
+const DESIGN_TEMPERATURES = {
+  'Bathroom': { 'A-J': 22, 'K-onwards': 22 },
+  'Bedroom': { 'A-J': 18, 'K-onwards': 21 },
+  'Bedroom with en-suite': { 'A-J': 21, 'K-onwards': 21 },
+  'Bedroom/study': { 'A-J': 21, 'K-onwards': 21 },
+  'Breakfast room': { 'A-J': 21, 'K-onwards': 21 },
+  'Cloakroom/WC': { 'A-J': 18, 'K-onwards': 21 },
+  'Dining room': { 'A-J': 21, 'K-onwards': 21 },
+  'Dressing room': { 'A-J': 18, 'K-onwards': 21 },
+  'Family/breakfast room': { 'A-J': 21, 'K-onwards': 21 },
+  'Games room': { 'A-J': 21, 'K-onwards': 21 },
+  'Hall': { 'A-J': 18, 'K-onwards': 21 },
+  'Internal room/corridor': { 'A-J': 18, 'K-onwards': 21 },
+  'Kitchen': { 'A-J': 18, 'K-onwards': 21 },
+  'Landing': { 'A-J': 18, 'K-onwards': 21 },
+  'Lounge/sitting room': { 'A-J': 21, 'K-onwards': 21 },
+  'Living room': { 'A-J': 21, 'K-onwards': 21 },
+  'Shower room': { 'A-J': 22, 'K-onwards': 22 },
+  'Store room': { 'A-J': 18, 'K-onwards': 21 },
+  'Study': { 'A-J': 21, 'K-onwards': 21 },
+  'Toilet': { 'A-J': 18, 'K-onwards': 21 },
+  'Utility room': { 'A-J': 18, 'K-onwards': 21 },
 };
 
-type Zone = { name: string; Rooms: Room[] };
-
-/* ------------------------------ STORAGE ------------------------------ */
-
-const STORAGE_VERSION = 2;
-const ROOMS_KEY = 'mcs.Rooms.v2';
-
-const safeParse = <T,>(raw: string | null): T | null => {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+// Minimum ACH (1/h) from ventilation-rates.pdf (Table 3.8)
+const MINIMUM_ACH = {
+  'Bathroom': { 'A-I': 3.0, 'J': 1.5, 'K-onwards': 0.5 },
+  'Bedroom': { 'A-I': 1.0, 'J': 1.0, 'K-onwards': 0.5 },
+  'Bedroom with en-suite': { 'A-I': 2.0, 'J': 1.5, 'K-onwards': 1.0 },
+  'Bedroom/study': { 'A-I': 1.5, 'J': 1.5, 'K-onwards': 0.5 },
+  'Breakfast room': { 'A-I': 1.5, 'J': 1.0, 'K-onwards': 0.5 },
+  'Cloakroom/WC': { 'A-I': 2.0, 'J': 1.5, 'K-onwards': 1.5 },
+  'Dining room': { 'A-I': 1.5, 'J': 1.0, 'K-onwards': 0.5 },
+  'Dressing room': { 'A-I': 1.5, 'J': 1.0, 'K-onwards': 0.5 },
+  'Family/breakfast room': { 'A-I': 2.0, 'J': 1.5, 'K-onwards': 0.5 },
+  'Games room': { 'A-I': 1.5, 'J': 1.0, 'K-onwards': 0.5 },
+  'Hall': { 'A-I': 2.0, 'J': 1.0, 'K-onwards': 0.5 },
+  'Internal room/corridor': { 'A-I': 0.0, 'J': 0.0, 'K-onwards': 0.0 },
+  'Kitchen': { 'A-I': 2.0, 'J': 1.5, 'K-onwards': 0.5 },
+  'Landing': { 'A-I': 2.0, 'J': 1.0, 'K-onwards': 0.5 },
+  'Lounge/sitting room': { 'A-I': 1.5, 'J': 1.0, 'K-onwards': 0.5 },
+  'Living room': { 'A-I': 1.5, 'J': 1.0, 'K-onwards': 0.5 },
+  'Shower room': { 'A-I': 3.0, 'J': 1.5, 'K-onwards': 0.5 },
+  'Store room': { 'A-I': 1.0, 'J': 0.5, 'K-onwards': 0.5 },
+  'Study': { 'A-I': 1.5, 'J': 1.5, 'K-onwards': 0.5 },
+  'Toilet': { 'A-I': 3.0, 'J': 1.5, 'K-onwards': 1.5 },
+  'Utility room': { 'A-I': 3.0, 'J': 2.0, 'K-onwards': 0.5 },
 };
 
-const readRooms = (): Zone[] | null => {
-  if (typeof window === 'undefined') return null;
-  const parsed = safeParse<{ version: number; zones: Zone[] }>(
-    localStorage.getItem(ROOMS_KEY)
+/**
+ * Helper to determine which design data set to use for Temperature.
+ */
+const getDesignConditionAgeBand = (ageBand) => {
+  return ageBand === 'K-onwards' ? 'K-onwards' : 'A-J';
+};
+
+/**
+ * Helper to determine which ACH data set to use.
+ */
+const getACHAgeBand = (ageBand) => {
+  if (ageBand.includes('K')) return 'K-onwards';
+  if (ageBand.includes('J')) return 'J';
+  return 'A-I';
+};
+
+/**
+ * Calculates the default design values for a given room type and age band.
+ */
+const getDesignValues = (roomType, ageBand) => {
+  const tempBand = getDesignConditionAgeBand(ageBand);
+  const achBand = getACHAgeBand(ageBand);
+
+  const temp = DESIGN_TEMPERATURES[roomType]?.[tempBand] || 21; // Default to 21 if unknown
+  const ach = MINIMUM_ACH[roomType]?.[achBand] || 0.5; // Default to 0.5 if unknown
+  
+  return { temp: parseFloat(temp), ach: parseFloat(ach) };
+};
+
+// Component for editing/displaying Temperature and ACH values
+const RoomValueEditor = ({ 
+  id, field, label, icon: Icon, unit, currentValue, designValue, 
+  isEditing, startEditing, stopEditing, handleChange, colorClass, step = 0.5
+}) => {
+  const isCustom = currentValue !== designValue;
+  const fieldName = field.includes('Temp') ? 'Temperature' : 'ACH';
+
+  return (
+    <div className={`flex items-center text-sm text-gray-700 px-3 py-1 rounded-full shadow-inner transition-colors duration-150 ${isCustom ? 'bg-yellow-100 border border-yellow-400' : 'bg-indigo-100'}`}>
+      <Icon size={16} className={`${colorClass} mr-2`} />
+      <span className="font-semibold mr-1">{label}:</span>
+      
+      {isEditing ? (
+        <div className="flex items-center">
+          <input
+            type="number"
+            step={step}
+            min={0}
+            value={currentValue}
+            onChange={(e) => handleChange(id, field, e.target.value)}
+            onBlur={() => stopEditing()}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') stopEditing();
+            }}
+            className="w-16 p-0.5 border-b border-indigo-500 text-center font-bold text-gray-900 bg-transparent focus:outline-none"
+            autoFocus
+          />
+          <span className="ml-0.5 text-gray-700">{unit}</span>
+          <button
+            onClick={() => stopEditing()}
+            className="ml-2 p-1 text-green-600 hover:text-green-800 transition duration-150 rounded-full"
+            aria-label={`Save custom ${fieldName}`}
+          >
+            <Save size={14} />
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center">
+          <span className={`ml-0.5 font-bold ${isCustom ? 'text-yellow-700' : colorClass}`}>
+            {currentValue.toFixed(unit === '°C' ? 0 : 1)}
+          </span>
+          <span className="ml-0.5 text-gray-700">{unit}</span>
+          {isCustom && (
+            <span className="ml-2 text-xs text-gray-500 italic" title={`Default: ${designValue}${unit}`}>
+              (Custom)
+            </span>
+          )}
+          <button
+            onClick={() => startEditing(id, field)}
+            className="ml-2 p-1 text-gray-400 hover:text-indigo-600 transition duration-150 rounded-full hover:bg-indigo-50"
+            aria-label={`Edit custom ${fieldName}`}
+          >
+            <Edit size={14} />
+          </button>
+        </div>
+      )}
+    </div>
   );
-  if (parsed?.version === STORAGE_VERSION && Array.isArray(parsed.zones)) {
-    return parsed.zones;
-  }
-  return null;
 };
 
-const writeRooms = (zones: Zone[]) => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(ROOMS_KEY, JSON.stringify({ version: STORAGE_VERSION, zones }));
-  } catch {}
-};
 
-/* ----------------------- AGE BAND → DEFAULTS ----------------------- */
-const AGE_BAND_KEY = 'mcs.AgeBand' as const;
+// Main App Component
+const App = () => {
+  // State for all rooms in the project
+  const [rooms, setRooms] = useState([]);
+  // State for the selected property age band
+  const [ageBand, setAgeBand] = useState('K-onwards');
+  
+  // State for editing:
+  const [editingId, setEditingId] = useState(null); // ID of the room being edited (for name or values)
+  const [editingField, setEditingField] = useState(null); // Field being edited ('name', 'customTemp', or 'customAch')
+  
+  // State for the room type selector
+  const [selectedRoomType, setSelectedRoomType] = useState(ROOM_TYPES[0]);
 
-const RECOMMENDED_BY_ROOM_AGE_A: Record<string, number> = {
-  Bathroom: 22,
-  Bedroom: 18,
-  'Bedroom with en-suite': 21,
-  'Bedroom/study': 21,
-  'Breakfast room': 21,
-  'Cloakroom/WC': 18,
-  'Dining Room': 21,
-  'Family/morning room': 21,
-  'Games room': 21,
-  Hall: 18,
-  'Internal room/corridor': 18,
-  Kitchen: 18,
-  Landing: 18,
-  'Lounge/sitting room': 21,
-  'Living Room': 21,
-  'Shower room': 22,
-  'Store room': 10,
-  Study: 21,
-  Toilet: 18,
-  'Utility room': 15,
-  Other: 21,
-};
 
-const RECOMMENDED_BY_ROOM_AGE_B_ONWARDS: Record<string, number> = new Proxy({}, {
-  get: (_t, k: string) => (k === 'Bathroom' || k === 'Shower room' ? 22 : 21),
-}) as Record<string, number>;
+  /**
+   * Refined naming logic to follow user's "multiple go up numerically" request
+   */
+  const getNextRoomNameRefined = useCallback((type) => {
+    const matchingRooms = rooms.filter(room => room.type === type);
+    
+    let highestSuffix = 0;
+    
+    matchingRooms.forEach(room => {
+        // Check for 'Bedroom 1', 'Bedroom 2', etc.
+        const match = room.name.match(new RegExp(`${type}\\s*(\\d+)$`));
+        if (match) {
+            highestSuffix = Math.max(highestSuffix, parseInt(match[1], 10));
+        } else if (room.name === type) {
+            // Treat the base name "Bedroom" as index 1
+            highestSuffix = Math.max(highestSuffix, 1);
+        }
+    });
 
-const AGE_B_BANDS = new Set<string>(['2012-present']);
-
-const readAgeBand = (): string | null => {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(AGE_BAND_KEY);
-};
-
-const isAgeBandBOnwards = () => {
-  const band = readAgeBand();
-  return band ? AGE_B_BANDS.has(band) : false;
-};
-
-const recommendedTempFor = (roomType: string): number => {
-  if (!roomType) return 21;
-  return isAgeBandBOnwards()
-    ? RECOMMENDED_BY_ROOM_AGE_B_ONWARDS[roomType] ?? 21
-    : RECOMMENDED_BY_ROOM_AGE_A[roomType] ?? 21;
-};
-
-/* ------------------------------ HELPERS ------------------------------ */
-
-const toNumberOr = (val: string, fallback: number | undefined) => {
-  if (val === '') return undefined;
-  const n = Number(val);
-  return Number.isFinite(n) ? n : fallback;
-};
-
-const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
-
-/* ------------------------------ PAGE ------------------------------ */
-
-export default function RoomsPage(): React.JSX.Element {
-  const [zones, setZones] = useState<Zone[]>([{ name: 'Zone 1', Rooms: [] }]);
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
-  const [userEditedDesignTemp, setUserEditedDesignTemp] = useState(false);
-
-  const [showModal, setShowModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingIndices, setEditingIndices] = useState<{ zoneIdx: number; roomIdx: number } | null>(null);
-
-  const emptyForm: Room = {
-    zone: 0,
-    type: '',
-    name: '',
-    maxCeiling: 2.4,
-    designTemp: 21,
-    airChangeRate: 1,
-    internalAirVolume: undefined,
-    intermittentHeatingPct: undefined,
-    heatGainsW: undefined,
-  };
-  const [form, setForm] = useState<Room>(emptyForm);
-
-  useEffect(() => {
-    const saved = readRooms();
-    if (saved && Array.isArray(saved) && saved.length) {
-      setZones(saved);
-      setExpanded({ 0: true });
+    let nextSuffix = highestSuffix + 1;
+    
+    // If it's the very first room of this type, don't append a number
+    if (matchingRooms.length === 0) {
+        return type;
     }
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => writeRooms(zones), 300);
-    return () => clearTimeout(t);
-  }, [zones]);
-
-  const roomTypes = useMemo(
-    () => [
-      'Bathroom','Bedroom','Bedroom with en-suite','Bedroom/study','Breakfast room',
-      'Cloakroom/WC','Dining Room','Family/morning room','Games room','Hall',
-      'Internal room/corridor','Kitchen','Landing','Lounge/sitting room','Living Room',
-      'Shower room','Store room','Study','Toilet','Utility room','Other',
-    ],
-    []
-  );
-
-  const onOpenAddRoom = () => {
-    setIsEditing(false);
-    setEditingIndices(null);
-    setUserEditedDesignTemp(false);
-    setForm({ ...emptyForm, zone: 0, designTemp: 21 });
-    setShowModal(true);
-  };
-
-  const onOpenEditRoom = (zoneIdx: number, roomIdx: number) => {
-    const room = zones[zoneIdx].Rooms[roomIdx];
-    setIsEditing(true);
-    setEditingIndices({ zoneIdx, roomIdx });
-    setUserEditedDesignTemp(false);
-    setForm({ ...room });
-    setShowModal(true);
-  };
-
-  const validate = (r: Room): string[] => {
-    const errs: string[] = [];
-    if (!r.name.trim()) errs.push('Room name is required.');
-    if (!r.type.trim()) errs.push('Room type is required.');
-    if (r.zone < 0 || r.zone >= zones.length) errs.push('Ventilation Zone is invalid.');
-    if (!(Number.isFinite(r.maxCeiling) && r.maxCeiling > 0)) errs.push('Max ceiling height must be > 0.');
-    if (!(Number.isFinite(r.designTemp))) errs.push('Design temperature is required.');
-    if (!(Number.isFinite(r.airChangeRate) && r.airChangeRate >= 0)) errs.push('Air change rate is required (>= 0).');
-
-    if (r.intermittentHeatingPct !== undefined) {
-      const pct = clamp(r.intermittentHeatingPct, 0, 100);
-      if (pct !== r.intermittentHeatingPct) errs.push('Intermittent heating must be 0–100%.');
-    }
-    if (r.internalAirVolume !== undefined && r.internalAirVolume < 0) {
-      errs.push('Internal air volume must be >= 0.');
-    }
-    if (r.heatGainsW !== undefined && r.heatGainsW < 0) {
-      errs.push('Heat gains must be >= 0 W.');
+    
+    // Ensure the generated name is unique *before* setting it
+    let proposedName = nextSuffix === 1 ? type : `${type} ${nextSuffix}`;
+    let suffix = nextSuffix;
+    
+    while (rooms.some(room => room.name === proposedName)) {
+        suffix++;
+        proposedName = `${type} ${suffix}`;
     }
 
-    const namesInZone = new Set(
-      zones[r.zone].Rooms
-        .filter((_r, idx) => !(isEditing && editingIndices && r.zone === editingIndices.zoneIdx && idx === editingIndices.roomIdx))
-        .map(_r => _r.name.trim().toLowerCase())
-    );
-    if (namesInZone.has(r.name.trim().toLowerCase())) {
-      errs.push('A room with this name already exists in the selected zone.');
-    }
+    return proposedName;
 
-    return errs;
-  };
+  }, [rooms]);
+  
+  /**
+   * Adds a new room with initial design values.
+   */
+  const addRoom = () => {
+    const type = selectedRoomType;
+    const newName = getNextRoomNameRefined(type);
+    
+    // Calculate initial design values based on current ageBand
+    const { temp, ach } = getDesignValues(type, ageBand);
 
-  const onSaveRoom = () => {
-    const errs = validate(form);
-    if (errs.length) {
-      alert(errs.join('\n'));
-      return;
-    }
-    const copy = [...zones];
-
-    if (isEditing && editingIndices) {
-      const { zoneIdx, roomIdx } = editingIndices;
-
-      if (zoneIdx !== form.zone) {
-        const moved = { ...form };
-        copy[zoneIdx] = {
-          ...copy[zoneIdx],
-          Rooms: copy[zoneIdx].Rooms.filter((_, i) => i !== roomIdx),
-        };
-        copy[form.zone] = {
-          ...copy[form.zone],
-          Rooms: [...copy[form.zone].Rooms, moved],
-        };
-        setExpanded((e) => ({ ...e, [form.zone]: true }));
-      } else {
-        const roomsCopy = [...copy[zoneIdx].Rooms];
-        roomsCopy[roomIdx] = { ...form };
-        copy[zoneIdx] = { ...copy[zoneIdx], Rooms: roomsCopy };
-      }
-    } else {
-      copy[form.zone] = {
-        ...copy[form.zone],
-        Rooms: [...copy[form.zone].Rooms, { ...form }],
-      };
-      setExpanded((e) => ({ ...e, [form.zone]: true }));
-    }
-
-    setZones(copy);
-    setShowModal(false);
-    setIsEditing(false);
-    setEditingIndices(null);
-  };
-
-  const onAddZone = () => {
-    const n = zones.length + 1;
-    setZones([...zones, { name: `Zone ${n}`, Rooms: [] }]);
-    setExpanded((e) => ({ ...e, [zones.length]: true }));
-  };
-
-  const onRemoveRoom = (zoneIdx: number, idx: number) => {
-    const ok = confirm('Remove this room? This cannot be undone.');
-    if (!ok) return;
-    const copy = [...zones];
-    copy[zoneIdx] = {
-      ...copy[zoneIdx],
-      Rooms: copy[zoneIdx].Rooms.filter((_, i) => i !== idx),
+    const newRoom = {
+      id: Date.now(), // Unique ID
+      type: type,
+      name: newName,
+      designTemp: temp, // Calculated default (baseline)
+      customTemp: temp, // User-editable temperature (defaults to designTemp)
+      designAch: ach,   // Calculated default (baseline)
+      customAch: ach,   // User-editable ACH (defaults to designAch)
     };
-    setZones(copy);
+
+    setRooms(prevRooms => [...prevRooms, newRoom]);
+  };
+
+  /**
+   * Updates baseline design values for all rooms when the age band changes.
+   * Keeps the user's custom values intact.
+   */
+  useEffect(() => {
+    setRooms(prevRooms => {
+      if (prevRooms.length === 0) return prevRooms;
+      
+      const newRooms = prevRooms.map(room => {
+        const { temp, ach } = getDesignValues(room.type, ageBand);
+        
+        return {
+          ...room,
+          designTemp: temp, // Update baseline
+          designAch: ach,   // Update baseline
+          // customTemp and customAch remain as they were, allowing the user's override to persist.
+        };
+      });
+      return newRooms;
+    });
+  }, [ageBand]);
+
+  /**
+   * Removes a room from the list.
+   */
+  const removeRoom = (id) => {
+    setRooms(prevRooms => prevRooms.filter(room => room.id !== id));
+  };
+
+  /**
+   * Starts editing a specific room field (name, customTemp, customAch).
+   */
+  const startEditing = (id, field) => {
+    setEditingId(id);
+    setEditingField(field);
+  };
+
+  /**
+   * Stops any current editing.
+   */
+  const stopEditing = () => {
+    setEditingId(null);
+    setEditingField(null);
+  };
+
+  /**
+   * Handles changes to the room name.
+   */
+  const handleNameChange = (id, newName) => {
+    setRooms(prevRooms =>
+      prevRooms.map(room =>
+        room.id === id ? { ...room, name: newName } : room
+      )
+    );
+  };
+
+  /**
+   * Handles changes to custom numerical values (Temp or ACH).
+   */
+  const handleCustomValueChange = (id, field, value) => {
+    let numValue = parseFloat(value);
+    
+    setRooms(prevRooms =>
+      prevRooms.map(room => {
+        if (room.id === id) {
+            // If parsing fails or value is empty, revert to the design value of that field type
+            let newValue = numValue;
+            if (isNaN(numValue) || value === '') {
+                newValue = field === 'customTemp' ? room.designTemp : room.designAch;
+            }
+            // Ensure ACH cannot be negative, although the input type handles this with 'min=0'
+            if (field === 'customAch' && newValue < 0) newValue = 0;
+
+            return { ...room, [field]: newValue };
+        }
+        return room;
+      })
+    );
   };
 
   return (
-    <main style={wrap}>
-      <h1 style={h1}>Rooms</h1>
-      <p style={subtle}>List the rooms and ceiling heights for each zone of the property. Design temperature and air change rate are required.</p>
+    <div className="p-4 sm:p-8 bg-gray-50 min-h-screen font-sans">
+      <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">
+        Room Design Specification Tool
+      </h1>
 
-      <section style={card}>
-        {zones.map((zone, zi) => (
-          <div
-            key={zi}
-            style={{
-              borderTop: zi ? '1px solid #eee' : undefined,
-              paddingTop: zi ? 12 : 0,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-              <button
-                onClick={() => setExpanded((e) => ({ ...e, [zi]: !e[zi] }))}
-                style={iconBtn}
-              >
-                {expanded[zi] ? '▾' : '▸'}
-              </button>
-              <strong>{zone.name}</strong>
-            </div>
-
-            {expanded[zi] && (
-              <div>
-                <div style={rowHeader}>
-                  <div style={{ flex: 2 }}>Room Name</div>
-                  <div style={{ width: 160 }}>Type</div>
-                  <div style={{ width: 110, textAlign: 'right' }}>Ceiling (m)</div>
-                  <div style={{ width: 140, textAlign: 'right' }}>Design Temp (°C)</div>
-                  <div style={{ width: 140, textAlign: 'right' }}>Air Changes (/hr)</div>
-                  <div style={{ width: 80 }}></div>
-                </div>
-
-                {zone.Rooms.map((r, i) => (
-                  <div key={i} style={row}>
-                    <div style={{ flex: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                    <div style={{ width: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.type || '-'}</div>
-                    <div style={{ width: 110, textAlign: 'right' }}>{r.maxCeiling.toFixed(2)}</div>
-                    <div style={{ width: 140, textAlign: 'right' }}>{r.designTemp}</div>
-                    <div style={{ width: 140, textAlign: 'right' }}>{r.airChangeRate}</div>
-
-                    <div style={{ width: 80, textAlign: 'right', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button onClick={() => onOpenEditRoom(zi, i)} style={linkBtn}>Edit</button>
-                      <button onClick={() => onRemoveRoom(zi, i)} style={linkDanger}>Remove</button>
-                    </div>
-                  </div>
-                ))}
-
-                {!zone.Rooms.length && (
-                  <div style={{ ...muted, padding: '10px 4px' }}>No rooms in this zone yet.</div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-
-        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button onClick={onOpenAddRoom} style={primaryBtn}>Add Room</button>
-          <button onClick={onAddZone} style={secondaryBtn}>Add Zone</button>
-        </div>
-      </section>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-        <Link href="/ventilation" style={{ ...secondaryBtn, textDecoration: 'none' }}>
-          ← Back: Ventilation
-        </Link>
-
-        <Link href="/elements" style={{ ...primaryBtn, textDecoration: 'none' }}>
-          Next: Building Elements →
-        </Link>
+      {/* Age Band Selector */}
+      <div className="mb-8 p-4 bg-white shadow-lg rounded-lg border border-indigo-200">
+        <label htmlFor="age-band" className="block text-sm font-medium text-gray-700 mb-2">
+          1. Select Property Age Band:
+        </label>
+        <select
+          id="age-band"
+          value={ageBand}
+          onChange={(e) => setAgeBand(e.target.value)}
+          className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm"
+        >
+          <option value="A-I">A-I (Pre-1967)</option>
+          <option value="J">J (1967–1975)</option>
+          <option value="K-onwards">K onwards (Post-1975)</option>
+        </select>
+        <p className="text-xs text-gray-500 mt-2">
+          Design values update automatically based on this selection. Current Temp Band: **{getDesignConditionAgeBand(ageBand)}**, ACH Band: **{getACHAgeBand(ageBand)}**
+        </p>
       </div>
 
-      {showModal && (
-        <div style={modalBackdrop} onClick={() => setShowModal(false)}>
-          <div style={modal} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 12px' }}>{isEditing ? 'Edit Room' : 'Add Room'}</h2>
-
-            <div style={grid2}>
-              <div>
-                <Label>Ventilation Zone *</Label>
-                <Select
-                  value={form.zone}
-                  onChange={(e) => setForm({ ...form, zone: Number(e.target.value) })}
-                >
-                  {zones.map((z, i) => (
-                    <option key={i} value={i}>{z.name}</option>
-                  ))}
-                </Select>
-              </div>
-
-              <div>
-                <Label>Room Type *</Label>
-                <Select
-                  value={form.type}
-                  onChange={(e) => {
-                    const nextType = e.target.value;
-                    const next = { ...form, type: nextType };
-                    if (!userEditedDesignTemp) {
-                      next.designTemp = recommendedTempFor(nextType);
-                    }
-                    setForm(next);
-                  }}
-                >
-                  <option value="">Select room type</option>
-                  {roomTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-
-            <Label>Room Name *</Label>
-            <Input
-              value={form.name}
-              placeholder="e.g., Master Bedroom"
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-
-            <div style={grid2}>
-              <div>
-                <Label>Max Ceiling Height (m) *</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={form.maxCeiling}
-                  onChange={(e) =>
-                    setForm({ ...form, maxCeiling: Number(e.target.value) || 0 })
-                  }
-                />
-              </div>
-
-              <div>
-                <Label>Design Temperature (°C) *</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={form.designTemp}
-                  onChange={(e) => {
-                    setUserEditedDesignTemp(true);
-                    setForm({ ...form, designTemp: Number(e.target.value) });
-                  }}
-                />
-                {form.type && (
-                  <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-                    Recommended for <strong>{form.type}</strong>{' '}
-                    ({isAgeBandBOnwards() ? 'Age Band B onwards' : 'Earlier age bands'})
-                    : <strong>{recommendedTempFor(form.type)}°C</strong>
-                    {!userEditedDesignTemp &&
-                      form.designTemp !== recommendedTempFor(form.type) && (
-                        <>
-                          {' '}
-                          <button
-                            style={{ ...linkBtn, marginLeft: 6 }}
-                            onClick={() =>
-                              setForm({ ...form, designTemp: recommendedTempFor(form.type) })
-                            }
-                          >
-                            Apply
-                          </button>
-                        </>
-                      )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Air changes only in its own row */}
-            <div style={grid2}>
-              <div>
-                <Label>Air Change Rate (/hr) *</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  value={form.airChangeRate}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      airChangeRate: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-
-              <div /> {/* spacer to keep the grid balanced */}
-            </div>
-
-            {/* Intermittent Heating & Heat Gains */}
-            <div style={grid2}>
-              <div>
-                <Label>Intermittent Heating (%)</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="1"
-                  min={0}
-                  max={100}
-                  value={form.intermittentHeatingPct ?? ''}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      intermittentHeatingPct: toNumberOr(e.target.value, form.intermittentHeatingPct),
-                    })
-                  }
-                />
-              </div>
-
-              <div>
-                <Label>Heat Gains (W)</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="1"
-                  value={form.heatGainsW ?? ''}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      heatGainsW: toNumberOr(e.target.value, form.heatGainsW),
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
-              <button onClick={() => setShowModal(false)} style={secondaryBtn}>
-                Cancel
-              </button>
-              <button onClick={onSaveRoom} style={primaryBtn}>
-                {isEditing ? 'Save changes' : 'Save room'}
-              </button>
-            </div>
-          </div>
+      {/* Add New Room Section */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-10 p-4 bg-indigo-50 border-2 border-indigo-400 rounded-xl shadow-xl">
+        <div className="flex-grow">
+          <label htmlFor="room-type-select" className="block text-sm font-medium text-indigo-700 mb-1">
+            2. Choose Room Type to Add:
+          </label>
+          <select
+            id="room-type-select"
+            value={selectedRoomType}
+            onChange={(e) => setSelectedRoomType(e.target.value)}
+            className="w-full p-2 border border-indigo-300 rounded-lg text-gray-900 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            {ROOM_TYPES.map(type => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
         </div>
-      )}
-    </main>
+        <button
+          onClick={addRoom}
+          className="flex items-center justify-center sm:self-end bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition duration-150 transform hover:scale-[1.02]"
+        >
+          <Plus size={20} className="mr-2" /> Add Room
+        </button>
+      </div>
+
+      {/* Room List */}
+      <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+        3. Project Room List ({rooms.length})
+      </h2>
+      <div className="space-y-4">
+        {rooms.length === 0 ? (
+          <p className="text-gray-500 p-6 bg-white rounded-lg shadow-inner text-center">
+            Start by selecting a room type and clicking "Add Room".
+          </p>
+        ) : (
+          rooms.map((room) => {
+            const isNameEditing = editingId === room.id && editingField === 'name';
+
+            return (
+              <div
+                key={room.id}
+                className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-white rounded-xl shadow-md transition duration-100 hover:shadow-lg border-l-4 border-indigo-500"
+              >
+                {/* Room Name & Edit */}
+                <div className="flex-1 min-w-0 mb-3 md:mb-0">
+                  <span className="block text-xs font-medium text-indigo-600 uppercase mb-1">
+                    {room.type}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {isNameEditing ? (
+                      <input
+                        type="text"
+                        value={room.name}
+                        onChange={(e) => handleNameChange(room.id, e.target.value)}
+                        onBlur={stopEditing}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') stopEditing();
+                        }}
+                        className="text-xl font-bold border-b-2 border-indigo-500 focus:outline-none w-full max-w-sm"
+                        autoFocus
+                      />
+                    ) : (
+                      <h3 className="text-xl font-bold text-gray-900 truncate">
+                        {room.name || room.type}
+                      </h3>
+                    )}
+                    <button
+                      onClick={() => isNameEditing ? stopEditing() : startEditing(room.id, 'name')}
+                      className="p-1 text-gray-400 hover:text-indigo-600 transition duration-150 rounded-full hover:bg-indigo-50"
+                      aria-label={isNameEditing ? "Finish editing name" : "Edit room name"}
+                    >
+                      <Edit size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Design Values Editors */}
+                <div className="flex gap-4 items-center flex-wrap mt-2 md:mt-0">
+                  {/* Temperature Editor */}
+                  <RoomValueEditor
+                    id={room.id}
+                    field="customTemp"
+                    label="Temp"
+                    icon={Thermometer}
+                    unit="°C"
+                    currentValue={room.customTemp}
+                    designValue={room.designTemp}
+                    isEditing={editingId === room.id && editingField === 'customTemp'}
+                    startEditing={startEditing}
+                    stopEditing={stopEditing}
+                    handleChange={handleCustomValueChange}
+                    colorClass="text-red-500"
+                    step={1}
+                  />
+                  
+                  {/* ACH Editor */}
+                  <RoomValueEditor
+                    id={room.id}
+                    field="customAch"
+                    label="ACH"
+                    icon={Wind}
+                    unit=""
+                    currentValue={room.customAch}
+                    designValue={room.designAch}
+                    isEditing={editingId === room.id && editingField === 'customAch'}
+                    startEditing={startEditing}
+                    stopEditing={stopEditing}
+                    handleChange={handleCustomValueChange}
+                    colorClass="text-blue-500"
+                    step={0.1}
+                  />
+                </div>
+
+                {/* Remove Button */}
+                <button
+                  onClick={() => removeRoom(room.id)}
+                  className="mt-3 md:mt-0 md:ml-6 p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition duration-150 flex-shrink-0"
+                  aria-label={`Remove room ${room.name}`}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
   );
-}
-
-/* ------------------------------ UI COMPONENTS ------------------------------ */
-
-function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', margin: '12px 0 6px', color: '#555', fontSize: 12 }}>{children}</label>;
-}
-
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} style={{ ...input, ...(props.style || {}) }} />;
-}
-
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} style={{ ...input, ...(props.style || {}) }} />;
-}
-
-/* ------------------------------ STYLES ------------------------------ */
-
-const FONT_STACK = 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
-
-const wrap: React.CSSProperties = {
-  maxWidth: 1040,
-  margin: '0 auto',
-  padding: 24,
-  fontFamily: FONT_STACK,
 };
 
-const h1: React.CSSProperties = { fontSize: 28, margin: '6px 0 12px' };
-
-const subtle: React.CSSProperties = { fontSize: 13, color: '#666', marginBottom: 16 };
-
-const muted: React.CSSProperties = { color: '#777' };
-
-const card: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #eee',   // <-- fixed
-  borderRadius: 14,
-  padding: 16,
-};
-
-const rowHeader: React.CSSProperties = {
-  display: 'flex',
-  padding: '8px 4px',
-  borderBottom: '1px solid #eee',
-  fontSize: 12,
-  color: '#555',
-};
-
-const row: React.CSSProperties = {
-  display: 'flex',
-  padding: '10px 4px',
-  alignItems: 'center',
-  borderBottom: '1px solid #f4f4f4',
-  gap: 8,
-};
-
-const input: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #ddd',
-  outline: 'none',
-  fontFamily: 'inherit',
-};
-
-const primaryBtn: React.CSSProperties = {
-  background: '#111',
-  color: '#fff',
-  border: '1px solid #111',
-  padding: '10px 16px',
-  borderRadius: 12,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const secondaryBtn: React.CSSProperties = {
-  background: '#fff',
-  color: '#111',
-  border: '1px solid #ddd',
-  padding: '10px 16px',
-  borderRadius: 12,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const linkBtn: React.CSSProperties = {
-  color: '#0a58ca',
-  cursor: 'pointer',
-  textDecoration: 'underline',
-  background: 'none',
-  border: 0,
-  padding: 0,
-  fontFamily: 'inherit',
-};
-
-const linkDanger: React.CSSProperties = {
-  color: '#b00020',
-  cursor: 'pointer',
-  textDecoration: 'underline',
-  background: 'none',
-  border: 0,
-  padding: 0,
-  fontFamily: 'inherit',
-};
-
-const iconBtn: React.CSSProperties = {
-  padding: '4px 10px',
-  borderRadius: 8,
-  border: '1px solid #ccc',
-  cursor: 'pointer',
-  background: '#fafafa',
-  fontFamily: 'inherit',
-};
-
-const grid2: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2, 1fr)',
-  gap: 12,
-};
-
-const modalBackdrop: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(0,0,0,0.3)',
-  display: 'grid',
-  placeItems: 'center',
-  zIndex: 50,
-};
-
-const modal: React.CSSProperties = {
-  background: '#fff',
-  width: 'min(720px, 92vw)',
-  borderRadius: 14,
-  border: '1px solid #e6e6e6',
-  padding: 20,
-  boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-  fontFamily: FONT_STACK,
-};
+export default App;
