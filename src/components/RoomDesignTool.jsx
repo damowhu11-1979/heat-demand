@@ -1,12 +1,13 @@
 import React from 'react';
-// Import the component from its new location
-import RoomDesigner from '../../components/RoomDesigner'; 
+// Final attempt at path resolution: Assuming the component is directly in the parent 'src' directory,
+// and allowing the bundler to resolve the file extension.
+import RoomDesignTool from '../RoomDesignTool';
 
 function RoomsPage() {
-  return (
-    // This is where you render the component you just added
-    <RoomDesigner />
-  );
+  return (
+    // Render the correctly imported component
+    <RoomDesignTool />
+  );
 }
 
 export default RoomsPage;
