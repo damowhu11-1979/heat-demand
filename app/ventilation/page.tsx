@@ -321,8 +321,8 @@ export default function VentilationPage() {
         <a href="/" style={secondaryBtn}>
           ← Back
         </a>
-        {/* Replaced Link with standard <a> tag AND updated href to the correct path: /room-elements */}
-        <a href="/room-elements" style={primaryBtn}>
+        {/* Replaced Link with standard <a> tag AND updated href to the correct path: /room */}
+        <a href="/room" style={primaryBtn}>
           Next: Heated Rooms →
         </a>
       </div>
