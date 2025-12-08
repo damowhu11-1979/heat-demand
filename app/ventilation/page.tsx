@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
+// import Link from 'next/link'; // Removed to fix the compilation error
 
 type RoomKey = keyof typeof ROOM_LABELS;
 
@@ -317,12 +317,14 @@ export default function VentilationPage() {
           paddingTop: 8,
         }}
       >
-        <Link href="/" style={secondaryBtn}>
+        {/* Replaced Link with standard <a> tag */}
+        <a href="/" style={secondaryBtn}>
           ← Back
-        </Link>
-        <Link href="/rooms" style={primaryBtn}>
+        </a>
+        {/* Replaced Link with standard <a> tag AND updated href to the correct path: /room-elements */}
+        <a href="/room-elements" style={primaryBtn}>
           Next: Heated Rooms →
-        </Link>
+        </a>
       </div>
     </main>
   );
