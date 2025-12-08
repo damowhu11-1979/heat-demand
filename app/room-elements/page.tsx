@@ -1,1167 +1,669 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Plus, X, Edit, Thermometer, Wind, Save, Ruler, LayoutGrid } from 'lucide-react';
 
-import ResultsCard from '../components/ResultsCard';
-import { computeRoomLoss } from '../lib/calc';
-import type { AgeBand, RoomType } from '../lib/vent-rates';
-import {
-  PROPERTY_AGE_BANDS,
-  AGE_BAND_TO_TIER,
-  type PropertyAgeBandLabel,
-  coercePropertyAgeBandLabel,
-} from '../lib/age-bands';
+// --- Room Design Constants derived from uploaded documents ---
 
-/* ============================================================================
-   Persistence helpers (safe localStorage wrapper)
-============================================================================ */
-const LS_KEY = 'mcs.room.elements.v2';
-const LS_BYROOM_KEY = 'mcs.room.elements.byRoom.v1';
-const LS_ROOMS_KEYS = [
-  'mcs.Rooms.v2', 'mcs.Rooms.v1', 'mcs.rooms.v2', 'mcs.rooms.v1', 'mcs.rooms', 'rooms.v1'
+const ROOM_TYPES = [
+  'Bathroom', 'Bedroom', 'Bedroom with en-suite', 'Bedroom/study',
+  'Breakfast room', 'Cloakroom/WC', 'Dining room', 'Dressing room',
+  'Family/breakfast room', 'Games room', 'Hall', 'Internal room/corridor',
+  'Kitchen', 'Landing', 'Lounge/sitting room', 'Living room',
+  'Shower room', 'Store room', 'Study', 'Toilet', 'Utility room'
 ];
 
-interface SafeStorage {
-  getItem(k: string): string | null;
-  setItem(k: string, v: string): void;
-  removeItem(k: string): void;
-}
+const DEFAULT_ZONES = ['Zone 1', 'Zone 2', 'Zone 3'];
 
-const memoryStorage: SafeStorage = (() => {
-  const m = new Map<string, string>();
-  return {
-    getItem: (k) => (m.has(k) ? (m.get(k) as string) : null),
-    setItem: (k, v) => { m.set(k, v); },
-    removeItem: (k) => { m.delete(k); },
-  };
-})();
-
-function getStorage(): SafeStorage {
-  if (typeof window === 'undefined') return memoryStorage;
-  try {
-    const s: Storage | undefined | null = (window as any).localStorage ?? null;
-    if (!s) return memoryStorage;
-    try { const t='__probe__'; s.setItem(t,'1'); s.removeItem(t); } catch { return memoryStorage; }
-    return {
-      getItem: (k) => { try { const v = s.getItem(k); return typeof v === 'string' ? v : null; } catch { return null; } },
-      setItem: (k,v) => { try { s.setItem(k,v); } catch {} },
-      removeItem: (k) => { try { s.removeItem(k); } catch {} },
-    };
-  } catch { return memoryStorage; }
-}
-function readJSON<T>(k: string): T | null {
-  const s = getStorage();
-  try {
-    const raw = s.getItem(k);
-    if (raw === null || raw === '' || raw === 'null' || raw === 'undefined') return null;
-    const parsed = JSON.parse(raw as string);
-    return parsed == null ? null : (parsed as T);
-  } catch { return null; }
-}
-function writeJSON(k: string, v: unknown) {
-  const s = getStorage();
-  try {
-    if (typeof v === 'undefined') { s.removeItem(k); return; }
-    s.setItem(k, JSON.stringify(v));
-  } catch {}
-}
-function readJSONMap<T extends object = Record<string, any>>(k: string): T {
-  const v = readJSON<T>(k);
-  return v && typeof v === 'object' ? v : ({} as T);
-}
-
-/* ============================================================================
-   Types / Model
-============================================================================ */
-export type Orientation = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
-export type Adjacent = 'Exterior' | 'Interior (Heated)' | 'Interior (Unheated)' | 'Ground';
-export type OpeningKind = 'window' | 'door' | 'roof_window';
-
-export interface Opening {
-  id: string;
-  kind: OpeningKind;
-  width: number;
-  height: number;
-  uValue?: number | '';
-}
-export interface Wall {
-  id: string;
-  name: string;
-  orientation: Orientation;
-  adjacent: Adjacent;
-  width: number;
-  height: number;
-  uValue?: number | '';
-  openings: Opening[];
-}
-export interface FloorEl {
-  id: string;
-  name: string;
-  adjacent: Adjacent;
-  width: number;
-  height: number;
-  uValue?: number | '';
-}
-export interface CeilingEl {
-  id: string;
-  name: string;
-  type: 'Ceiling' | 'Roof';
-  adjacent: Exclude<Adjacent, 'Ground'>;
-  width: number;
-  height: number;
-  uValue?: number | '';
-  openings: Opening[];
-}
-export interface VentDevice {
-  id: string;
-  type: 'trickle_vent' | 'mvhr_supply' | 'mvhr_extract' | 'mechanical_extract' | 'passive_vent';
-  overrideFlow?: number | '';
-  notes?: string;
-}
-export interface RoomModel {
-  id?: string;
-  zoneId?: string;
-  name: string;
-  length: number;
-  width: number;
-  height: number;
-  volumeOverride?: number | '' | null;
-  walls: Wall[];
-  floors: FloorEl[];
-  ceilings: CeilingEl[];
-  ventilation: VentDevice[];
-}
-
-/* ============================================================================
-   Utils
-============================================================================ */
-const defaultVentFlows: Record<VentDevice['type'], number> = {
-  trickle_vent: 5, mvhr_supply: 8, mvhr_extract: 13, mechanical_extract: 8, passive_vent: 5,
-};
-const uid = () => Math.random().toString(36).slice(2, 9);
-const toNum = (v: any) => (typeof v === 'number' ? v : parseFloat(String(v)));
-const num = (v: any) => {
-  const n = toNum(v);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-};
-const area = (w: number, h: number) => +(num(w) * num(h)).toFixed(2);
-const clampNumber = (v: any) => {
-  const n = toNum(v);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+// Design Temperature (°C) from design-conditions.pdf (Table 3.6)
+const DESIGN_TEMPERATURES: Record<string, Record<string, number>> = {
+  Bathroom: { 'A-J': 22, 'K-onwards': 22 },
+  Bedroom: { 'A-J': 18, 'K-onwards': 21 },
+  'Bedroom with en-suite': { 'A-J': 21, 'K-onwards': 21 },
+  'Bedroom/study': { 'A-J': 21, 'K-onwards': 21 },
+  'Breakfast room': { 'A-J': 21, 'K-onwards': 21 },
+  'Cloakroom/WC': { 'A-J': 18, 'K-onwards': 21 },
+  'Dining room': { 'A-J': 21, 'K-onwards': 21 },
+  'Dressing room': { 'A-J': 18, 'K-onwards': 21 },
+  'Family/breakfast room': { 'A-J': 21, 'K-onwards': 21 },
+  'Games room': { 'A-J': 21, 'K-onwards': 21 },
+  Hall: { 'A-J': 18, 'K-onwards': 21 },
+  'Internal room/corridor': { 'A-J': 18, 'K-onwards': 21 },
+  Kitchen: { 'A-J': 18, 'K-onwards': 21 },
+  Landing: { 'A-J': 18, 'K-onwards': 21 },
+  'Lounge/sitting room': { 'A-J': 21, 'K-onwards': 21 },
+  'Living room': { 'A-J': 21, 'K-onwards': 21 },
+  'Shower room': { 'A-J': 22, 'K-onwards': 22 },
+  'Store room': { 'A-J': 18, 'K-onwards': 21 },
+  Study: { 'A-J': 21, 'K-onwards': 21 },
+  Toilet: { 'A-J': 18, 'K-onwards': 21 },
+  'Utility room': { 'A-J': 18, 'K-onwards': 21 },
 };
 
-/* ============================================================================
-   ROOMS IMPORT HELPERS (includes roomType + designTemp)
-============================================================================ */
-type Any = any;
+// Minimum ACH (1/h) from ventilation-rates.pdf (Table 3.8)
+const MINIMUM_ACH: Record<string, Record<string, number>> = {
+  Bathroom: { 'A-I': 3.0, J: 1.5, 'K-onwards': 0.5 },
+  Bedroom: { 'A-I': 1.0, J: 1.0, 'K-onwards': 0.5 },
+  'Bedroom with en-suite': { 'A-I': 2.0, J: 1.5, 'K-onwards': 1.0 },
+  'Bedroom/study': { 'A-I': 1.5, J: 1.5, 'K-onwards': 0.5 },
+  'Breakfast room': { 'A-I': 1.5, J: 1.0, 'K-onwards': 0.5 },
+  'Cloakroom/WC': { 'A-I': 2.0, J: 1.5, 'K-onwards': 1.5 },
+  'Dining room': { 'A-I': 1.5, J: 1.0, 'K-onwards': 0.5 },
+  'Dressing room': { 'A-I': 1.5, J: 1.0, 'K-onwards': 0.5 },
+  'Family/breakfast room': { 'A-I': 2.0, J: 1.5, 'K-onwards': 0.5 },
+  'Games room': { 'A-I': 1.5, J: 1.0, 'K-onwards': 0.5 },
+  Hall: { 'A-I': 2.0, J: 1.0, 'K-onwards': 0.5 },
+  'Internal room/corridor': { 'A-I': 0.0, J: 0.0, 'K-onwards': 0.0 },
+  Kitchen: { 'A-I': 2.0, J: 1.5, 'K-onwards': 0.5 },
+  Landing: { 'A-I': 2.0, J: 1.0, 'K-onwards': 0.5 },
+  'Lounge/sitting room': { 'A-I': 1.5, J: 1.0, 'K-onwards': 0.5 },
+  'Living room': { 'A-I': 1.5, J: 1.0, 'K-onwards': 0.5 },
+  'Shower room': { 'A-I': 3.0, J: 1.5, 'K-onwards': 0.5 },
+  'Store room': { 'A-I': 1.0, J: 0.5, 'K-onwards': 0.5 },
+  Study: { 'A-I': 1.5, J: 1.5, 'K-onwards': 0.5 },
+  Toilet: { 'A-I': 3.0, J: 1.5, 'K-onwards': 1.5 },
+  'Utility room': { 'A-I': 3.0, J: 2.0, 'K-onwards': 0.5 },
+};
 
-function loadRoomsRaw(): Any | null {
-  for (const key of LS_ROOMS_KEYS) {
-    const raw = readJSON<any>(key);
-    if (raw) return raw;
-  }
-  return null;
-}
-function findSourceRoomById(id: string): Any | null {
-  const src = loadRoomsRaw();
-  if (!src) return null;
+/** Helper to determine which design data set to use for Temperature. */
+const getDesignConditionAgeBand = (ageBand: string) => {
+  return ageBand === 'K-onwards' ? 'K-onwards' : 'A-J';
+};
 
-  if (Array.isArray(src?.zones)) {
-    for (const z of src.zones) {
-      const arr = z?.Rooms || z?.rooms || [];
-      const hit = arr.find((r: Any) => String(r?.id ?? r?.roomId ?? r?.name) === String(id));
-      if (hit) return hit;
-    }
-  }
-  if (Array.isArray(src?.Rooms)) {
-    const hit = src.Rooms.find((r: Any) => String(r?.id ?? r?.roomId ?? r?.name) === String(id));
-    if (hit) return hit;
-  }
-  if (Array.isArray(src?.rooms)) {
-    const hit = src.rooms.find((r: Any) => String(r?.id ?? r?.roomId ?? r?.name) === String(id));
-    if (hit) return hit;
-  }
-  if (Array.isArray(src)) {
-    const hit = src.find((r: Any) => String(r?.id ?? r?.roomId ?? r?.name) === String(id));
-    if (hit) return hit;
-  }
-  return null;
-}
-function pickNum(x: Any, ...keys: string[]): number {
-  for (const k of keys) {
-    const v = x?.[k];
-    const n = typeof v === 'number' ? v : parseFloat(String(v));
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  return 0;
-}
-function pickStr(x: Any, ...keys: string[]): string | '' {
-  for (const k of keys) {
-    const v = x?.[k];
-    if (v == null) continue;
-    const s = String(v).trim();
-    if (s) return s;
-  }
-  return '';
-}
-function normalizeRoomType(s: string): RoomType | null {
-  const v = s.toLowerCase();
-  if (/(bed|bedroom)/.test(v)) return 'bedroom';
-  if (/(living|lounge|sitting)/.test(v)) return 'living';
-  if (/(kitchen)/.test(v)) return 'kitchen';
-  if (/(utility)/.test(v)) return 'utility';
-  if (/(bath|shower)/.test(v)) return 'bathroom';
-  if (/(wc|toilet|cloak)/.test(v)) return 'wc';
-  if (/(habitable|study|office|dining|play)/.test(v)) return 'habitable';
-  return null;
-}
-function basicsFromSourceRoom(r: Any): {
-  name?: string;
-  length?: number;
-  width?: number;
-  height?: number;
-  roomType?: RoomType;
-  designTempC?: number;
-} {
-  if (!r) return {};
-  const name = String(r?.name ?? r?.label ?? r?.title ?? 'Room');
-  const length = pickNum(r, 'length','Length','L','len');
-  const width  = pickNum(r, 'width','Width','W');
-  const height = pickNum(r, 'height','Height','H');
+/** Helper to determine which ACH data set to use. */
+const getACHAgeBand = (ageBand: string) => {
+  if (ageBand.includes('K')) return 'K-onwards';
+  if (ageBand.includes('J')) return 'J';
+  return 'A-I';
+};
 
-  const rtRaw = pickStr(r, 'roomType','type','category','use','kind');
-  const rt = normalizeRoomType(rtRaw) ?? undefined;
+/** Calculates the default design values for a given room type and age band. */
+const getDesignValues = (roomType: string, ageBand: string) => {
+  const tempBand = getDesignConditionAgeBand(ageBand);
+  const achBand = getACHAgeBand(ageBand);
 
-  const designTempC = pickNum(
-    r,
-    'designTempC','design_temperature_c','designTemp','heatingSetpointC','heatingSetpoint','setpointC','setpoint'
-  ) || undefined;
+  const temp = DESIGN_TEMPERATURES[roomType]?.[tempBand] ?? 21;
+  const ach = MINIMUM_ACH[roomType]?.[achBand] ?? 0.5;
 
-  return { name, length, width, height, roomType: rt, designTempC };
-}
+  return { temp: parseFloat(String(temp)), ach: parseFloat(String(ach)) };
+};
 
-/* ============================================================================
-   ---- FINAL CALCULATION PAGE PAYLOAD HELPERS (NEW) ----
-============================================================================ */
-type FinalElAdj = 'external' | 'unheated' | 'ground' | 'internal_heated';
-function mapAdj(a: Adjacent): FinalElAdj {
-  switch (a) {
-    case 'Exterior': return 'external';
-    case 'Interior (Unheated)': return 'unheated';
-    case 'Ground': return 'ground';
-    default: return 'internal_heated';
-  }
-}
-function pushOpeningAsElement(
-  out: any[], _ownerName: string, adj: Adjacent, kind: 'window'|'door'|'roof_window', o: Opening
-){
-  const area_m2 = +(num(o.width) * num(o.height)).toFixed(2);
-  if (!area_m2) return;
-  out.push({
-    type: kind === 'door' ? 'door' : 'window',
-    adj: mapAdj(adj),
-    area_m2,
-    U_Wm2K: num(o.uValue),
-  });
-}
-function elementsFromRoom(r: RoomModel) {
-  const list: any[] = [];
-
-  // Walls (+ openings as separate elements)
-  r.walls.forEach(w => {
-    const gross = num(w.width) * num(w.height);
-    const openingsArea = (w.openings||[]).reduce((s,o)=> s + (num(o.width)*num(o.height)), 0);
-    const net = Math.max(gross - openingsArea, 0);
-    if (net) {
-      list.push({
-        type: 'wall',
-        adj: mapAdj(w.adjacent),
-        area_m2: +net.toFixed(2),
-        U_Wm2K: num(w.uValue),
-      });
-    }
-    (w.openings||[]).forEach(o => pushOpeningAsElement(list, w.name, w.adjacent, o.kind, o));
-  });
-
-  // Floors
-  r.floors.forEach(f => {
-    const A = +(num(f.width)*num(f.height)).toFixed(2);
-    if (!A) return;
-    list.push({
-      type: 'floor',
-      adj: mapAdj(f.adjacent),
-      area_m2: A,
-      U_Wm2K: num(f.uValue),
-    });
-  });
-
-  // Ceilings/Roofs (+ roof windows)
-  r.ceilings.forEach(c => {
-    const gross = num(c.width) * num(c.height);
-    const openingsArea = (c.openings||[]).reduce((s,o)=> s + (num(o.width)*num(o.height)), 0);
-    const net = Math.max(gross - openingsArea, 0);
-    if (net) {
-      list.push({
-        type: c.type === 'Roof' ? 'roof' : 'ceiling',
-        adj: mapAdj(c.adjacent),
-        area_m2: +net.toFixed(2),
-        U_Wm2K: num(c.uValue),
-      });
-    }
-    (c.openings||[]).forEach(o => pushOpeningAsElement(list, c.name, c.adjacent, 'roof_window', o));
-  });
-
-  return list;
-}
-function buildFinalPayloadFromStorage() {
-  const byRoom = readJSON<Record<string, RoomModel>>(LS_BYROOM_KEY) || {};
-  const meta   = readJSON<Record<string, { roomType?: RoomType; designTempC?: number }>>('mcs.room.meta.byRoom.v1') || {};
-  const rooms = Object.entries(byRoom).map(([id, r]) => ({
-    id,
-    name: r.name || id,
-    area_m2: +(num(r.length)*num(r.width)).toFixed(2),
-    volume_m3: +(num(r.length)*num(r.width)*num(r.height)).toFixed(1),
-    designTemp_C: typeof meta[id]?.designTempC === 'number' ? meta[id]!.designTempC! : 21,
-    elements: elementsFromRoom(r),
-  }));
-
-  // Design inputs – adjust keys if you have different storage locations
-  const S = getStorage();
-  const avgAnnual = num((S.getItem('mcs.design.avgAnnualExternalC') ?? '9.5'));
-  const designExt = num((S.getItem('mcs.design.designExternalC') ?? '-3'));
-  const avgInt    = num((S.getItem('mcs.design.avgInternalC') ?? '20'));
-  const hdd       = num((S.getItem('mcs.design.hdd') ?? '2500'));
-
-  const floorAreaTotal = rooms.reduce((s,r)=> s + (r.area_m2||0), 0);
-  const volumeTotal    = rooms.reduce((s,r)=> s + (r.volume_m3||0), 0);
-
-  const anyMVHR = Object.values(byRoom).some(r => (r.ventilation||[]).some(v => v.type === 'mvhr_supply' || v.type === 'mvhr_extract'));
-  const mvhrEta = num(S.getItem('mcs.vent.mvhr.eta') ?? '0.85');
-
-  return {
-    project: {
-      client: S.getItem('mcs.project.client') || 'Client',
-      siteAddress: S.getItem('mcs.project.address') || 'Address',
-      assessor: S.getItem('mcs.project.assessor') || 'Assessor',
-      methodVersion: 'MIS3005-D/EN12831-1:2017',
-      timestamp: new Date().toISOString(),
-    },
-    design: {
-      avgExternalAnnualTemp: avgAnnual,
-      designExternalTemp: designExt,
-      avgInternalTemp: avgInt,
-      heatingDegreeDays: hdd,
-    },
-    house: {
-      floorAreaTotal,
-      volumeTotal,
-      infiltrationRateACH: num(S.getItem('mcs.vent.infiltrationACH') ?? '0.5'),
-      mvhr: { isPresent: anyMVHR, supply_m3ph: undefined, extract_m3ph: undefined, efficiency: mvhrEta }
-    },
-    rooms,
-    gains_W: 0,
-    heatUpAllowance_pct: num(S.getItem('mcs.heatUpPct') ?? '0.10') || 0.10,
-  };
-}
-
-/* ============================================================================
-   Component
-============================================================================ */
-export default function RoomElementsPage(): React.JSX.Element {
-  const router = useRouter();
-  const BP = process.env.NEXT_PUBLIC_BASE_PATH || '';
-  const goElements = () => router.push(`${BP}/elements/`);
-
-  // Main model
-  const [room, setRoom] = useState<RoomModel>({
-    name: 'Bedroom 1',
-    length: 0, width: 0, height: 0, volumeOverride: null,
-    walls: [], floors: [], ceilings: [], ventilation: [],
-  });
-
-  // Detailed Age Band (UI) + derived calc tier
-  const [propertyAgeBand, setPropertyAgeBand] =
-    useState<PropertyAgeBandLabel>('2012-present');
-  const ageBand: AgeBand = useMemo(
-    () => AGE_BAND_TO_TIER[propertyAgeBand],
-    [propertyAgeBand]
-  );
-
-  // Config
-  const [roomType, setRoomType] = useState<RoomType>('bedroom');
-  const [policy, setPolicy] = useState<'max'|'sum'>('max');
-  const [designTempC, setDesignTempC] = useState<number | ''>(''); // optional override
-
-  // Quick add internal wall inputs
-  const [quickIntWidth, setQuickIntWidth] = useState<number | ''>('');
-  const [quickIntHeight, setQuickIntHeight] = useState<number | ''>('');
-  const [quickIntAdj, setQuickIntAdj] = useState<Adjacent>('Interior (Heated)');
-
-  function addInternalWallQuick() {
-    const width = typeof quickIntWidth === 'number' ? quickIntWidth : parseFloat(String(quickIntWidth)) || 0;
-    const height = typeof quickIntHeight === 'number' ? quickIntHeight : parseFloat(String(quickIntHeight)) || 0;
-    if (width <= 0 || height <= 0) return;
-    setRoom((r) => ({
-      ...r,
-      walls: [...r.walls, {
-        id: uid(), name: `Internal Wall ${r.walls.length + 1}`,
-        orientation: 'N', adjacent: quickIntAdj, width, height, uValue: '', openings: [],
-      }],
-    }));
-    setQuickIntWidth(''); setQuickIntHeight(''); setQuickIntAdj('Interior (Heated)');
-  }
-
-  // Rooms list UI
-  const [roomsList, setRoomsList] = useState<Array<{ id: string; name: string; zoneId?: string }>>([]);
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
-
-  // UI state
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [override, setOverride] = useState(false);
-
-  // Import logic: prefer saved Elements model; else pull basics from /rooms (includes type & design temp)
-  function importSelectedRoom(targetId?: string | null) {
-    const rid = String(targetId ?? selectedRoomId ?? room.id ?? '');
-    if (!rid) return;
-
-    const byRoom = readJSONMap<Record<string, RoomModel>>(LS_BYROOM_KEY);
-    const saved = byRoom[rid];
-    if (saved) {
-      setRoom(saved);
-      const meta = readJSON<Record<string, { roomType?: RoomType; designTempC?: number }>>('mcs.room.meta.byRoom.v1') || {};
-      const m = meta[rid] || {};
-      if (m.roomType) setRoomType(m.roomType);
-      if (typeof m.designTempC === 'number') setDesignTempC(m.designTempC);
-      return;
-    }
-
-    const srcRoom = findSourceRoomById(rid);
-    const basics = basicsFromSourceRoom(srcRoom);
-
-    setRoom((r) => ({
-      ...r,
-      id: rid,
-      ...(['name','length','width','height'] as const).reduce((acc, k) => {
-        const v = (basics as Any)[k];
-        if (typeof v === 'number' ? v > 0 : v) (acc as Any)[k] = v;
-        return acc;
-      }, {} as Partial<RoomModel>),
-    }));
-    if (basics.roomType) setRoomType(basics.roomType);
-    if (typeof basics.designTempC === 'number') setDesignTempC(basics.designTempC);
-  }
-
-  // Load Rooms list & initial selection
-  useEffect(() => {
-    const q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const fromQuery = q ? q.get('roomId') : null;
-
-    const loaded: Array<{ id: string; name: string; zoneId?: string }>= [];
-    for (const key of LS_ROOMS_KEYS) {
-      const raw = readJSON<any>(key);
-      if (!raw) continue;
-      const x = raw;
-
-      if (Array.isArray(x?.zones)) {
-        try {
-          x.zones.forEach((z: Any, zi: number) => (z.Rooms || z.rooms || []).forEach((r: Any, ri: number) => {
-            const rid = String(r?.id ?? r?.roomId ?? r?.name ?? `${zi}:${ri}`);
-            loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: String(z?.id ?? zi) });
-          }));
-        } catch {}
-      }
-      if (Array.isArray(x?.Rooms)) {
-        try {
-          x.Rooms.forEach((r: Any, ri: number) => {
-            const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
-            loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
-          });
-        } catch {}
-      }
-      if (Array.isArray(x?.rooms)) {
-        try {
-          x.rooms.forEach((r: Any, ri: number) => {
-            const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
-            loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
-          });
-        } catch {}
-      }
-      if (Array.isArray(x)) {
-        try {
-          x.forEach((r: Any, ri: number) => {
-            const rid = String(r?.id ?? r?.roomId ?? r?.name ?? ri);
-            loaded.push({ id: rid, name: String(r?.name || `Room ${ri + 1}`), zoneId: r?.zoneId });
-          });
-        } catch {}
-      }
-      if (loaded.length) break;
-    }
-    setRoomsList(loaded);
-
-    const last = readJSON<string>('mcs.rooms.selectedId');
-    const activeId = fromQuery || last || (loaded.length ? loaded[0].id : null);
-    if (activeId) setSelectedRoomId(activeId);
-  }, []);
-
-  // When selection changes, import that room (saved elements or basics)
-  useEffect(() => {
-    if (selectedRoomId) importSelectedRoom(selectedRoomId);
-  }, [selectedRoomId]);
-
-  // Seed Age Band from home page and keep in sync
-  useEffect(() => {
-    try {
-      setPropertyAgeBand(coercePropertyAgeBandLabel(localStorage.getItem('mcs.AgeBand')));
-      const onStorage = (e: StorageEvent) => {
-        if (e.key === 'mcs.AgeBand') setPropertyAgeBand(coercePropertyAgeBandLabel(e.newValue));
-      };
-      window.addEventListener('storage', onStorage);
-      return () => window.removeEventListener('storage', onStorage);
-    } catch {}
-  }, []);
-  // Optional: writing back keeps pages aligned if edited here
-  useEffect(() => {
-    try { localStorage.setItem('mcs.AgeBand', propertyAgeBand); } catch {}
-  }, [propertyAgeBand]);
-
-  // Persist per-room Elements model + meta
-  useEffect(() => {
-    const rid = selectedRoomId || room.id;
-    if (rid) {
-      const byRoom = readJSONMap<Record<string, RoomModel>>(LS_BYROOM_KEY);
-      byRoom[rid] = { ...room, id: rid };
-      writeJSON(LS_BYROOM_KEY, byRoom);
-      writeJSON('mcs.rooms.selectedId', rid);
-
-      const meta = readJSON<Record<string, { roomType?: RoomType; designTempC?: number }>>('mcs.room.meta.byRoom.v1') || {};
-      meta[rid] = {
-        roomType,
-        designTempC: typeof designTempC === 'number' ? designTempC : undefined,
-      };
-      writeJSON('mcs.room.meta.byRoom.v1', meta);
-    } else {
-      writeJSON(LS_KEY, room);
-    }
-  }, [room, selectedRoomId, roomType, designTempC]);
-
-  /* -------------------- Derived totals -------------------- */
-  const autoVolume = useMemo(
-    () => +(num(room.length) * num(room.width) * num(room.height)).toFixed(1),
-    [room.length, room.width, room.height]
-  );
-  const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
-
-  const wallsGross = useMemo(
-    () => room.walls.reduce((s, w) => s + area(w.width, w.height), 0),
-    [room.walls]
-  );
-  const wallsOpenings = useMemo(
-    () => room.walls.reduce((s, w) => s + (w.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
-    [room.walls]
-  );
-  const wallsNet = useMemo(() => Math.max(+(wallsGross - wallsOpenings).toFixed(2), 0), [wallsGross, wallsOpenings]);
-
-  const floorsArea = useMemo(
-    () => room.floors.reduce((s, f) => s + area(f.width, f.height), 0),
-    [room.floors]
-  );
-
-  const ceilingsGross = useMemo(
-    () => room.ceilings.reduce((s, c) => s + area(c.width, c.height), 0),
-    [room.ceilings]
-  );
-  const ceilingsOpenings = useMemo(
-    () => room.ceilings.reduce((s, c) => s + (c.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0), 0),
-    [room.ceilings]
-  );
-  const ceilingsNet = useMemo(() => Math.max(+(ceilingsGross - ceilingsOpenings).toFixed(2), 0), [ceilingsGross, ceilingsOpenings]);
-
-  /* -------------------- Heat Loss Results -------------------- */
-  const OUTDOOR_C = -3;
-
-  const displayVolume: number = useMemo(() => {
-    const cand = override ? room.volumeOverride : null;
-    return (typeof cand === 'number' && Number.isFinite(cand)) ? cand : autoVolume;
-  }, [override, room.volumeOverride, autoVolume]);
-
-  const indoorC = useMemo(() => {
-    if (typeof designTempC === 'number' && Number.isFinite(designTempC) && designTempC > 0) return designTempC;
-    return 21;
-  }, [designTempC]);
-
-  const results = useMemo(() => computeRoomLoss({
-    room,
-    indoorC,
-    outdoorC: OUTDOOR_C,
-    volumeM3: displayVolume,
-    ageBand,            // derived from propertyAgeBand
-    roomType,
-    policy
-  }), [room, displayVolume, ageBand, roomType, policy, indoorC]);
-
-  /* -------------------- Volume + design temp handlers -------------------- */
-  const onChangeVolume: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const raw = e?.target?.value;
-    const v = raw === '' ? '' : +raw!;
-    setRoom((r) => ({ ...r, volumeOverride: override ? (v === '' ? null : Number(v)) : null }));
-  };
-  const onToggleOverride: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const checked = !!e?.target?.checked;
-    setOverride(checked);
-    setRoom((r) => ({ ...r, volumeOverride: checked ? (r.volumeOverride ?? autoVolume) : null }));
-  };
-  const onChangeDesignTemp: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const raw = e?.target?.value;
-    if (raw === '' || raw == null) { setDesignTempC(''); return; }
-    const n = +raw;
-    setDesignTempC(Number.isFinite(n) ? n : '');
-  };
-
-  const activeRoom = roomsList.find((r) => r.id === (selectedRoomId || room.id));
-
-  /* -------------------- Adders/Updaters -------------------- */
-  const addWall = () => setRoom((r) => ({
-    ...r,
-    walls: [...r.walls, { id: uid(), name: `External Wall ${r.walls.length + 1}`, orientation: 'N', adjacent: 'Exterior', width: 0, height: 0, uValue: '', openings: [] }],
-  }));
-  const addFloor = () => setRoom((r) => ({
-    ...r,
-    floors: [...r.floors, { id: uid(), name: `Ground Floor ${r.floors.length + 1}`, adjacent: 'Ground', width: 0, height: 0, uValue: '' }],
-  }));
-  const addCeiling = () => setRoom((r) => ({
-    ...r,
-    ceilings: [...r.ceilings, { id: uid(), name: `Internal Ceiling ${r.ceilings.length + 1}`, type: 'Ceiling', adjacent: 'Interior (Heated)', width: 0, height: 0, uValue: '', openings: [] }],
-  }));
-  const addVent = () => setRoom((r) => ({ ...r, ventilation: [...r.ventilation, { id: uid(), type: 'trickle_vent', overrideFlow: '', notes: '' }] }));
-
-  const updateWall = (i: number, patch: Partial<Wall>) =>
-    setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, ...cleanNumberPatch(patch) } : w)) }));
-  const removeWall = (i: number) => setRoom((r) => ({ ...r, walls: r.walls.filter((_, idx) => idx !== i) }));
-  const duplicateWall = (i: number) =>
-    setRoom((r) => ({ ...r, walls: [...r.walls.slice(0, i + 1), { ...r.walls[i], id: uid(), name: r.walls[i].name + ' (copy)' }, ...r.walls.slice(i + 1)] }));
-
-  const addWindow = (i: number) => addOpening(i, 'wall', 'window');
-  const addDoor = (i: number) => addOpening(i, 'wall', 'door');
-
-  const updateFloor = (i: number, patch: Partial<FloorEl>) =>
-    setRoom((r) => ({ ...r, floors: r.floors.map((f, idx) => (idx === i ? { ...f, ...cleanNumberPatch(patch) } : f)) }));
-  const removeFloor = (i: number) => setRoom((r) => ({ ...r, floors: r.floors.filter((_, idx) => idx !== i) }));
-
-  const updateCeiling = (i: number, patch: Partial<CeilingEl>) =>
-    setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, ...cleanNumberPatch(patch) } : c)) }));
-  const removeCeiling = (i: number) => setRoom((r) => ({ ...r, ceilings: r.ceilings.filter((_, idx) => idx !== i) }));
-  const addRoofWindow = (i: number) => addOpening(i, 'ceiling', 'roof_window');
-
-  function addOpening(i: number, owner: 'wall' | 'ceiling', kind: OpeningKind) {
-    const o: Opening = { id: uid(), kind, width: 0, height: 0, uValue: '' };
-    if (owner === 'wall')
-      setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, openings: [...(w.openings || []), o] } : w)) }));
-    else
-      setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, openings: [...(c.openings || []), o] } : c)) }));
-  }
-  const updateOpening = (i: number, j: number, owner: 'wall' | 'ceiling', patch: Partial<Opening>) => {
-    const patchClean = cleanNumberPatch(patch);
-    if (owner === 'wall')
-      setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, openings: w.openings.map((o, k) => (k === j ? { ...o, ...patchClean } : o)) } : w)) }));
-    else
-      setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, openings: c.openings.map((o, k) => (k === j ? { ...o, ...patchClean } : o)) } : c)) }));
-  };
-  const removeOpening = (i: number, j: number, owner: 'wall' | 'ceiling') => {
-    if (owner === 'wall') setRoom((r) => ({ ...r, walls: r.walls.map((w, idx) => (idx === i ? { ...w, openings: w.openings.filter((_, k) => k !== j) } : w)) }));
-    else setRoom((r) => ({ ...r, ceilings: r.ceilings.map((c, idx) => (idx === i ? { ...c, openings: c.openings.filter((_, k) => k !== j) } : c)) }));
-  };
-
-  const exportJSON = () => {
-    const rid = selectedRoomId || room.id || 'room';
-    const data = JSON.stringify({ room: { ...room, id: rid } }, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(roomsList.find((r) => r.id === rid)?.name || room.name || 'room')}-elements.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  const onSaveAndContinue = () => { exportJSON(); router.push(`${BP}/rooms/`); };
-
-  // ---- NEW: proceed to Final Calculation page ----
-  const onProceedToFinal = () => {
-    const payload = buildFinalPayloadFromStorage();
-    try { sessionStorage.setItem('heatCalc', JSON.stringify(payload)); } catch {}
-    if (typeof window !== 'undefined') {
-      const target = new URL('../final/final.html', window.location.href);
-      window.location.href = target.toString();
-    }
-  };
+// Component for editing/displaying Temperature and ACH values
+const RoomValueEditor = ({
+  id,
+  field,
+  label,
+  icon: Icon,
+  unit,
+  currentValue,
+  designValue,
+  isEditing,
+  startEditing,
+  stopEditing,
+  handleChange,
+  colorClass,
+  step = 0.5,
+}: {
+  id: string | number;
+  field: 'customTemp' | 'customAch';
+  label: string;
+  icon: any;
+  unit: string;
+  currentValue: number;
+  designValue: number;
+  isEditing: boolean;
+  startEditing: (id: string | number, field: any) => void;
+  stopEditing: () => void;
+  handleChange: (id: string | number, field: any, value: string) => void;
+  colorClass: string;
+  step?: number;
+}) => {
+  const isCustom = currentValue !== designValue;
+  const fieldName = field.includes('Temp') ? 'Temperature' : 'ACH';
 
   return (
-    <main style={wrap}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button type="button" onClick={goElements} style={backLink} aria-label="Back">◀</button>
-        <h1 style={title}>{activeRoom?.name || room.name}</h1>
-      </div>
+    <div
+      className={`flex items-center text-sm text-gray-700 px-3 py-1 rounded-full shadow-inner transition-colors duration-150 ${
+        isCustom ? 'bg-yellow-100 border border-yellow-400' : 'bg-indigo-100'
+      }`}
+    >
+      <Icon size={16} className={`${colorClass} mr-2`} />
+      <span className="font-semibold mr-1">{label}:</span>
 
-      {/* Room selector */}
-      {roomsList.length > 0 && (
-        <div style={{ margin: '6px 0 10px' }}>
-          <Label>Linked Room</Label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <select
-              value={selectedRoomId || ''}
-              onChange={(e) => setSelectedRoomId((e?.target?.value as string) || null)}
-              style={input}
-            >
-              {roomsList.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-            <button style={secondaryBtn} onClick={() => importSelectedRoom(selectedRoomId)}>Bind</button>
-          </div>
+      {isEditing ? (
+        <div className="flex items-center">
+          <input
+            type="number"
+            step={step}
+            min={field === 'customTemp' ? 10 : 0}
+            inputMode="decimal"
+            value={Number.isFinite(currentValue) ? currentValue : 0}
+            onChange={(e) => handleChange(id, field, e.target.value)}
+            onBlur={() => stopEditing()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') stopEditing();
+            }}
+            className="w-16 p-0.5 border-b border-indigo-500 text-center font-bold text-gray-900 bg-transparent focus:outline-none"
+            autoFocus
+          />
+          <span className="ml-0.5 text-gray-700">{unit}</span>
+          <button
+            onClick={() => stopEditing()}
+            className="ml-2 p-1 text-green-600 hover:text-green-800 transition duration-150 rounded-full"
+            aria-label={`Save custom ${fieldName}`}
+          >
+            <Save size={14} />
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center">
+          <span className={`ml-0.5 font-bold ${isCustom ? 'text-yellow-700' : colorClass}`}>
+            {unit === '°C' ? Math.round(currentValue) : currentValue.toFixed(1)}
+          </span>
+          <span className="ml-0.5 text-gray-700">{unit}</span>
+          {isCustom && (
+            <span className="ml-2 text-xs text-gray-500 italic" title={`Default: ${designValue}${unit}`}>
+              (Custom)
+            </span>
+          )}
+          <button
+            onClick={() => startEditing(id, field)}
+            className="ml-2 p-1 text-gray-400 hover:text-indigo-600 transition duration-150 rounded-full hover:bg-indigo-50"
+            aria-label={`Edit custom ${fieldName}`}
+          >
+            <Edit size={14} />
+          </button>
         </div>
       )}
-
-      {/* CONFIG: Age band / room type / policy / design temp */}
-      <div style={panel}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
-          <div>
-            <Label>Age Band</Label>
-            <Select
-              value={propertyAgeBand}
-              onChange={(e)=> setPropertyAgeBand(e.target.value as PropertyAgeBandLabel)}
-            >
-              {PROPERTY_AGE_BANDS.map((ab) => <option key={ab} value={ab}>{ab}</option>)}
-            </Select>
-            <div style={help}>Synced with home page “Age Band”. Internally mapped to calc tiers.</div>
-          </div>
-          <div>
-            <Label>Room Type</Label>
-            <Select value={roomType} onChange={(e)=> setRoomType((e.target.value as RoomType) || 'bedroom')}>
-              <option value="bedroom">Bedroom</option>
-              <option value="living">Living</option>
-              <option value="habitable">Habitable (other)</option>
-              <option value="kitchen">Kitchen</option>
-              <option value="utility">Utility</option>
-              <option value="bathroom">Bathroom</option>
-              <option value="wc">WC</option>
-            </Select>
-          </div>
-          <div>
-            <Label>Ventilation Combine Rule</Label>
-            <Select value={policy} onChange={(e)=> setPolicy((e.target.value as 'max'|'sum') || 'max')}>
-              <option value="max">Use max(base, devices)</option>
-              <option value="sum">Sum base + devices</option>
-            </Select>
-          </div>
-          <div>
-            <Label>Design Temperature (°C)</Label>
-            <Input
-              type="number"
-              step="0.5"
-              placeholder="21"
-              value={designTempC === '' ? '' : designTempC}
-              onChange={onChangeDesignTemp}
-            />
-            <div style={help}>If blank, defaults to 21°C. Imported from Rooms when available.</div>
-          </div>
-        </div>
-      </div>
-
-      {/* W A L L S */}
-      <Section title="WALLS" subtitle="List all walls of this room, including any doors/windows on each wall." actionLabel="+ ADD WALL" onAction={addWall}>
-        <ListHeader cols={['#','Adjacent Space','Element Name','Dimensions','Actions']} />
-        {room.walls.map((w, i) => {
-          const gross = area(w.width, w.height);
-          const openingsArea = (w.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0);
-          const net = Math.max(+(gross - openingsArea).toFixed(2), 0);
-          return (
-            <div key={w.id}>
-              <ListRow>
-                <Cell narrow>{i + 1}</Cell>
-                <Cell><strong>{w.adjacent}</strong></Cell>
-                <Cell>{w.name}</Cell>
-                <Cell>
-                  {(w.width || 0).toFixed(2)} × {(w.height || 0).toFixed(2)} m
-                  <div style={{ fontSize: 12, color: '#555' }}>
-                    Gross: {gross.toFixed(2)} m² • Openings: {openingsArea.toFixed(2)} m² • Net: <strong>{net.toFixed(2)} m²</strong>
-                  </div>
-                </Cell>
-                <Cell>
-                  <button style={miniBtn} onClick={() => addDoor(i)}>+ DOOR</button>
-                  <button style={miniBtn} onClick={() => addWindow(i)}>+ WINDOW</button>
-                  <button style={miniBtn} onClick={() => toggle(w.id)}>✎ EDIT</button>
-                  <button style={miniDanger} onClick={() => removeWall(i)}>🗑 DELETE</button>
-                </Cell>
-              </ListRow>
-              {expanded[w.id] && (
-                <EditorBlock>
-                  <div style={grid4}>
-                    <div><Label>Element Name</Label><Input value={w.name} onChange={(e) => updateWall(i, { name: e?.target?.value || '' })} /></div>
-                    <div><Label>Orientation</Label>
-                      <Select value={w.orientation} onChange={(e) => updateWall(i, { orientation: (e?.target?.value as Orientation) || 'N' })}>
-                        {(['N','NE','E','SE','S','SW','W','NW'] as Orientation[]).map((o) => <option key={o} value={o}>{o}</option>)}
-                      </Select>
-                    </div>
-                    <div><Label>Adjacent Space</Label>
-                      <Select value={w.adjacent} onChange={(e) => updateWall(i, { adjacent: (e?.target?.value as Adjacent) || 'Exterior' })}>
-                        {(['Exterior','Interior (Heated)','Interior (Unheated)','Ground'] as Adjacent[]).map((a) => <option key={a} value={a}>{a}</option>)}
-                      </Select>
-                    </div>
-                    <div />
-                    <div><Label>Width (m)</Label><Input type="number" step="0.01" value={w.width ?? ''} onChange={(e) => updateWall(i, { width: clampNumber(e?.target?.value) })} /></div>
-                    <div><Label>Height (m)</Label><Input type="number" step="0.01" value={w.height ?? ''} onChange={(e) => updateWall(i, { height: clampNumber(e?.target?.value) })} /></div>
-                    <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={w.uValue ?? ''} onChange={(e) => updateWall(i, { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} /></div>
-                  </div>
-
-                  {!!w.openings.length && <h4 style={subtleH}>Openings</h4>}
-                  {w.openings.map((o, j) => (
-                    <div key={o.id} style={openRow}>
-                      <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'wall', { kind: (e?.target?.value as OpeningKind) || 'window' })}>
-                        <option value="window">Window</option>
-                        <option value="door">Door</option>
-                      </Select>
-                      <Input type="number" step="0.01" placeholder="Width (m)" value={o.width ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { width: clampNumber(e?.target?.value) })} />
-                      <Input type="number" step="0.01" placeholder="Height (m)" value={o.height ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { height: clampNumber(e?.target?.value) })} />
-                      <span style={{ minWidth: 80, textAlign: 'right' }}>{area(o.width, o.height).toFixed(2)} m²</span>
-                      <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'wall', { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} />
-                      <button style={miniDanger} onClick={() => removeOpening(i, j, 'wall')}>Remove</button>
-                    </div>
-                  ))}
-                </EditorBlock>
-              )}
-            </div>
-          );
-        })}
-        <TotalRow label="Totals:" value={
-          `Gross ${wallsGross.toFixed(2)} m² • Openings ${wallsOpenings.toFixed(2)} m² • Net ${wallsNet.toFixed(2)} m²`
-        } />
-
-        {/* Quick add: INTERNAL WALL */}
-        <div style={panel}>
-          <h3 style={{ margin: 0, fontSize: 16 }}>Quick Add Internal Wall</h3>
-          <p style={muted}>(For partitions inside the dwelling—choose Heated for zero-loss partitions, Unheated for e.g. halls/lofts.)</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 140px', gap: 10, alignItems: 'center' }}>
-            <div><Label>Adjacent</Label>
-              <Select value={quickIntAdj} onChange={(e) => setQuickIntAdj((e.target.value as Adjacent) || 'Interior (Heated)')}>
-                <option value="Interior (Heated)">Interior (Heated)</option>
-                <option value="Interior (Unheated)">Interior (Unheated)</option>
-              </Select>
-            </div>
-            <div><Label>Length (m)</Label>
-              <Input type="number" step="0.01" value={quickIntWidth}
-                onChange={(e) => setQuickIntWidth(e.target.value === '' ? '' : Math.max(0, +e.target.value))} />
-            </div>
-            <div><Label>Height (m)</Label>
-              <Input type="number" step="0.01" value={quickIntHeight}
-                onChange={(e) => setQuickIntHeight(e.target.value === '' ? '' : Math.max(0, +e.target.value))} />
-            </div>
-            <div style={{ fontSize: 12, color: '#555' }}>
-              Area: {((+quickIntWidth || 0) * (+quickIntHeight || 0)).toFixed(2)} m²
-            </div>
-            <button style={secondaryBtn} onClick={addInternalWallQuick}>+ Add Internal Wall</button>
-          </div>
-        </div>
-      </Section>
-
-      {/* F L O O R S */}
-      <Section title="FLOORS" subtitle="List all floors of this room." actionLabel="+ ADD FLOOR" onAction={addFloor}>
-        <ListHeader cols={['#','Adjacent Space','Element Name','Dimensions','Actions']} />
-        {room.floors.map((f, i) => (
-          <div key={f.id}>
-            <ListRow>
-              <Cell narrow>{i + 1}</Cell>
-              <Cell><strong>{f.adjacent}</strong></Cell>
-              <Cell>{f.name}</Cell>
-              <Cell>{(f.width || 0).toFixed(2)} × {(f.height || 0).toFixed(2)} m</Cell>
-              <Cell>
-                <button style={miniBtn} onClick={() => toggle(f.id)}>✎ EDIT</button>
-                <button style={miniDanger} onClick={() => removeFloor(i)}>🗑 DELETE</button>
-              </Cell>
-            </ListRow>
-            {expanded[f.id] && (
-              <EditorBlock>
-                <div style={grid4}>
-                  <div><Label>Element Name</Label><Input value={f.name} onChange={(e) => updateFloor(i, { name: e?.target?.value || '' })} /></div>
-                  <div><Label>Adjacent Space</Label>
-                    <Select value={f.adjacent} onChange={(e) => updateFloor(i, { adjacent: (e?.target?.value as Adjacent) || 'Ground' })}>
-                      {(['Exterior','Interior (Heated)','Interior (Unheated)','Ground'] as Adjacent[]).map((a) => <option key={a} value={a}>{a}</option>)}
-                    </Select>
-                  </div>
-                  <div><Label>Width (m)</Label><Input type="number" step="0.01" value={f.width ?? ''} onChange={(e) => updateFloor(i, { width: clampNumber(e?.target?.value) })} /></div>
-                  <div><Label>Height/Depth (m)</Label><Input type="number" step="0.01" value={f.height ?? ''} onChange={(e) => updateFloor(i, { height: clampNumber(e?.target?.value) })} /></div>
-                  <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={f.uValue ?? ''} onChange={(e) => updateFloor(i, { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} /></div>
-                </div>
-              </EditorBlock>
-            )}
-          </div>
-        ))}
-        <TotalRow label="Total Area:" value={`${floorsArea.toFixed(2)} m²`} />
-      </Section>
-
-      {/* C E I L I N G S */}
-      <Section title="CEILINGS" subtitle="List all ceilings of this room." actionLabel="+ ADD CEILING" onAction={addCeiling}>
-        <ListHeader cols={['#','Adjacent Space','Element Name','Dimensions','Actions']} />
-        {room.ceilings.map((c, i) => {
-          const gross = area(c.width, c.height);
-          const openingsArea = (c.openings || []).reduce((ss, o) => ss + area(o.width, o.height), 0);
-          const net = Math.max(+(gross - openingsArea).toFixed(2), 0);
-          return (
-            <div key={c.id}>
-              <ListRow>
-                <Cell narrow>{i + 1}</Cell>
-                <Cell><strong>{c.adjacent}</strong></Cell>
-                <Cell>{c.name}</Cell>
-                <Cell>
-                  {(c.width || 0).toFixed(2)} × {(c.height || 0).toFixed(2)} m
-                  <div style={{ fontSize: 12, color: '#555' }}>
-                    Gross: {gross.toFixed(2)} m² • Openings: {openingsArea.toFixed(2)} m² • Net: <strong>{net.toFixed(2)} m²</strong>
-                  </div>
-                </Cell>
-                <Cell>
-                  <button style={miniBtn} onClick={() => addRoofWindow(i)}>+ ROOF WINDOW</button>
-                  <button style={miniBtn} onClick={() => toggle(c.id)}>✎ EDIT</button>
-                  <button style={miniDanger} onClick={() => removeCeiling(i)}>🗑 DELETE</button>
-                </Cell>
-              </ListRow>
-              {expanded[c.id] && (
-                <EditorBlock>
-                  <div style={grid4}>
-                    <div><Label>Element Name</Label><Input value={c.name} onChange={(e) => updateCeiling(i, { name: e?.target?.value || '' })} /></div>
-                    <div><Label>Type</Label>
-                      <Select value={c.type} onChange={(e) => updateCeiling(i, { type: (e?.target?.value as any) || 'Ceiling' })}>
-                        <option value="Ceiling">Ceiling</option>
-                        <option value="Roof">Roof</option>
-                      </Select>
-                    </div>
-                    <div><Label>Adjacent Space</Label>
-                      <Select value={c.adjacent} onChange={(e) => updateCeiling(i, { adjacent: (e?.target?.value as any) || 'Interior (Heated)' })}>
-                        {(['Exterior', 'Interior (Heated)', 'Interior (Unheated)'] as const).map((a) => <option key={a} value={a}>{a}</option>)}
-                      </Select>
-                    </div>
-                    <div />
-                    <div><Label>Width (m)</Label><Input type="number" step="0.01" value={c.width ?? ''} onChange={(e) => updateCeiling(i, { width: clampNumber(e?.target?.value) })} /></div>
-                    <div><Label>Height (m)</Label><Input type="number" step="0.01" value={c.height ?? ''} onChange={(e) => updateCeiling(i, { height: clampNumber(e?.target?.value) })} /></div>
-                    <div><Label>U-Value (W/m²K)</Label><Input type="number" step="0.01" value={c.uValue ?? ''} onChange={(e) => updateCeiling(i, { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} /></div>
-                  </div>
-                  {!!c.openings.length && <h4 style={subtleH}>Roof Windows</h4>}
-                  {c.openings.map((o, j) => (
-                    <div key={o.id} style={openRow}>
-                      <Select value={o.kind} onChange={(e) => updateOpening(i, j, 'ceiling', { kind: (e?.target?.value as OpeningKind) || 'roof_window' })}>
-                        <option value="roof_window">Roof Window</option>
-                        <option value="window">Window</option>
-                        <option value="door">Door</option>
-                      </Select>
-                      <Input type="number" step="0.01" placeholder="Width (m)" value={o.width ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { width: clampNumber(e?.target?.value) })} />
-                      <Input type="number" step="0.01" placeholder="Height (m)" value={o.height ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { height: clampNumber(e?.target?.value) })} />
-                      <span style={{ minWidth: 80, textAlign: 'right' }}>{area(o.width, o.height).toFixed(2)} m²</span>
-                      <Input type="number" step="0.01" placeholder="U" value={o.uValue ?? ''} onChange={(e) => updateOpening(i, j, 'ceiling', { uValue: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} />
-                      <button style={miniDanger} onClick={() => removeOpening(i, j, 'ceiling')}>Remove</button>
-                    </div>
-                  ))}
-                </EditorBlock>
-              )}
-            </div>
-          );
-        })}
-        <TotalRow label="Totals:" value={
-          `Gross ${ceilingsGross.toFixed(2)} m² • Openings ${ceilingsOpenings.toFixed(2)} m² • Net ${ceilingsNet.toFixed(2)} m²`
-        } />
-      </Section>
-
-      {/* V E N T I L A T I O N */}
-      <h2 style={sectionTitle}>VENTILATION</h2>
-      <p style={muted}>Enter the internal air volume of this room and add any ventilation devices.</p>
-      <div style={panel}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 100px', gap: 10, alignItems: 'center' }}>
-          <div>
-            <Label>Internal Air Volume *</Label>
-            <Input
-              value={override ? (room.volumeOverride === '' ? '' : String(displayVolume)) : String(displayVolume)}
-              onChange={onChangeVolume}
-              disabled={!override}
-            />
-            <div style={help}>The internal volume has been estimated based on the ceiling areas and wall heights entered.</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span>m³</span></div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
-            <input type="checkbox" checked={override} onChange={onToggleOverride} /> Override
-          </label>
-        </div>
-      </div>
-
-      <div style={{ display:'grid', gridTemplateColumns: '1fr 320px', gap: 12 }}>
-        <div>
-          <div style={panel}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>Ventilation Devices</h3>
-              <button style={secondaryBtn} onClick={addVent}>+ ADD DEVICE</button>
-            </div>
-            {room.ventilation.length === 0 && <Empty>No devices have been added</Empty>}
-            {room.ventilation.map((v, i) => (
-              <div key={v.id} style={rowLine}>
-                <Select value={v.type} onChange={(e) => updateVent(i, { type: (e?.target?.value as any) || 'trickle_vent' })}>
-                  <option value="trickle_vent">Trickle vent</option>
-                  <option value="mvhr_supply">MVHR supply</option>
-                  <option value="mvhr_extract">MVHR extract</option>
-                  <option value="mechanical_extract">Mechanical extract</option>
-                  <option value="passive_vent">Passive vent</option>
-                </Select>
-                <span style={{ minWidth: 140 }}>Default: {defaultVentFlows[v.type]} l/s</span>
-                <Input type="number" step="0.1" placeholder="Override (l/s)" value={v.overrideFlow ?? ''} onChange={(e) => updateVent(i, { overrideFlow: (e?.target?.value as string) === '' ? '' : clampNumber(e?.target?.value) })} />
-                <Input placeholder="Notes" value={v.notes || ''} onChange={(e) => updateVent(i, { notes: e?.target?.value || '' })} />
-                <button style={miniDanger} onClick={() => removeVent(i)}>Remove</button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <ResultsCard
-          title={`Room Heat Loss${typeof designTempC === 'number' ? ` @ ${designTempC}°C` : ''}`}
-          rows={[
-            ['Base vent rate', `${results.flowBase_lps.toFixed(1)} l/s`],
-            ['Device override', `${results.flowDevices_lps.toFixed(1)} l/s`],
-            ['Ventilation flow', `${results.flow_m3h.toFixed(0)} m³/h`],
-            ['Ventilation loss', `${Math.round(results.qVent_W).toLocaleString()} W`],
-            ['Transmission', `${Math.round(results.qTransmission_W).toLocaleString()} W`],
-            ['Total', `${Math.round(results.qTotal_W).toLocaleString()} W`],
-          ]}
-        />
-      </div>
-
-    {/* Footer nav */}
-<div style={footerNav}>
-  <button type="button" onClick={goElements} style={btnGhost}>◀ Back</button>
-  <div style={{ flex: 1 }} />
-  <button style={{ ...btnPrimary, marginLeft: 8 }} onClick={onProceedToFinal}>
-    Proceed to Final Calculations →
-  </button>
-</div>
-    </main>
-  );
-
-  function updateVent(i: number, patch: Partial<VentDevice>) {
-    setRoom((r) => ({ ...r, ventilation: r.ventilation.map((v, idx) => (idx === i ? { ...v, ...cleanNumberPatch(patch) } : v)) }));
-  }
-  function removeVent(i: number) {
-    setRoom((r) => ({ ...r, ventilation: r.ventilation.filter((_, idx) => idx !== i) }));
-  }
-}
-
-/* ============================================================================
-   Presentational bits
-============================================================================ */
-function Section({ title, subtitle, actionLabel, onAction, children }:{
-  title: string; subtitle?: string; actionLabel?: string; onAction?: () => void; children: React.ReactNode;
-}) {
-  return (
-    <section style={{ marginTop: 18 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h2 style={sectionTitle}>{title}</h2>
-          {subtitle && <p style={muted}>{subtitle}</p>}
-        </div>
-        {actionLabel && <button style={secondaryBtn} onClick={onAction}>{actionLabel}</button>}
-      </div>
-      <div style={listBox}>{children}</div>
-    </section>
-  );
-}
-function ListHeader({ cols }: { cols: string[] }) {
-  return (
-    <div style={headerRow}>
-      {cols.map((c, i) => <span key={i} style={{ flex: i === 0 ? 0 : 1, minWidth: i === 0 ? 40 : undefined, fontWeight: 600 }}>{c}</span>)}
     </div>
   );
-}
-function ListRow({ children }: { children: React.ReactNode }) { return <div style={dataRow}>{children}</div>; }
-function Cell({ children, narrow }: { children: React.ReactNode; narrow?: boolean }) {
-  return <div style={{ flex: narrow ? 0 : 1, minWidth: narrow ? 40 : undefined }}>{children}</div>;
-}
-function TotalRow({ label, value }: { label: string; value: string }) {
-  return <div style={totalRow}><span>{label}</span><span>{value}</span></div>;
-}
-function EditorBlock({ children }: { children: React.ReactNode }) { return <div style={editor}>{children}</div>; }
-function Empty({ children }: { children: React.ReactNode }) { return <div style={{ padding: 12, color: '#666' }}>{children}</div>; }
-
-/* ============================================================================
-   Styles
-============================================================================ */
-const wrap: React.CSSProperties = { maxWidth: 1120, margin: '0 auto', padding: 24, fontFamily: 'Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial, sans-serif' };
-const title: React.CSSProperties = { fontSize: 28, letterSpacing: 0.5, margin: '0 0 6px' };
-const sectionTitle: React.CSSProperties = { margin: '0 0 6px', fontSize: 14, letterSpacing: 1.5, textTransform: 'uppercase' };
-const muted: React.CSSProperties = { color: '#666', fontSize: 13, margin: '0 0 10px' };
-
-const listBox: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' };
-const headerRow: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '40px 1fr 1fr 1fr 1fr',
-  gap: 12,
-  padding: '10px 12px',
-  background: '#ECEDEF',
-  color: '#222'
 };
-const dataRow: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '40px 1fr 1fr 1fr 1fr',
-  gap: 12,
-  padding: '12px',
-  alignItems: 'center',
-  borderTop: '1px solid #F1F1F1',
-  background: '#fff'
+
+// Main Component
+const RoomDesigner = () => {
+  // State for all rooms in the project
+  const [rooms, setRooms] = useState<
+    Array<{
+      id: string | number;
+      type: string;
+      name: string;
+      zone: string;
+      ceilingHeight: number;
+      designTemp: number;
+      customTemp: number;
+      designAch: number;
+      customAch: number;
+    }>
+  >([]);
+  // State for the selected property age band
+  const [ageBand, setAgeBand] = useState<'A-I' | 'J' | 'K-onwards'>('K-onwards');
+  // State for heating zones
+  const [zones, setZones] = useState<string[]>(DEFAULT_ZONES);
+  const [newZoneName, setNewZoneName] = useState('');
+
+  // State for editing:
+  const [editingId, setEditingId] = useState<string | number | null>(null);
+  const [editingField, setEditingField] = useState<
+    'name' | 'customTemp' | 'customAch' | 'ceilingHeight' | 'zone' | null
+  >(null);
+
+  // State for the room creation form inputs:
+  const [selectedRoomType, setSelectedRoomType] = useState<string>(ROOM_TYPES[0]);
+  const [selectedZone, setSelectedZone] = useState<string>(DEFAULT_ZONES[0]);
+  const [newRoomCeilingHeight, setNewRoomCeilingHeight] = useState<number>(2.4); // m
+
+  /** Refined naming logic to follow user's "multiple go up numerically" request */
+  const getNextRoomNameRefined = useCallback(
+    (type: string) => {
+      const matchingRooms = rooms.filter((room) => room.type === type);
+      let highestSuffix = 0;
+
+      matchingRooms.forEach((room) => {
+        const match = room.name.match(new RegExp(`${type}\\s*(\\d+)$`));
+        if (match) {
+          highestSuffix = Math.max(highestSuffix, parseInt(match[1], 10));
+        } else if (room.name === type) {
+          highestSuffix = Math.max(highestSuffix, 1);
+        }
+      });
+
+      const nextSuffix = highestSuffix + 1;
+
+      if (matchingRooms.length === 0) {
+        return type;
+      }
+
+      let proposedName =
+        nextSuffix === 1 && highestSuffix === 0 ? type : `${type} ${nextSuffix}`;
+
+      let suffix = nextSuffix;
+      while (rooms.some((room) => room.name === proposedName)) {
+        suffix++;
+        proposedName = `${type} ${suffix}`;
+      }
+
+      if (highestSuffix === 0 && proposedName === `${type} 1` && !rooms.some((r) => r.name === type)) {
+        return type;
+      }
+
+      return proposedName;
+    },
+    [rooms]
+  );
+
+  /** Adds a new room with initial design values, zone, and ceiling height. */
+  const addRoom = () => {
+    const type = selectedRoomType;
+    const newName = getNextRoomNameRefined(type);
+
+    const { temp, ach } = getDesignValues(type, ageBand);
+
+    const newRoom = {
+      id:
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? (crypto as any).randomUUID()
+          : `${Date.now()}-${Math.random()}`,
+      type,
+      name: newName,
+      zone: selectedZone,
+      ceilingHeight: newRoomCeilingHeight,
+      designTemp: temp,
+      customTemp: temp,
+      designAch: ach,
+      customAch: ach,
+    };
+
+    setRooms((prevRooms) => [...prevRooms, newRoom]);
+  };
+
+  /** Adds a new heating zone. */
+  const addZone = () => {
+    const trimmedName = newZoneName.trim();
+    if (trimmedName && !zones.includes(trimmedName)) {
+      // FIX: use prevZones, not prevRooms
+      setZones((prevZones) => [...prevZones, trimmedName]);
+      setSelectedZone(trimmedName);
+      setNewZoneName('');
+    }
+  };
+
+  /** Updates baseline design values for all rooms when the age band changes (keeps user's custom values). */
+  useEffect(() => {
+    setRooms((prevRooms) => {
+      if (prevRooms.length === 0) return prevRooms;
+      return prevRooms.map((room) => {
+        const { temp, ach } = getDesignValues(room.type, ageBand);
+        return {
+          ...room,
+          designTemp: temp,
+          designAch: ach,
+          // customTemp/customAch stay as-is
+        };
+      });
+    });
+  }, [ageBand]);
+
+  const removeRoom = (id: string | number) => {
+    setRooms((prevRooms) => prevRooms.filter((room) => room.id !== id));
+  };
+
+  const startEditing = (id: string | number, field: any) => {
+    setEditingId(id);
+    setEditingField(field);
+  };
+
+  const stopEditing = () => {
+    setEditingId(null);
+    setEditingField(null);
+  };
+
+  const handleStringChange = (id: string | number, field: 'name' | 'zone', value: string) => {
+    setRooms((prevRooms) =>
+      prevRooms.map((room) => (room.id === id ? { ...room, [field]: value } : room))
+    );
+  };
+
+  const handleCustomValueChange = (id: string | number, field: 'customTemp' | 'customAch' | 'ceilingHeight', value: string) => {
+    const numValue = parseFloat(value);
+    setRooms((prevRooms) =>
+      prevRooms.map((room) => {
+        if (room.id !== id) return room;
+
+        let newValue = numValue;
+
+        if (!Number.isFinite(numValue) || value === '') {
+          if (field === 'customTemp') newValue = room.designTemp;
+          else if (field === 'customAch') newValue = room.designAch;
+          else if (field === 'ceilingHeight') newValue = 2.4;
+        }
+
+        if (field === 'customAch' && newValue < 0) newValue = 0;
+        if (field === 'ceilingHeight' && newValue < 1.8) newValue = 1.8;
+
+        return { ...room, [field]: newValue };
+      })
+    );
+  };
+
+  // Component for editing/displaying Zone and Ceiling Height
+  const RoomDetailEditor = ({ room }: { room: any }) => {
+    const isCeilingEditing = editingId === room.id && editingField === 'ceilingHeight';
+    const isZoneEditing = editingId === room.id && editingField === 'zone';
+
+    return (
+      <div className="flex items-center gap-4 text-sm text-gray-700 mt-2">
+        {/* Ceiling Height Display/Editor */}
+        <div className="flex items-center bg-gray-100 px-3 py-1 rounded-full shadow-inner">
+          <Ruler size={16} className="text-purple-500 mr-2" />
+          <span className="font-semibold mr-1">Ceiling:</span>
+          {isCeilingEditing ? (
+            <div className="flex items-center">
+              <input
+                type="number"
+                step="0.1"
+                min="1.8"
+                inputMode="decimal"
+                value={room.ceilingHeight}
+                onChange={(e) => handleCustomValueChange(room.id, 'ceilingHeight', e.target.value)}
+                onBlur={stopEditing}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') stopEditing();
+                }}
+                className="w-12 p-0.5 border-b border-indigo-500 text-center font-bold text-gray-900 bg-transparent focus:outline-none"
+                autoFocus
+              />
+              <span className="ml-0.5 text-gray-700">m</span>
+            </div>
+          ) : (
+            <div className="flex items-center">
+              <span className="ml-0.5 font-bold text-gray-800">
+                {room.ceilingHeight.toFixed(1)} m
+              </span>
+              <button
+                onClick={() => startEditing(room.id, 'ceilingHeight')}
+                className="ml-2 p-1 text-gray-400 hover:text-indigo-600 transition duration-150 rounded-full hover:bg-indigo-50"
+                aria-label="Edit ceiling height"
+              >
+                <Edit size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Zone Display/Editor */}
+        <div className="flex items-center bg-gray-100 px-3 py-1 rounded-full shadow-inner">
+          <LayoutGrid size={16} className="text-green-600 mr-2" />
+          <span className="font-semibold mr-1">Zone:</span>
+          {isZoneEditing ? (
+            <div className="flex items-center">
+              <select
+                value={room.zone}
+                onChange={(e) => handleStringChange(room.id, 'zone', e.target.value)}
+                onBlur={stopEditing}
+                className="p-0.5 border-b border-indigo-500 text-center font-bold text-gray-900 bg-transparent focus:outline-none"
+                autoFocus
+              >
+                {zones.map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={stopEditing}
+                className="ml-2 p-1 text-green-600 hover:text-green-800 transition duration-150 rounded-full"
+                aria-label="Save custom zone"
+              >
+                <Save size={14} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center">
+              <span className="ml-0.5 font-bold text-green-700">{room.zone}</span>
+              <button
+                onClick={() => startEditing(room.id, 'zone')}
+                className="ml-2 p-1 text-gray-400 hover:text-indigo-600 transition duration-150 rounded-full hover:bg-indigo-50"
+                aria-label="Edit room zone"
+              >
+                <Edit size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-4 sm:p-8 bg-gray-50 min-h-screen font-sans">
+      <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Room Design Specification Tool</h1>
+
+      {/* Age Band Selector */}
+      <div className="mb-8 p-4 bg-white shadow-lg rounded-lg border border-indigo-200">
+        <label htmlFor="age-band" className="block text-sm font-medium text-gray-700 mb-2">
+          1. Select Property Age Band:
+        </label>
+        <select
+          id="age-band"
+          value={ageBand}
+          onChange={(e) => setAgeBand(e.target.value as any)}
+          className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm"
+        >
+          <option value="A-I">A-I (Pre-1967)</option>
+          <option value="J">J (1967–1975)</option>
+          <option value="K-onwards">K onwards (Post-1975)</option>
+        </select>
+        <p className="text-xs text-gray-500 mt-2">
+          Design values update automatically based on this selection. Current Temp Band:{' '}
+          <strong>{getDesignConditionAgeBand(ageBand)}</strong>, ACH Band:{' '}
+          <strong>{getACHAgeBand(ageBand)}</strong>
+        </p>
+      </div>
+
+      {/* Zone Management */}
+      <div className="mb-8 p-4 bg-white shadow-lg rounded-lg border border-green-200">
+        <h3 className="text-lg font-semibold text-gray-800 mb-2">2. Manage Heating Zones ({zones.length})</h3>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {zones.map((zone) => (
+            <span
+              key={zone}
+              className="px-3 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full border border-green-300"
+            >
+              {zone}
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="e.g., Bedroom Zone"
+            value={newZoneName}
+            onChange={(e) => setNewZoneName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') addZone();
+            }}
+            className="flex-grow p-2 border border-gray-300 rounded-lg text-gray-900 shadow-sm"
+          />
+          <button
+            onClick={addZone}
+            disabled={!newZoneName.trim() || zones.includes(newZoneName.trim())}
+            className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg font-semibold shadow-md hover:bg-green-700 disabled:bg-gray-400 transition duration-150"
+          >
+            <Plus size={16} className="mr-1" /> Add Zone
+          </button>
+        </div>
+      </div>
+
+      {/* Add New Room */}
+      <div className="flex flex-col gap-4 mb-10 p-4 bg-indigo-50 border-2 border-indigo-400 rounded-xl shadow-xl">
+        <h3 className="text-lg font-semibold text-indigo-700">3. Configure New Room</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Room Type */}
+          <div>
+            <label htmlFor="room-type-select" className="block text-sm font-medium text-indigo-700 mb-1">
+              Room Type:
+            </label>
+            <select
+              id="room-type-select"
+              value={selectedRoomType}
+              onChange={(e) => setSelectedRoomType(e.target.value)}
+              className="w-full p-2 border border-indigo-300 rounded-lg text-gray-900 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              {ROOM_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Zone Selection */}
+          <div>
+            <label htmlFor="zone-select" className="block text-sm font-medium text-indigo-700 mb-1">
+              Assign Zone:
+            </label>
+            <select
+              id="zone-select"
+              value={selectedZone}
+              onChange={(e) => setSelectedZone(e.target.value)}
+              className="w-full p-2 border border-indigo-300 rounded-lg text-gray-900 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              {zones.map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Ceiling Height Input */}
+          <div>
+            <label htmlFor="ceiling-height-input" className="block text-sm font-medium text-indigo-700 mb-1">
+              Ceiling Height (m):
+            </label>
+            <input
+              id="ceiling-height-input"
+              type="number"
+              step="0.1"
+              min="1.8"
+              inputMode="decimal"
+              value={newRoomCeilingHeight}
+              onChange={(e) => setNewRoomCeilingHeight(parseFloat(e.target.value))}
+              className="w-full p-2 border border-indigo-300 rounded-lg text-gray-900 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={addRoom}
+          className="flex items-center justify-center sm:self-end bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition duration-150 transform hover:scale-[1.02] mt-4"
+        >
+          <Plus size={20} className="mr-2" /> Add Room to Project
+        </button>
+      </div>
+
+      {/* Room List */}
+      <h2 className="text-2xl font-semibold text-gray-800 mb-4">4. Project Room List ({rooms.length})</h2>
+      <div className="space-y-4">
+        {rooms.length === 0 ? (
+          <p className="text-gray-500 p-6 bg-white rounded-lg shadow-inner text-center">
+            Start by configuring a room and clicking &quot;Add Room to Project&quot;.
+          </p>
+        ) : (
+          rooms.map((room) => {
+            const isNameEditing = editingId === room.id && editingField === 'name';
+
+            return (
+              <div
+                key={room.id}
+                className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-white rounded-xl shadow-md transition duration-100 hover:shadow-lg border-l-4 border-indigo-500"
+              >
+                {/* Room Name, Type, Zone, and Ceiling */}
+                <div className="flex-1 min-w-0 mb-3 md:mb-0">
+                  <span className="block text-xs font-medium text-indigo-600 uppercase mb-1">
+                    {room.type}
+                  </span>
+                  <div className="flex items-center gap-2 mb-2">
+                    {isNameEditing ? (
+                      <input
+                        type="text"
+                        value={room.name}
+                        onChange={(e) => handleStringChange(room.id, 'name', e.target.value)}
+                        onBlur={stopEditing}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') stopEditing();
+                        }}
+                        className="text-xl font-bold border-b-2 border-indigo-500 focus:outline-none w-full max-w-sm"
+                        autoFocus
+                      />
+                    ) : (
+                      <h3 className="text-xl font-bold text-gray-900 truncate">{room.name || room.type}</h3>
+                    )}
+                    <button
+                      onClick={() => (isNameEditing ? stopEditing() : startEditing(room.id, 'name'))}
+                      className="p-1 text-gray-400 hover:text-indigo-600 transition duration-150 rounded-full hover:bg-indigo-50"
+                      aria-label={isNameEditing ? 'Finish editing name' : 'Edit room name'}
+                    >
+                      <Edit size={16} />
+                    </button>
+                  </div>
+
+                  {/* Zone and Ceiling Editors */}
+                  <RoomDetailEditor room={room} />
+                </div>
+
+                {/* Design Values Editors */}
+                <div className="flex gap-4 items-center flex-wrap mt-2 md:mt-0">
+                  {/* Temperature Editor */}
+                  <RoomValueEditor
+                    id={room.id}
+                    field="customTemp"
+                    label="Temp"
+                    icon={Thermometer}
+                    unit="°C"
+                    currentValue={room.customTemp}
+                    designValue={room.designTemp}
+                    isEditing={editingId === room.id && editingField === 'customTemp'}
+                    startEditing={startEditing}
+                    stopEditing={stopEditing}
+                    handleChange={handleCustomValueChange}
+                    colorClass="text-red-500"
+                    step={1}
+                  />
+
+                  {/* ACH Editor */}
+                  <RoomValueEditor
+                    id={room.id}
+                    field="customAch"
+                    label="ACH"
+                    icon={Wind}
+                    unit=""
+                    currentValue={room.customAch}
+                    designValue={room.designAch}
+                    isEditing={editingId === room.id && editingField === 'customAch'}
+                    startEditing={startEditing}
+                    stopEditing={stopEditing}
+                    handleChange={handleCustomValueChange}
+                    colorClass="text-blue-500"
+                    step={0.1}
+                  />
+                </div>
+
+                {/* Remove Button */}
+                <button
+                  onClick={() => removeRoom(room.id)}
+                  className="mt-3 md:mt-0 md:ml-6 p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition duration-150 flex-shrink-0"
+                  aria-label={`Remove room ${room.name}`}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
 };
-const totalRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', background: '#F3F4F6', padding: '12px', borderTop: '1px solid #E5E7EB', fontWeight: 600 };
-const editor: React.CSSProperties = { background: '#FAFAFA', borderTop: '1px solid #F1F1F1', padding: 12 };
-const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 };
-const openRow: React.CSSProperties = { display: 'grid', gridTemplateColumns: '160px 140px 140px 100px 120px 90px', gap: 8, alignItems: 'center', padding: '6px 0' };
-const rowLine: React.CSSProperties = { display: 'grid', gridTemplateColumns: '220px 160px 160px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid #F1F1F1' };
-const input: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' };
-const backLink: React.CSSProperties = { display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', border: '1px solid #E5E7EB', borderRadius: 999, textDecoration: 'none', color: '#111' };
-const btnPrimary: React.CSSProperties = { background: '#111827', color: '#fff', border: '1px solid #111827', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' };
-const btnGhost: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #E5E7EB', padding: '10px 16px', borderRadius: 10, textDecoration: 'none' };
-const secondaryBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #111', padding: '8px 12px', borderRadius: 8, cursor: 'pointer' };
-const miniBtn: React.CSSProperties = { background: '#fff', color: '#111', border: '1px solid #D1D5DB', padding: '4px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, marginRight: 6 };
-const miniDanger: React.CSSProperties = { ...miniBtn, color: '#b00020', border: '1px solid #f0b3bd' };
-const footerNav: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, marginTop: 22 };
-const panel: React.CSSProperties = { border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, background: '#fff', marginBottom: 12 };
-const help: React.CSSProperties = { color: '#666', fontSize: 12, marginTop: 6 };
-const subtleH: React.CSSProperties = { fontSize: 13, color: '#444', margin: '12px 0 6px' };
 
-/* ============================================================================
-   Helpers
-============================================================================ */
-function Label({ children }: { children: React.ReactNode }) { return <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6 }}>{children}</label>; }
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) { return <input {...props} style={{ ...input, ...(props.style || {}) }} />; }
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) { return <select {...props} style={{ ...input, ...(props.style || {}) }} />; }
-
-function clean<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
-  const out: Record<string, any> = {};
-  Object.keys(patch).forEach((k) => {
-    const v: any = (patch as any)[k];
-    out[k] = typeof v === 'number' && Number.isNaN(v) ? 0 : v;
-  });
-  return out as Partial<T>;
-}
-function cleanNumberPatch<T extends Record<string, any>>(patch: Partial<T>): Partial<T> {
-  const out: Record<string, any> = {};
-  Object.keys(patch).forEach((k) => {
-    const v: any = (patch as any)[k];
-    if (typeof v === 'number') out[k] = v > 0 && Number.isFinite(v) ? v : 0;
-    else if (typeof v === 'string' && v !== '') out[k] = clampNumber(v);
-    else out[k] = v;
-  });
-  return out as Partial<T>;
-}
-
-/* ============================================================================
-   Dev quick tests (browser only; non-blocking)
-============================================================================ */
-(() => {
-  try {
-    if (typeof window === 'undefined') return;
-    const S = getStorage();
-    console.assert(S && typeof S.getItem === 'function', 'getStorage returns SafeStorage');
-    const TMP='__ROOM_ELEM_TEST__'; try{S.removeItem(TMP);}catch{}
-    console.assert(readJSON(TMP)===null,'readJSON missing -> null');
-    writeJSON(TMP, { ok:1 }); const back=readJSON<any>(TMP); console.assert(!back || back.ok===1,'roundtrip');
-    writeJSON(TMP, undefined as any); console.assert(readJSON(TMP)===null,'remove on undefined');
-    console.assert(area(3,2.4)===7.2,'area');
-  } catch {}
-})();
+export default RoomDesigner;
