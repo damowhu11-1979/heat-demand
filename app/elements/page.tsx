@@ -1022,7 +1022,7 @@ export default function ElementsPage(): React.JSX.Element {
       {/* footer nav */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
         <Link href="/rooms" style={{ ...secondaryBtn, textDecoration: 'none' }}>← Back: Heated Rooms</Link>
-        <Link href="/room" style={{ ...primaryBtn, textDecoration: 'none' }}>Next: Room →</Link>
+        <Link href="/rooms" style={{ ...primaryBtn, textDecoration: 'none' }}>Next: Rooms →</Link>
       </div>
     </main>
   );
