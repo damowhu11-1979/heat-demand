@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Plus, X, Edit, Thermometer, Wind, Save } from 'lucide-react';
+import { Plus, X, Edit, Thermometer, Wind, Save, Ruler, LayoutGrid } from 'lucide-react'; // Changed Rulers to Ruler
 
 // --- Room Design Constants derived from uploaded documents ---
 
@@ -10,6 +10,8 @@ const ROOM_TYPES = [
   'Kitchen', 'Landing', 'Lounge/sitting room', 'Living room',
   'Shower room', 'Store room', 'Study', 'Toilet', 'Utility room'
 ];
+
+const DEFAULT_ZONES = ['Zone 1', 'Zone 2', 'Zone 3'];
 
 // Design Temperature (°C) from design-conditions.pdf (Table 3.6)
 const DESIGN_TEMPERATURES = {
@@ -108,7 +110,7 @@ const RoomValueEditor = ({
           <input
             type="number"
             step={step}
-            min={0}
+            min={field === 'customTemp' ? 10 : 0} // Set min temp reasonable minimum
             value={currentValue}
             onChange={(e) => handleChange(id, field, e.target.value)}
             onBlur={() => stopEditing()}
@@ -152,19 +154,24 @@ const RoomValueEditor = ({
 };
 
 
-// Main App Component
-const App = () => {
+// Main Component - Renamed from App to RoomDesigner to match import
+const RoomDesigner = () => {
   // State for all rooms in the project
   const [rooms, setRooms] = useState([]);
   // State for the selected property age band
   const [ageBand, setAgeBand] = useState('K-onwards');
+  // State for heating zones (reintroduced)
+  const [zones, setZones] = useState(DEFAULT_ZONES);
+  const [newZoneName, setNewZoneName] = useState('');
   
   // State for editing:
   const [editingId, setEditingId] = useState(null); // ID of the room being edited (for name or values)
-  const [editingField, setEditingField] = useState(null); // Field being edited ('name', 'customTemp', or 'customAch')
+  const [editingField, setEditingField] = useState(null); // Field being edited ('name', 'customTemp', 'customAch', 'ceilingHeight', or 'zone')
   
-  // State for the room type selector
+  // State for the room creation form inputs:
   const [selectedRoomType, setSelectedRoomType] = useState(ROOM_TYPES[0]);
+  const [selectedZone, setSelectedZone] = useState(DEFAULT_ZONES[0]);
+  const [newRoomCeilingHeight, setNewRoomCeilingHeight] = useState(2.4); // Default to a standard ceiling height
 
 
   /**
@@ -181,7 +188,7 @@ const App = () => {
         if (match) {
             highestSuffix = Math.max(highestSuffix, parseInt(match[1], 10));
         } else if (room.name === type) {
-            // Treat the base name "Bedroom" as index 1
+            // Treat the base name "Bedroom" as index 1 if it exists alone
             highestSuffix = Math.max(highestSuffix, 1);
         }
     });
@@ -194,7 +201,8 @@ const App = () => {
     }
     
     // Ensure the generated name is unique *before* setting it
-    let proposedName = nextSuffix === 1 ? type : `${type} ${nextSuffix}`;
+    let proposedName = nextSuffix === 1 && highestSuffix === 0 ? type : `${type} ${nextSuffix}`;
+
     let suffix = nextSuffix;
     
     while (rooms.some(room => room.name === proposedName)) {
@@ -202,12 +210,17 @@ const App = () => {
         proposedName = `${type} ${suffix}`;
     }
 
+    // Final check: If the highest suffix was 0, and we generated 'Type 1', we should just use 'Type' unless 'Type' already exists
+    if (highestSuffix === 0 && proposedName === `${type} 1` && !rooms.some(room => room.name === type)) {
+      return type;
+    }
+
     return proposedName;
 
   }, [rooms]);
   
   /**
-   * Adds a new room with initial design values.
+   * Adds a new room with initial design values, zone, and ceiling height.
    */
   const addRoom = () => {
     const type = selectedRoomType;
@@ -220,13 +233,27 @@ const App = () => {
       id: Date.now(), // Unique ID
       type: type,
       name: newName,
+      zone: selectedZone, // New field
+      ceilingHeight: newRoomCeilingHeight, // New field
       designTemp: temp, // Calculated default (baseline)
       customTemp: temp, // User-editable temperature (defaults to designTemp)
-      designAch: ach,   // Calculated default (baseline)
-      customAch: ach,   // User-editable ACH (defaults to designAch)
+      designAch: ach,    // Calculated default (baseline)
+      customAch: ach,    // User-editable ACH (defaults to designAch)
     };
 
     setRooms(prevRooms => [...prevRooms, newRoom]);
+  };
+
+  /**
+   * Adds a new heating zone.
+   */
+  const addZone = () => {
+    const trimmedName = newZoneName.trim();
+    if (trimmedName && !zones.includes(trimmedName)) {
+      setZones(prevZones => [...prevRooms, trimmedName]); // BUG FIX: changed prevRooms to prevZones
+      setSelectedZone(trimmedName);
+      setNewZoneName('');
+    }
   };
 
   /**
@@ -243,7 +270,7 @@ const App = () => {
         return {
           ...room,
           designTemp: temp, // Update baseline
-          designAch: ach,   // Update baseline
+          designAch: ach,    // Update baseline
           // customTemp and customAch remain as they were, allowing the user's override to persist.
         };
       });
@@ -259,7 +286,7 @@ const App = () => {
   };
 
   /**
-   * Starts editing a specific room field (name, customTemp, customAch).
+   * Starts editing a specific room field (name, customTemp, customAch, zone, ceilingHeight).
    */
   const startEditing = (id, field) => {
     setEditingId(id);
@@ -275,18 +302,18 @@ const App = () => {
   };
 
   /**
-   * Handles changes to the room name.
+   * Handles changes to the room name or zone.
    */
-  const handleNameChange = (id, newName) => {
+  const handleStringChange = (id, field, value) => {
     setRooms(prevRooms =>
       prevRooms.map(room =>
-        room.id === id ? { ...room, name: newName } : room
+        room.id === id ? { ...room, [field]: value } : room
       )
     );
   };
 
   /**
-   * Handles changes to custom numerical values (Temp or ACH).
+   * Handles changes to custom numerical values (Temp, ACH, or Ceiling Height).
    */
   const handleCustomValueChange = (id, field, value) => {
     let numValue = parseFloat(value);
@@ -294,13 +321,18 @@ const App = () => {
     setRooms(prevRooms =>
       prevRooms.map(room => {
         if (room.id === id) {
-            // If parsing fails or value is empty, revert to the design value of that field type
             let newValue = numValue;
+            
             if (isNaN(numValue) || value === '') {
-                newValue = field === 'customTemp' ? room.designTemp : room.designAch;
+              // Revert to the default/design value if input is invalid/empty
+              if (field === 'customTemp') newValue = room.designTemp;
+              else if (field === 'customAch') newValue = room.designAch;
+              else if (field === 'ceilingHeight') newValue = 2.4; // Default ceiling height
             }
-            // Ensure ACH cannot be negative, although the input type handles this with 'min=0'
+            
+            // Ensure bounds
             if (field === 'customAch' && newValue < 0) newValue = 0;
+            if (field === 'ceilingHeight' && newValue < 1.8) newValue = 1.8; // Minimum reasonable height
 
             return { ...room, [field]: newValue };
         }
@@ -308,6 +340,92 @@ const App = () => {
       })
     );
   };
+
+
+  // Component for editing/displaying Zone and Ceiling Height
+  const RoomDetailEditor = ({ room }) => {
+    const isCeilingEditing = editingId === room.id && editingField === 'ceilingHeight';
+    const isZoneEditing = editingId === room.id && editingField === 'zone';
+
+    return (
+      <div className="flex items-center gap-4 text-sm text-gray-700 mt-2">
+        {/* Ceiling Height Display/Editor */}
+        <div className="flex items-center bg-gray-100 px-3 py-1 rounded-full shadow-inner">
+          <Ruler size={16} className="text-purple-500 mr-2" />
+          <span className="font-semibold mr-1">Ceiling:</span>
+          {isCeilingEditing ? (
+            <div className="flex items-center">
+              <input
+                type="number"
+                step="0.1"
+                min="1.8"
+                value={room.ceilingHeight}
+                onChange={(e) => handleCustomValueChange(room.id, 'ceilingHeight', e.target.value)}
+                onBlur={stopEditing}
+                onKeyPress={(e) => { if (e.key === 'Enter') stopEditing(); }}
+                className="w-12 p-0.5 border-b border-indigo-500 text-center font-bold text-gray-900 bg-transparent focus:outline-none"
+                autoFocus
+              />
+              <span className="ml-0.5 text-gray-700">m</span>
+            </div>
+          ) : (
+            <div className="flex items-center">
+              <span className="ml-0.5 font-bold text-gray-800">
+                {room.ceilingHeight.toFixed(1)} m
+              </span>
+              <button
+                onClick={() => startEditing(room.id, 'ceilingHeight')}
+                className="ml-2 p-1 text-gray-400 hover:text-indigo-600 transition duration-150 rounded-full hover:bg-indigo-50"
+                aria-label="Edit ceiling height"
+              >
+                <Edit size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Zone Display/Editor */}
+        <div className="flex items-center bg-gray-100 px-3 py-1 rounded-full shadow-inner">
+          <LayoutGrid size={16} className="text-green-600 mr-2" />
+          <span className="font-semibold mr-1">Zone:</span>
+          {isZoneEditing ? (
+            <div className="flex items-center">
+              <select
+                value={room.zone}
+                onChange={(e) => handleStringChange(room.id, 'zone', e.target.value)}
+                onBlur={stopEditing}
+                className="p-0.5 border-b border-indigo-500 text-center font-bold text-gray-900 bg-transparent focus:outline-none"
+                autoFocus
+              >
+                {zones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
+              </select>
+              <button
+                onClick={stopEditing}
+                className="ml-2 p-1 text-green-600 hover:text-green-800 transition duration-150 rounded-full"
+                aria-label="Save custom zone"
+              >
+                <Save size={14} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center">
+              <span className="ml-0.5 font-bold text-green-700">
+                {room.zone}
+              </span>
+              <button
+                onClick={() => startEditing(room.id, 'zone')}
+                className="ml-2 p-1 text-gray-400 hover:text-indigo-600 transition duration-150 rounded-full hover:bg-indigo-50"
+                aria-label="Edit room zone"
+              >
+                <Edit size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
 
   return (
     <div className="p-4 sm:p-8 bg-gray-50 min-h-screen font-sans">
@@ -335,39 +453,111 @@ const App = () => {
         </p>
       </div>
 
-      {/* Add New Room Section */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-10 p-4 bg-indigo-50 border-2 border-indigo-400 rounded-xl shadow-xl">
-        <div className="flex-grow">
-          <label htmlFor="room-type-select" className="block text-sm font-medium text-indigo-700 mb-1">
-            2. Choose Room Type to Add:
-          </label>
-          <select
-            id="room-type-select"
-            value={selectedRoomType}
-            onChange={(e) => setSelectedRoomType(e.target.value)}
-            className="w-full p-2 border border-indigo-300 rounded-lg text-gray-900 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-          >
-            {ROOM_TYPES.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
+      {/* Zone Management Section (New) */}
+      <div className="mb-8 p-4 bg-white shadow-lg rounded-lg border border-green-200">
+        <h3 className="text-lg font-semibold text-gray-800 mb-2">
+          2. Manage Heating Zones ({zones.length})
+        </h3>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {zones.map(zone => (
+            <span key={zone} className="px-3 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full border border-green-300">
+              {zone}
+            </span>
+          ))}
         </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="e.g., Bedroom Zone"
+            value={newZoneName}
+            onChange={(e) => setNewZoneName(e.target.value)}
+            onKeyPress={(e) => { if (e.key === 'Enter') addZone(); }}
+            className="flex-grow p-2 border border-gray-300 rounded-lg text-gray-900 shadow-sm"
+          />
+          <button
+            onClick={addZone}
+            disabled={!newZoneName.trim() || zones.includes(newZoneName.trim())}
+            className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg font-semibold shadow-md hover:bg-green-700 disabled:bg-gray-400 transition duration-150"
+          >
+            <Plus size={16} className="mr-1" /> Add Zone
+          </button>
+        </div>
+      </div>
+
+
+      {/* Add New Room Section (Updated) */}
+      <div className="flex flex-col gap-4 mb-10 p-4 bg-indigo-50 border-2 border-indigo-400 rounded-xl shadow-xl">
+        <h3 className="text-lg font-semibold text-indigo-700">
+          3. Configure New Room
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Room Type */}
+          <div>
+            <label htmlFor="room-type-select" className="block text-sm font-medium text-indigo-700 mb-1">
+              Room Type:
+            </label>
+            <select
+              id="room-type-select"
+              value={selectedRoomType}
+              onChange={(e) => setSelectedRoomType(e.target.value)}
+              className="w-full p-2 border border-indigo-300 rounded-lg text-gray-900 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              {ROOM_TYPES.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Zone Selection */}
+          <div>
+            <label htmlFor="zone-select" className="block text-sm font-medium text-indigo-700 mb-1">
+              Assign Zone:
+            </label>
+            <select
+              id="zone-select"
+              value={selectedZone}
+              onChange={(e) => setSelectedZone(e.target.value)}
+              className="w-full p-2 border border-indigo-300 rounded-lg text-gray-900 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              {zones.map(zone => (
+                <option key={zone} value={zone}>{zone}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Ceiling Height Input */}
+          <div>
+            <label htmlFor="ceiling-height-input" className="block text-sm font-medium text-indigo-700 mb-1">
+              Ceiling Height (m):
+            </label>
+            <input
+              id="ceiling-height-input"
+              type="number"
+              step="0.1"
+              min="1.8"
+              value={newRoomCeilingHeight}
+              onChange={(e) => setNewRoomCeilingHeight(parseFloat(e.target.value))}
+              className="w-full p-2 border border-indigo-300 rounded-lg text-gray-900 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+        </div>
+        
         <button
           onClick={addRoom}
-          className="flex items-center justify-center sm:self-end bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition duration-150 transform hover:scale-[1.02]"
+          className="flex items-center justify-center sm:self-end bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition duration-150 transform hover:scale-[1.02] mt-4"
         >
-          <Plus size={20} className="mr-2" /> Add Room
+          <Plus size={20} className="mr-2" /> Add Room to Project
         </button>
       </div>
 
       {/* Room List */}
       <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        3. Project Room List ({rooms.length})
+        4. Project Room List ({rooms.length})
       </h2>
       <div className="space-y-4">
         {rooms.length === 0 ? (
           <p className="text-gray-500 p-6 bg-white rounded-lg shadow-inner text-center">
-            Start by selecting a room type and clicking "Add Room".
+            Start by configuring a room and clicking "Add Room to Project".
           </p>
         ) : (
           rooms.map((room) => {
@@ -378,17 +568,17 @@ const App = () => {
                 key={room.id}
                 className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-white rounded-xl shadow-md transition duration-100 hover:shadow-lg border-l-4 border-indigo-500"
               >
-                {/* Room Name & Edit */}
+                {/* Room Name, Type, Zone, and Ceiling */}
                 <div className="flex-1 min-w-0 mb-3 md:mb-0">
                   <span className="block text-xs font-medium text-indigo-600 uppercase mb-1">
                     {room.type}
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mb-2">
                     {isNameEditing ? (
                       <input
                         type="text"
                         value={room.name}
-                        onChange={(e) => handleNameChange(room.id, e.target.value)}
+                        onChange={(e) => handleStringChange(room.id, 'name', e.target.value)}
                         onBlur={stopEditing}
                         onKeyPress={(e) => {
                           if (e.key === 'Enter') stopEditing();
@@ -409,6 +599,9 @@ const App = () => {
                       <Edit size={16} />
                     </button>
                   </div>
+                  {/* Zone and Ceiling Editors (New Detail Row) */}
+                  <RoomDetailEditor room={room} />
+
                 </div>
 
                 {/* Design Values Editors */}
@@ -465,4 +658,4 @@ const App = () => {
   );
 };
 
-export default App;
+export default RoomDesigner;
